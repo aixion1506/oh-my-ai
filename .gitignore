@@ -1,4 +1,34 @@
-.claude.json
-projects/
+# ====== 절대 커밋 금지 ======
+**/. credentials.json
+**/.credentials.json
+**/*.credentials.json
+
+# ====== 대화/세션 데이터 (대용량, 민감) ======
+claude/history.jsonl
+claude/sessions/
+claude/session-env/
+claude/shell-snapshots/
+claude/paste-cache/
+claude/file-history/
+
+# ====== 런타임 생성 파일 ======
+claude/backups/
+claude/downloads/
+claude/cache/
+claude/ide/
+claude/tasks/
+claude/plans/
+claude/.last-cleanup
+claude/.last-update-result.json
+
+# ====== 플러그인 캐시 (claude plugin install 이 관리) ======
+claude/plugins/
+
+# ====== 머신별 상태 ======
+claude/mcp-needs-auth-cache.json
+claude/projects/
+
+# ====== 로컬 오버라이드 ======
 *.local.json
 .env
+.claude.json

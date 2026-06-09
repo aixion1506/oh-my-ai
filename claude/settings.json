@@ -1,10 +1,11 @@
 {
   "enabledPlugins": {
-  "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
     "code-review@claude-plugins-official": true,
-    "serena@claude-plugins-official": true
+    "serena@claude-plugins-official": true,
+    "atlassian@claude-plugins-official": true
   },
   "effortLevel": "high",
   "theme": "light-daltonized"
