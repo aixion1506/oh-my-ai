@@ -5,19 +5,17 @@ CLAUDE  := $(HOME)/.claude
 
 install:
 	@echo "=== oh-my-ai: Claude 설정 적용 ==="
-	@mkdir -p $(CLAUDE)/skills
 
 	@# 설정 파일 심링크
 	ln -sf $(REPO)/claude/CLAUDE.md     $(CLAUDE)/CLAUDE.md
 	ln -sf $(REPO)/claude/settings.json $(CLAUDE)/settings.json
 	@echo "  linked: CLAUDE.md, settings.json"
 
-	@# 스킬 심링크
-	@for skill in $(REPO)/claude/skills/*/; do \
-		name=$$(basename $$skill); \
-		ln -sf $$skill $(CLAUDE)/skills/$$name; \
-		echo "  linked skill: $$name"; \
-	done
+	@# 디렉토리 통째로 심링크 (새 스킬/커맨드/에이전트 추가 시 자동 추적)
+	rm -rf  $(CLAUDE)/skills   && ln -sf $(REPO)/claude/skills    $(CLAUDE)/skills
+	rm -rf  $(CLAUDE)/commands && ln -sf $(REPO)/claude/commands  $(CLAUDE)/commands
+	rm -rf  $(CLAUDE)/agents   && ln -sf $(REPO)/claude/agents    $(CLAUDE)/agents
+	@echo "  linked: skills/, commands/, agents/"
 
 	@# 플러그인 설치
 	@echo "Installing plugins..."
