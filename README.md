@@ -63,6 +63,12 @@ VS Code Settings (JSON)에 한 번만 추가:
 
 이후 새 devcontainer 뜰 때마다 VS Code가 자동으로 레포 clone + `setup.sh` 실행.
 
+### devcontainer (심링크 방식)
+
+복사 방식은 스킬/커맨드 수정이 레포에 바로 반영되지 않음. 실제 머신처럼 심링크를 유지하고 싶다면 별도 가이드 참고.
+
+→ [docs/devcontainer-symlink.md](docs/devcontainer-symlink.md)
+
 ## 스킬/커맨드/에이전트 추가
 
 실제 머신에서는 `~/.claude/skills/`에 추가하면 레포에 바로 반영됨 (심링크).
