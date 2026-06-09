@@ -22,6 +22,13 @@
 - Confluence용 (팀 공유): 결정된 것만, 간결하게.
 - 두 문서 분리 운영. Confluence에 WHY는 안 씀.
 
+## devcontainer 워크플로
+- `~/.claude/`는 `~/oh-my-ai/claude/`의 심링크. 수정하면 레포에 바로 반영됨.
+- 스킬/커맨드/에이전트 추가 후 반드시 레포에서 커밋/푸시:
+  ```
+  cd ~/oh-my-ai && git add . && git commit -m "..." && git push
+  ```
+
 ## 언어
 - 대화는 한국어로.
 - 코드 주석은 한글로 (프로젝트 CLAUDE.md 규칙 따름).
