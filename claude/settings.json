@@ -8,5 +8,10 @@
     "atlassian@claude-plugins-official": true
   },
   "effortLevel": "high",
-  "theme": "light-daltonized"
+  "theme": "light-daltonized",
+  "permissions": {
+    "allow": [
+      "mcp__plugin_atlassian_atlassian__atlassianUserInfo"
+    ]
+  }
 }
