@@ -17,4 +17,8 @@ rm -rf  "$CLAUDE_DIR/agents"   && ln -sf "$REPO/claude/agents"   "$CLAUDE_DIR/ag
 grep -qxF "source $REPO/devcontainer/start-pg-proxy.sh" "$HOME/.bashrc" || \
     echo "source $REPO/devcontainer/start-pg-proxy.sh" >> "$HOME/.bashrc"
 
+# oh-my-ai 레포는 회사 계정과 분리된 개인 계정으로만 커밋되도록 local git config 고정
+git -C "$REPO" config user.name "aixion1506"
+git -C "$REPO" config user.email "aixion1506@gmail.com"
+
 echo "=== done ==="

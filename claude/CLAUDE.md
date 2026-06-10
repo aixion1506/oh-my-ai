@@ -33,6 +33,10 @@
   ```
   cd ~/oh-my-ai && git add . && git commit -m "..." && git push
   ```
+- **oh-my-ai(dotfiles) 레포는 절대 회사 계정(shpark26/shpark-nurilab)으로 커밋하지 않는다.** 항상 개인 계정(`aixion1506` / `aixion1506@gmail.com`)으로 author/committer 설정.
+  - `setup.sh`가 이 레포의 local git config(user.name/email)를 aixion1506으로 자동 설정함.
+  - push 권한도 개인 계정 필요: `gh auth switch --user aixion1506` 후 push, 끝나면 `gh auth switch --user shpark-nurilab`으로 복귀.
+  - 글로벌 git config는 회사 계정(shpark26)이므로, 다른 레포(askurl 등)에서는 그대로 둘 것.
 
 ## 언어
 - 대화는 한국어로.

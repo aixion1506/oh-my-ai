@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__plugin_atlassian_atlassian__atlassianUserInfo",
+      "Read(//home/vscode/dotfiles/claude/**)"
+    ]
+  },
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
@@ -8,10 +14,5 @@
     "atlassian@claude-plugins-official": true
   },
   "effortLevel": "high",
-  "theme": "light-daltonized",
-  "permissions": {
-    "allow": [
-      "mcp__plugin_atlassian_atlassian__atlassianUserInfo"
-    ]
-  }
+  "theme": "light-daltonized"
 }
