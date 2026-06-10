@@ -14,4 +14,7 @@ rm -rf  "$CLAUDE_DIR/skills"   && ln -sf "$REPO/claude/skills"   "$CLAUDE_DIR/sk
 rm -rf  "$CLAUDE_DIR/commands" && ln -sf "$REPO/claude/commands" "$CLAUDE_DIR/commands"
 rm -rf  "$CLAUDE_DIR/agents"   && ln -sf "$REPO/claude/agents"   "$CLAUDE_DIR/agents"
 
+grep -qxF "source $REPO/devcontainer/start-pg-proxy.sh" "$HOME/.bashrc" || \
+    echo "source $REPO/devcontainer/start-pg-proxy.sh" >> "$HOME/.bashrc"
+
 echo "=== done ==="
