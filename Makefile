@@ -26,6 +26,11 @@ install:
 	claude plugin install serena
 	claude plugin install atlassian
 
+	@# 외부 마켓플레이스 플러그인
+	claude plugin marketplace add wshobson/agents
+	claude plugin install backend-api-security@claude-code-workflows
+	claude plugin install security-compliance@claude-code-workflows
+
 	@echo "=== 완료. Claude Code 재시작하면 적용됩니다 ==="
 
 update:
