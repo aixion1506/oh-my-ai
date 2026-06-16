@@ -7,6 +7,9 @@
 ## 워크플로 규칙
 - Jira 이슈 + 설계 문서가 이미 있으면 `/brainstorming` 스킵하고 바로 `/writing-plans`로 간다.
 - 설계 문서 + plan 모두 있으면 "Task N 시작할게" 식으로 바로 구현으로 간다.
+  - "plan"이란 `/writing-plans` 스킬로 생성된 plan 파일 (`docs/superpowers/plans/` 하위)을 의미한다.
+  - context 문서(audit.md 등)의 task 목록은 설계 문서이지 plan 파일이 아니다.
+- `/executing-plans`로 구현 시 task 하나씩 코드 제시 → 내가 타이핑 완료 확인 후 다음 task로 넘어간다. 한꺼번에 다 주지 않는다.
 - 불필요한 파일 전체 Read 대신 grep으로 타겟팅한다.
 
 ## Jira 이슈 계층 규칙
