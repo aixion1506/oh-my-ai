@@ -1,6 +1,8 @@
 ---
 name: harness-automation
 description: Use after deciding to automate a recurring/manual task — to evaluate whether it's ripe, pick the right form (skill vs slash-command vs agent vs script), structure it, and manage its lifecycle. The detection/nudge trigger lives in CLAUDE.md; this skill is the post-confirmation structuring method.
+metadata:
+  source: born-here
 ---
 
 # 반복 업무 자동화 — 구조화 양식

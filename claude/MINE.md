@@ -7,7 +7,13 @@
 - `commands/release-note.md` — Jira 릴리즈를 유저 체감 릴리즈 노트로 자동 정리
 
 ## 스킬
+스킬은 frontmatter `metadata.source` 로 출처 표기 (born-here / 외부 origin).
+
+### born-here (처음부터 내가)
 - `skills/harness-automation/` — 반복 업무(toil) 감지 후 자동화 판단·구조화 방법론
+
+### 외부 파생 (외부 베이스 + 내 context, 승격됨)
+- (아직 없음 — 외부 스킬을 커스터마이즈하기 시작하면 여기로 승격 + `source: <origin>` 표기)
 
 ## 데이터/기타
 - `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
