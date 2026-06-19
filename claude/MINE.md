@@ -11,12 +11,14 @@
 
 ### born-here (처음부터 내가)
 - `skills/harness-automation/` — 반복 업무(toil) 감지 후 자동화 판단·구조화 방법론
+- `skills/project-context/` — 세션 간 컨텍스트 단절 해소: docs/context/ living doc 생성·업데이트·핸드오프
 
 ### 외부 파생 (외부 베이스 + 내 context, 승격됨)
 - (아직 없음 — 외부 스킬을 커스터마이즈하기 시작하면 여기로 승격 + `source: <origin>` 표기)
 
 ## 데이터/기타
 - `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
+- `settings.json` SessionStart 훅 #2 — 현재 디렉토리의 docs/context/ 파일 목록 자동 주입
 - `../docs/harness-design.md` — 하네스 설계·결정·현황 기록 (WHY 중심, 상태표)
 
 ## 공유 파일에 내가 넣은 편집분 (참고)

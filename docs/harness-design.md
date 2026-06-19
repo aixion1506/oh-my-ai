@@ -27,6 +27,7 @@
 | `skills/harness-automation` | toil 자동화 판단·구조화 플레이북 | 확률적(description) | 운영, **미검증** |
 | `commands/release-note` | 릴리즈노트 자동화 | 수동(`/` 호출) | 운영 |
 | `automation-backlog.md` + SessionStart 훅 | toil 후보 누적 + 세션 주입 | 결정적(훅) | 운영, **데이터 0** |
+| `skills/project-context` + SessionStart 훅 | 세션 간 컨텍스트 단절 해소: docs/context/ living doc 감지·주입 | 결정적(훅) + 확률적(스킬) | 운영, **미검증** |
 | `MINE.md` | 커스텀 산출물 인덱스 | 문서 | 운영 |
 | 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, 적용 1건 |
 

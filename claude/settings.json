@@ -33,6 +33,11 @@
             "type": "command",
             "command": "cat \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")/automation-backlog.md\" 2>/dev/null || true",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "if [ -d \"./docs/context\" ]; then FILES=$(find ./docs/context -name \"*.md\" 2>/dev/null | sort); if [ -n \"$FILES\" ]; then echo \"[HARNESS:context] Available project context:\"; echo \"$FILES\" | sed 's|^|  |'; else echo \"[HARNESS:context] docs/context/ exists but empty — use project-context skill to create\"; fi; fi",
+            "timeout": 5
           }
         ]
       }
