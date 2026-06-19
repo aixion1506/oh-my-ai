@@ -7,6 +7,7 @@
   - **원칙(standing rule)**: 항상 적용되는 *행동 기준*. **단독 — 플레이북 없음.** (예: 표현 원칙, 품질 기준.)
 - **플레이북(스킬, 필요시 로드)**: 트리거가 가리키는 두꺼운 절차.
 - **cascade**: 변경 하나 → 연결된 산출물(트리거 엔트리·`MINE.md`·README·플레이북)이 **동반 갱신**되는 동작. (DB `ON UPDATE CASCADE` 비유. 무언가 만들거나 바꾸면 연결된 곳을 같이 갱신한다.)
+- **규칙 충돌 시 우선순위**: 안전·정확 > 품질 깊이 > 간결 > 표현 스타일. (장황 금지와 "실패모드 다 짚기"가 부딪히면 → 깊이 우선, 단 군더더기 없이.)
 
 ## 구현 방식
 - 코드를 직접 편집하지 않는다. 코드는 보여주기만 하고 내가 직접 타이핑한다.
@@ -89,23 +90,9 @@
 - Confluence용 (팀 공유): 결정된 것만, 간결하게.
 - 두 문서 분리 운영. Confluence에 WHY는 안 씀.
 
-## devcontainer 워크플로
-
-### 심링크 구조 (헷갈리지 말 것 — 매번 헤매던 부분)
-- **`~/.claude/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `CLAUDE.md`, `settings.json`, `commands/`, `skills/` → 각각 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
-- 그래서:
-  - 심링크된 엔트리(위 4개)를 고치면 레포에 바로 반영됨.
-  - `~/.claude/` 최상위에 **새 파일**을 만들면 레포에 안 들어간다 — 레포(`~/Github/oh-my-ai/claude/`)에 직접 만들고, 필요하면 `commands/`·`skills/` 같은 **이미 심링크된 디렉토리 안**에 두거나 별도 심링크를 건다.
-- **머신마다 절대경로가 다르다** (홈이 `/home/vscode`인데 심링크는 `/home/shpark/...`로 적혀 있고 양쪽이 같은 실경로로 resolve됨). 그래서 **레포에 커밋되는 설정(settings.json 등)에 머신별 절대경로를 하드코딩하지 말 것.** 런타임에 풀어 쓴다 — 예: 심링크된 파일의 실위치로 레포 디렉토리를 구함
-  `"$(dirname "$(readlink -f ~/.claude/settings.json)")"` → 레포의 `claude/` 디렉토리.
-- 스킬/커맨드/에이전트 추가 후 반드시 레포에서 커밋/푸시:
-  ```
-  cd ~/Github/oh-my-ai && git add . && git commit -m "..." && git push
-  ```
-- **oh-my-ai(dotfiles) 레포는 절대 회사 계정(shpark26/shpark-nurilab)으로 커밋하지 않는다.** 항상 개인 계정(`aixion1506` / `aixion1506@gmail.com`)으로 author/committer 설정.
-  - `setup.sh`가 이 레포의 local git config(user.name/email)를 aixion1506으로 자동 설정함.
-  - push 권한도 개인 계정 필요: `gh auth switch --user aixion1506` 후 push, 끝나면 `gh auth switch --user shpark-nurilab`으로 복귀.
-  - 글로벌 git config는 회사 계정(shpark26)이므로, 다른 레포(askurl 등)에서는 그대로 둘 것.
+## devcontainer / oh-my-ai 작업 — 트리거
+- **oh-my-ai(dotfiles) 커밋은 개인계정(`aixion1506`)으로만 — 회사계정(shpark26/shpark-nurilab) 절대 금지.** push: `gh auth switch --user aixion1506` → 커밋·push → `gh auth switch --user shpark-nurilab` 복귀. (author는 setup.sh가 local config로 자동 세팅.)
+- 심링크 구조·portable 경로·setup.sh 등 **상세는 작업 전 `docs/devcontainer-workflow.md` 를 읽는다.**
 
 ## 언어
 - 대화는 한국어로.

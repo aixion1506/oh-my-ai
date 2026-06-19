@@ -41,6 +41,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "S=$(jq -r '.tool_input.skill // empty' 2>/dev/null); [ -n \"$S\" ] && printf '%s | %s\\n' \"$(date +'%F %H:%M')\" \"$S\" >> ~/.claude/harness-usage.log; true",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

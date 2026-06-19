@@ -28,6 +28,8 @@
 | `commands/release-note` | 릴리즈노트 자동화 | 수동(`/` 호출) | 운영 |
 | `automation-backlog.md` + SessionStart 훅 | toil 후보 누적 + 세션 주입 | 결정적(훅) | 운영, **데이터 0** |
 | `skills/project-context` + SessionStart 훅 | 세션 간 컨텍스트 단절 해소: docs/context/ living doc 감지·주입 | 결정적(훅) + 확률적(스킬) | 운영, **미검증** |
+| `settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` | 스킬/커맨드 사용 측정 | 결정적(훅) | 운영, **데이터 수집 시작** |
+| `docs/devcontainer-workflow.md` | oh-my-ai/심링크/계정 워크플로 상세 | 레퍼런스(트리거로 강등) | 운영 |
 | `MINE.md` | 커스텀 산출물 인덱스 | 문서 | 운영 |
 | 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, 적용 1건 |
 
@@ -42,11 +44,11 @@
 ## 5. 현재 한계 (정직)
 1. **대부분 soft(프롬프트 기반).** 확실히 결정적인 건 SessionStart 훅뿐.
 2. **실사용 검증 0.** 한 세션에 많이 지음 → 한 달 써봐야 살아남는지/죽은 config인지 판별 가능.
-3. **측정 없음.** 트리거 발동률·자동화 재사용률 미추적 → 개선이 데이터 아닌 감.
+3. **측정 시작됨(데이터 0).** 스킬/커맨드 사용 로그 훅(`harness-usage.log`) 깔림 — 아직 데이터 없음. 월간 `sort|uniq -c` 리뷰로 prune 예정.
 
 ## 6. 다음 단계
 - (당장 더 짓기 X) **실사용으로 검증·prune** 먼저. 멈추고 한동안 써보는 게 맞다.
 - must-have를 **결정적 메커니즘(훅·스크립트·CI)** 으로 점진 이전.
-- backlog가 실제로 쌓이기 시작하면 **측정**(발동/재사용) 붙이기.
+- 측정 훅 깔림 → **데이터 쌓이면 월간 리뷰로 prune·강화** (안 쓰는 스킬/커맨드 정리).
 - **#2 vendored 스킬 audit**: 승격 유지 vs 마켓플레이스로 제거 — 순차 진행.
 - **다음 도메인**: `/daily-report` (작업 라우팅 + description으로 연결).
