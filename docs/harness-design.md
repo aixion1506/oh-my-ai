@@ -29,6 +29,7 @@
 | `automation-backlog.md` + SessionStart 훅 | toil 후보 누적 + 세션 주입 | 결정적(훅) | 운영, **데이터 0** |
 | `skills/project-context` + SessionStart 훅 | 세션 간 컨텍스트 단절 해소: docs/context/ living doc 감지·주입 | 결정적(훅) + 확률적(스킬) | 운영, **미검증** |
 | `settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` | 스킬/커맨드 사용 측정 | 결정적(훅) | 운영, **데이터 수집 시작** |
+| `hooks/oh-my-ai-push-guard.sh` (PreToolUse) | 회사계정 oh-my-ai push 차단 | 결정적(훅) | 운영, 분기 검증 완료 |
 | `docs/devcontainer-workflow.md` | oh-my-ai/심링크/계정 워크플로 상세 | 레퍼런스(트리거로 강등) | 운영 |
 | `MINE.md` | 커스텀 산출물 인덱스 | 문서 | 운영 |
 | 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, 적용 1건 |
@@ -42,7 +43,7 @@
 - **portable 경로**: settings.json 심링크를 역추적해 레포 위치 도출 → 머신/홈(`vscode`↔`shpark`) 달라도 동작. 절대경로 하드코딩 금지.
 
 ## 5. 현재 한계 (정직)
-1. **대부분 soft(프롬프트 기반).** 확실히 결정적인 건 SessionStart 훅뿐.
+1. **대부분 soft(프롬프트 기반).** 결정적인 건 훅뿐(SessionStart 주입 + 사용측정 + 회사계정 push 가드). 안전·핵심 규칙부터 점진적으로 hard화 중.
 2. **실사용 검증 0.** 한 세션에 많이 지음 → 한 달 써봐야 살아남는지/죽은 config인지 판별 가능.
 3. **측정 시작됨(데이터 0).** 스킬/커맨드 사용 로그 훅(`harness-usage.log`) 깔림 — 아직 데이터 없음. 월간 `sort|uniq -c` 리뷰로 prune 예정.
 
