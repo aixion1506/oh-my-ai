@@ -38,10 +38,17 @@
 - 두 문서 분리 운영. Confluence에 WHY는 안 씀.
 
 ## devcontainer 워크플로
-- `~/.claude/`는 `~/oh-my-ai/claude/`의 심링크. 수정하면 레포에 바로 반영됨.
+
+### 심링크 구조 (헷갈리지 말 것 — 매번 헤매던 부분)
+- **`~/.claude/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `CLAUDE.md`, `settings.json`, `commands/`, `skills/` → 각각 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
+- 그래서:
+  - 심링크된 엔트리(위 4개)를 고치면 레포에 바로 반영됨.
+  - `~/.claude/` 최상위에 **새 파일**을 만들면 레포에 안 들어간다 — 레포(`~/Github/oh-my-ai/claude/`)에 직접 만들고, 필요하면 `commands/`·`skills/` 같은 **이미 심링크된 디렉토리 안**에 두거나 별도 심링크를 건다.
+- **머신마다 절대경로가 다르다** (홈이 `/home/vscode`인데 심링크는 `/home/shpark/...`로 적혀 있고 양쪽이 같은 실경로로 resolve됨). 그래서 **레포에 커밋되는 설정(settings.json 등)에 머신별 절대경로를 하드코딩하지 말 것.** 런타임에 풀어 쓴다 — 예: 심링크된 파일의 실위치로 레포 디렉토리를 구함
+  `"$(dirname "$(readlink -f ~/.claude/settings.json)")"` → 레포의 `claude/` 디렉토리.
 - 스킬/커맨드/에이전트 추가 후 반드시 레포에서 커밋/푸시:
   ```
-  cd ~/oh-my-ai && git add . && git commit -m "..." && git push
+  cd ~/Github/oh-my-ai && git add . && git commit -m "..." && git push
   ```
 - **oh-my-ai(dotfiles) 레포는 절대 회사 계정(shpark26/shpark-nurilab)으로 커밋하지 않는다.** 항상 개인 계정(`aixion1506` / `aixion1506@gmail.com`)으로 author/committer 설정.
   - `setup.sh`가 이 레포의 local git config(user.name/email)를 aixion1506으로 자동 설정함.
