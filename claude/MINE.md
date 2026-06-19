@@ -17,6 +17,7 @@
 
 ## 데이터/기타
 - `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
+- `../docs/harness-design.md` — 하네스 설계·결정·현황 기록 (WHY 중심, 상태표)
 
 ## 공유 파일에 내가 넣은 편집분 (참고)
 - `CLAUDE.md` — 표현 원칙 / 반복 업무 자동화 트리거 / devcontainer 심링크 구조 명시
