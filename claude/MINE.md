@@ -1,0 +1,17 @@
+# 내가 만든 커스텀 (MINE)
+
+이 dotfiles 레포에서 **내가(aixion1506) 추가한 산출물**만 모아 보는 인덱스.
+(커뮤니티/기본 스킬과 구분용. 새로 만들면 `harness-automation` 스킬 규칙에 따라 여기 한 줄 등록한다.)
+
+## 커맨드
+- `commands/release-note.md` — Jira 릴리즈를 유저 체감 릴리즈 노트로 자동 정리
+
+## 스킬
+- `skills/harness-automation/` — 반복 업무(toil) 감지 후 자동화 판단·구조화 방법론
+
+## 데이터/기타
+- `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
+
+## 공유 파일에 내가 넣은 편집분 (참고)
+- `CLAUDE.md` — 표현 원칙 / 반복 업무 자동화 트리거 / devcontainer 심링크 구조 명시
+- `settings.json` — SessionStart 훅 (automation-backlog 주입)

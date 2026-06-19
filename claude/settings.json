@@ -24,5 +24,18 @@
     }
   },
   "effortLevel": "high",
-  "theme": "light-daltonized"
+  "theme": "light-daltonized",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")/automation-backlog.md\" 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }
