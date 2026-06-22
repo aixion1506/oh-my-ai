@@ -17,10 +17,15 @@
 ## 커밋/푸시 — 개인 계정 전용 (안전 규칙)
 - **oh-my-ai(dotfiles) 레포는 절대 회사 계정(shpark26/shpark-nurilab)으로 커밋하지 않는다.** 항상 개인 계정(`aixion1506` / `aixion1506@gmail.com`).
 - `setup.sh`가 이 레포의 local git config(user.name/email)를 aixion1506으로 자동 설정함 (= 커밋 author는 자동으로 맞음).
-- push 권한은 개인 계정 필요:
+- push 권한은 개인 계정 필요. **단축 스크립트 권장:**
+  ```bash
+  bash claude/scripts/omai-commit.sh "메시지" [경로...]   # 전환→add→commit→push→복귀 한 번에
+  ```
+  수동(동등):
   ```bash
   cd ~/Github/oh-my-ai && gh auth switch --user aixion1506
   git add . && git commit -m "..." && git push
   gh auth switch --user shpark-nurilab   # 회사 계정 복귀
   ```
+- push 가드 훅(`hooks/oh-my-ai-push-guard.sh`)이 회사계정 push를 차단한다(이중 안전).
 - 글로벌 git config는 회사 계정(shpark26)이므로, 다른 레포(askurl 등)에서는 그대로 둘 것.

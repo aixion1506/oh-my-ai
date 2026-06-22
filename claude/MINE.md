@@ -23,6 +23,7 @@
 - `../docs/devcontainer-workflow.md` — oh-my-ai/심링크/계정 워크플로 상세 (CLAUDE.md에서 강등)
 - `settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` — 스킬/커맨드 사용 측정 (월간 prune용)
 - `hooks/oh-my-ai-push-guard.sh` (PreToolUse) — oh-my-ai 회사계정 push 차단 (soft 규칙 → hard 결정성)
+- `scripts/omai-commit.sh` — oh-my-ai 커밋·푸시 한 줄(계정 자동 전환·복귀). 반복 4단계 자동화.
 
 ## 공유 파일에 내가 넣은 편집분 (참고)
 - `CLAUDE.md` — 표현 원칙 / 반복 업무 자동화 트리거 / devcontainer 심링크 구조 명시

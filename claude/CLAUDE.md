@@ -91,7 +91,7 @@
 - 두 문서 분리 운영. Confluence에 WHY는 안 씀.
 
 ## devcontainer / oh-my-ai 작업 — 트리거
-- **oh-my-ai(dotfiles) 커밋은 개인계정(`aixion1506`)으로만 — 회사계정(shpark26/shpark-nurilab) 절대 금지.** push: `gh auth switch --user aixion1506` → 커밋·push → `gh auth switch --user shpark-nurilab` 복귀. (author는 setup.sh가 local config로 자동 세팅.)
+- **oh-my-ai(dotfiles) 커밋은 개인계정(`aixion1506`)으로만 — 회사계정(shpark26/shpark-nurilab) 절대 금지.** **단축: `bash claude/scripts/omai-commit.sh "메시지" [경로...]`** (전환·add·commit·push·복귀 한 번에). 수동 시: `gh auth switch --user aixion1506` → 커밋·push → `gh auth switch --user shpark-nurilab` 복귀. (push 가드 훅이 회사계정 push를 차단함.)
 - 심링크 구조·portable 경로·setup.sh 등 **상세는 작업 전 `docs/devcontainer-workflow.md` 를 읽는다.**
 
 ## 언어
