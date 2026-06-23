@@ -23,6 +23,7 @@ install: instructions
 	@echo "  linked: skills/, commands/, agents/"
 
 	@echo "=== oh-my-ai: Codex 설정 적용 ==="
+	@if ! command -v codex >/dev/null 2>&1; then if [ -x "$(REPO)/install.sh" ]; then CODEX_NON_INTERACTIVE=1 sh "$(REPO)/install.sh" || npm install -g --prefix "$HOME/.local" @openai/codex; else npm install -g --prefix "$HOME/.local" @openai/codex; fi; fi
 	mkdir -p $(CODEX)
 	ln -sf $(REPO)/AGENTS.md $(CODEX)/AGENTS.md
 	@echo "  linked: AGENTS.md"
