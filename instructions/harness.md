@@ -35,7 +35,7 @@
 - 길이는 중간. **한 줄짜리 너무 짧은 표현도, 주절주절 장황한 것도 안 된다.** 목적 + 핵심 변경이 한눈에 들어오는 정도.
 - **"무엇을 만들었나"가 아니라 "어떤 문제/목적을 해결했나"를 앞세운다.** 예를 들어 반복 수작업을 도구화했으면 "X 커맨드 추가"가 아니라 "반복되던 X를 자동화"라고 쓴다.
 - **일일보고**도 동일하다. 한 일을 단순 나열하지 말고 **목적/성과 위주로** 묶는다. 예: "A 수정, B 수정, C 수정" ❌ → "반복되던 릴리즈 노트 작성을 커맨드로 자동화 (관련 정리 3건)" ✅
-- 커밋 메시지 예: `feat(commands): 반복되던 릴리즈 노트 작성을 /release-note 커맨드로 자동화` (목적이 제목에 드러남, 세부는 필요시 본문 1~2줄).
+- 커밋 메시지 예: `feat(skills): 반복되던 릴리즈 노트 작성을 release-note 스킬로 자동화` (목적이 제목에 드러남, 세부는 필요시 본문 1~2줄).
 
 ## 품질 기준 — 네카라 시니어 실무급 (원칙)
 모든 작업의 디폴트 깊이. "네카라 시니어급으로"·"딥하게" 키워드는 이 기준을 한 단계 더 올리라는 신호.
@@ -52,7 +52,7 @@
 
 | 작업 | 붙는 것 |
 |------|---------|
-| 릴리즈 노트 작성 | `/release-note` 커맨드 |
+| 릴리즈 노트 작성 | `release-note` 스킬 |
 | 반복 업무(toil) 감지·도구화 | `harness-automation` 스킬 (트리거는 아래 섹션) |
 | 새 도메인·서비스 작업 시작 (context 없음) | `project-context` 스킬 (CREATE 모드) |
 | 중요 설계·아키텍처 결정 내린 직후 | `project-context` 스킬 (UPDATE 모드) |
@@ -65,7 +65,7 @@
 → 반드시 떠야 하면 1·2(공유 instruction 원본=결정적)에, 떠주면 좋은 깊은 내용은 스킬 description(확률적)에. 이 3개를 안 하면 "만들기"가 끝난 게 아니다.
 
 ## 배치 규칙 (새 지시·기능은 성격대로 — root 비대화 방지)
-새로 추가할 땐 생성물(`claude/CLAUDE.md`, `AGENTS.md`)에 바로 쓰지 말고 성격으로 분류한다:
+새로 추가할 땐 생성물(`CLAUDE.md`, `claude/CLAUDE.md`, `AGENTS.md`)에 바로 쓰지 말고 성격으로 분류한다:
 
 | 성격 | 위치 |
 |------|------|
@@ -105,7 +105,7 @@
 - 두 문서 분리 운영. Confluence에 WHY는 안 씀.
 
 ## devcontainer / oh-my-ai 작업 — 트리거
-- **oh-my-ai(dotfiles) 커밋은 개인계정(`aixion1506`)으로만 — 회사계정(shpark26/shpark-nurilab) 절대 금지.** **단축: `bash claude/scripts/omai-commit.sh "메시지" [경로...]`** (전환·add·commit·push·복귀 한 번에). 수동 시: `gh auth switch --user aixion1506` → 커밋·push → `gh auth switch --user shpark-nurilab` 복귀. (push 가드 훅이 회사계정 push를 차단함.)
+- **oh-my-ai(dotfiles) 커밋은 개인계정(`aixion1506`)으로만 — 회사계정(shpark26/shpark-nurilab) 절대 금지.** **단축: `bash scripts/omai-commit.sh "메시지" [경로...]`** (전환·add·commit·push·복귀 한 번에). 수동 시: `gh auth switch --user aixion1506` → 커밋·push → `gh auth switch --user shpark-nurilab` 복귀. (push 가드 훅이 회사계정 push를 차단함.)
 - 심링크 구조·portable 경로·setup.sh 등 **상세는 작업 전 `docs/devcontainer-workflow.md` 를 읽는다.**
 
 ## 언어

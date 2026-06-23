@@ -1,7 +1,8 @@
 ---
-description: Jira 릴리즈 버전 + 담당자 기준으로 유저 체감 릴리즈 노트를 에픽/스토리 레벨로 제품/분류/중분류 구조로 생성
-argument-hint: <fixVersion-id 또는 release-report URL> [assignee-accountId]
-allowed-tools: Bash, mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql, mcp__plugin_atlassian_atlassian__getConfluencePage, mcp__plugin_atlassian_atlassian__updateConfluencePage
+name: release-note
+description: Jira 릴리즈의 fixVersion과 담당자 기준 이슈를 조회해 에픽/스토리 수준의 사용자 체감 릴리즈 노트로 정리한다. Jira release-report URL이나 fixVersion ID를 기반으로 릴리즈 노트를 작성하거나, 결과를 Confluence 페이지에 안전하게 반영할 때 사용한다.
+metadata:
+  source: born-here
 ---
 
 # 릴리즈 노트 작성
@@ -10,10 +11,18 @@ allowed-tools: Bash, mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql, 
 
 ## 입력
 
-`$ARGUMENTS` 에서 다음을 파싱한다.
+사용자 요청에서 다음을 파싱한다.
 - **fixVersion ID**: 숫자(예: `17106`) 또는 release-report URL(`.../versions/17106/...`)에서 추출.
 - **assignee accountId**: URL의 `assignee=` 파라미터(예: `assignee=712020%3A63acd...` → URL 디코드해서 `712020:63acd...`) 또는 별도 인자.
 - 둘 중 하나라도 빠졌으면 사용자에게 물어본다.
+
+## 도구 준비
+
+사용 가능한 Jira/Confluence MCP 또는 app connector를 사용한다. 런타임마다 도구 이름이 다르므로 특정 tool ID에 의존하지 않는다.
+
+- Jira 조회 도구가 연결되지 않았으면 임의 데이터로 대체하지 말고 연결이 필요하다고 알린다.
+- Confluence 수정 도구는 사용자가 페이지 반영을 명시한 경우에만 사용한다.
+- 조회와 수정에 필요한 권한이 없으면 실패 원인을 그대로 알리고 읽기 결과만 제공한다.
 
 ## 1. Jira 조회
 
@@ -22,13 +31,13 @@ cloudId 는 `nurilab-jira.atlassian.net` 를 사용한다.
 JQL: `fixVersion = <ID> AND assignee = "<accountId>" ORDER BY issuetype, created`
 
 **토큰 절약 — 필수:**
-- fields 는 **`["summary", "issuetype"]` 만** 요청한다. (분류에 쓰는 건 key·타입·요약뿐. description·components·labels·resolution 은 페이로드만 키우고 안 쓴다.)
-- `responseContentFormat: "markdown"`, maxResults 100.
-- 그래도 결과가 크면 토큰 초과로 파일로 저장된다. **그 파일을 본문으로 읽지 말고** 곧바로 jq 로 필요한 줄만 추출한다:
+- Jira 도구가 필드 선택을 지원하면 **`summary`, `issuetype`만** 요청한다. 분류에 쓰는 것은 key·타입·요약뿐이다.
+- 페이지 크기는 최대 100으로 요청하고, 응답 형식을 선택할 수 있으면 구조화된 결과를 우선한다.
+- 결과가 파일로 저장되면 파일 전체를 본문으로 읽지 말고 실제 응답 스키마를 확인한 뒤 `jq`로 key·타입·요약만 추출한다. `issues.nodes` 형태라면:
   ```
   jq -r '.issues.nodes[] | [.key, .fields.issuetype.name, .fields.summary] | @tsv' <파일>
   ```
-- `hasNextPage: true` 면 `nextPageToken` 으로 다음 페이지도 모두 가져온다. (여러 담당자면 assignee 조건을 빼고 한 번에 받아 그룹핑하는 게 호출 수·토큰 모두 적다.)
+- 다음 페이지가 있으면 도구가 제공하는 cursor/page token으로 모두 가져온다. 여러 담당자면 assignee 조건을 빼고 한 번에 받아 그룹핑하는 편이 호출 수와 토큰을 줄인다.
 
 ## 2. 유저 체감 필터링 (자동 제외)
 

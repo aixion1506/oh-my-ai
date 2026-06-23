@@ -8,17 +8,17 @@
 
 반복되는 업무를 AI가 **감지해 제안**하고, 내가 **컨펌하면 도구로 굳힌다.** 자동으로 굴러가는 게 아니라 — **사람이 게이트하며 쌓는다.** 쓸수록 내가 진화시킨다.
 
-- **감지 + 컨펌 게이트**: 반복·수작업·실수 잦은 절차가 보이면 AI가 "이거 자동화할까?" 넛지 → **컨펌해야** 커맨드/스킬로 구조화한다 (안 누르면 안 만듦). (`claude/skills/harness-automation`, `claude/automation-backlog.md`)
+- **감지 + 컨펌 게이트**: 반복·수작업·실수 잦은 절차가 보이면 AI가 "이거 자동화할까?" 넛지 → **컨펌해야** 커맨드/스킬로 구조화한다 (안 누르면 안 만듦). (`skills/harness-automation`, `automation-backlog.md`)
 - **작업 라우팅**: 작업을 시작하면 그 도메인에 맞는 스킬·커맨드·문서가 자동으로 붙는다. (`instructions/harness.md`의 라우팅 표)
 - **경험 누적 = 내가 키우는 파생 스킬**: 외부 스킬을 베이스로 내 경험·context를 얹어 "내 스킬"로 키운다.
-- **세션이 끊겨도 이어짐**: 작업 맥락(결정·설계 배경)을 `docs/context/`에 남겨, 새 세션·다른 날에도 이어받는다. (`claude/skills/project-context`)
+- **세션이 끊겨도 이어짐**: 작업 맥락(결정·설계 배경)을 `docs/context/`에 남겨, 새 세션·다른 날에도 이어받는다. (`skills/project-context`)
 - **사용 측정 + 안전 가드**: 어떤 스킬/커맨드를 실제 쓰는지 로그로 쌓아 **안 쓰는 걸 식별·정리**한다 (`~/.claude/harness-usage.log`). 안전 규칙(개인계정 커밋)은 훅으로 강제(`claude/hooks/`).
 - **목적 위주 표현 원칙**: 커밋·일일보고·문서를 "무엇을 했나"가 아니라 "왜/무엇을 위해"로 쓴다.
-- **내가 만든 것 인덱스**: 커스텀 산출물만 모아 한눈에 → [`claude/MINE.md`](claude/MINE.md)
+- **내가 만든 것 인덱스**: 커스텀 산출물만 모아 한눈에 → [`MINE.md`](MINE.md)
 
 ### 설계 원칙 (다른 dotfiles와 다른 점)
 
-- **런타임 비속박**: 개인 규칙의 근원은 `instructions/harness.md`이고, `claude/CLAUDE.md`와 `AGENTS.md`는 AI별 adapter로 생성된다. 특정 모델·런타임에 묶이지 않는다. (모델은 성능 따라 갈아끼우고, 레이어는 유지한다.)
+- **런타임 비속박**: 개인 규칙의 근원은 `instructions/harness.md`이고, `CLAUDE.md`, `claude/CLAUDE.md`, `AGENTS.md`는 AI별 adapter로 생성된다. 특정 모델·런타임에 묶이지 않는다. (모델은 성능 따라 갈아끼우고, 레이어는 유지한다.)
 - **사람이 고삐 (human-gate)**: 회사 코드를 다루므로 AI에 전권을 주지 않는다. 도구는 제안·보조하고, **실행 결정은 사람이** 내린다.
 
 > 설계·결정·현황 전체는 [`docs/harness-design.md`](docs/harness-design.md) (단일 기준점).
@@ -53,19 +53,21 @@ instructions/
   adapters/
     claude.md            ← Claude Code용 adapter header
     codex.md             ← Codex용 adapter header
-AGENTS.md                ← Codex가 읽는 생성물 (make instructions로 재생성)
+CLAUDE.md                ← Claude가 루트에서 읽는 생성물 (make instructions로 재생성)
+AGENTS.md                ← Codex가 루트에서 읽는 생성물 (make instructions로 재생성)
+automation-backlog.md    ← 공용 자동화 후보 누적장
+MINE.md                  ← 공용 커스텀 산출물 인덱스
+skills/
+  ...                    ← 공용 스킬 원본 (harness-automation, project-context …)
 claude/
-  CLAUDE.md              ← Claude Code가 읽는 생성물 (make instructions로 재생성)
+  CLAUDE.md              ← ~/.claude/CLAUDE.md로 연결되는 Claude 생성물
   settings.json          ← 플러그인 설정 + 훅(SessionStart 주입 / 사용 측정 / 회사계정 push 가드)
-  skills/                ← 커스텀 스킬 (harness-automation, project-context …)
-  commands/              ← 커스텀 커맨드 (release-note …)
-  scripts/               ← 셸 스크립트 (omai-commit …)
   hooks/                 ← 훅 스크립트 (oh-my-ai-push-guard …)
   agents/                ← 커스텀 에이전트
-  automation-backlog.md  ← 자동화 후보 누적장 (세션 시작 시 자동 로드)
-  MINE.md                ← 내가 만든 커스텀 산출물 인덱스
 scripts/
   render-instructions.sh ← 공유 원본을 AI별 instruction 파일로 렌더링
+  omai-commit.sh         ← 개인 계정 커밋·푸시 자동화
+  cascade-check.sh       ← 공용 산출물 등록 drift 검사
 docs/
   harness-design.md      ← 하네스 설계·결정·현황 (단일 기준점)
   devcontainer-workflow.md ← oh-my-ai/심링크/계정 워크플로 상세
@@ -81,7 +83,7 @@ cd ~/Github/oh-my-ai
 make install
 ```
 
-`make install`은 `~/.claude/CLAUDE.md`와 `~/.codex/AGENTS.md`를 레포의 생성물로 심링크한다.
+`make install`은 `~/.claude/CLAUDE.md`, `~/.claude/skills`, `~/.codex/AGENTS.md`를 레포의 생성물/공용 원본으로 심링크한다.
 공유 규칙은 `instructions/harness.md`를 수정한 뒤 `make instructions`로 재생성한다. `make install`은 재생성 후 Claude/Codex instruction 심링크를 함께 잡는다.
 
 업데이트:
@@ -109,10 +111,10 @@ VS Code Settings (JSON)에 한 번만 추가:
 
 ## 스킬/커맨드/에이전트 추가
 
-실제 머신에서는 `~/.claude/skills/`에 추가하면 레포에 바로 반영됨 (심링크). 공유 instruction은 `instructions/harness.md`를 수정하고 `make instructions`를 실행한다. 커밋은 **개인계정 전환을 자동화한 단축 스크립트** 권장:
+실제 머신에서는 `~/.claude/skills/`에 추가하면 레포의 `skills/`에 바로 반영됨 (심링크). 공유 instruction은 `instructions/harness.md`를 수정하고 `make instructions`를 실행한다. 커밋은 **개인계정 전환을 자동화한 단축 스크립트** 권장:
 
 ```bash
-bash claude/scripts/omai-commit.sh "feat(skill): ..."   # 전환→add→commit→push→복귀 한 번에
+bash scripts/omai-commit.sh "feat(skill): ..."   # 전환→add→commit→push→복귀 한 번에
 ```
 
 수동으로 하려면 `gh auth switch --user aixion1506` 후 `git add/commit/push`, 끝나면 `gh auth switch --user shpark-nurilab`. (회사계정 push는 가드 훅이 차단.)

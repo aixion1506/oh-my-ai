@@ -1,8 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "mcp__plugin_atlassian_atlassian__atlassianUserInfo",
-      "Read(//home/vscode/dotfiles/claude/**)"
+      "mcp__plugin_atlassian_atlassian__atlassianUserInfo"
     ]
   },
   "hooks": {
@@ -11,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")/automation-backlog.md\" 2>/dev/null || true",
+            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")\")\"; cat \"$REPO/automation-backlog.md\" 2>/dev/null || true",
             "timeout": 5
           },
           {
@@ -40,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")/hooks/oh-my-ai-push-guard.sh\"",
+            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")\")\"; bash \"$REPO/claude/hooks/oh-my-ai-push-guard.sh\"",
             "timeout": 10
           }
         ]

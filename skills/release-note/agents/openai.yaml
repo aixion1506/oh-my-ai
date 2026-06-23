@@ -1,0 +1,4 @@
+interface:
+  display_name: "릴리즈 노트"
+  short_description: "Jira 이슈를 사용자 체감 릴리즈 노트로 정리"
+  default_prompt: "Use $release-note to create user-facing release notes from a Jira release."

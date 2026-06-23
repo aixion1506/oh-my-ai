@@ -17,10 +17,10 @@ install: instructions
 	@echo "  linked: CLAUDE.md, settings.json"
 
 	@# 디렉토리 통째로 심링크 (새 스킬/커맨드/에이전트 추가 시 자동 추적)
-	rm -rf  $(CLAUDE)/skills   && ln -sf $(REPO)/claude/skills    $(CLAUDE)/skills
-	rm -rf  $(CLAUDE)/commands && ln -sf $(REPO)/claude/commands  $(CLAUDE)/commands
+	rm -rf  $(CLAUDE)/skills   && ln -sf $(REPO)/skills           $(CLAUDE)/skills
+	@if [ -L "$(CLAUDE)/commands" ] && [ "$$(readlink "$(CLAUDE)/commands")" = "$(REPO)/claude/commands" ]; then rm "$(CLAUDE)/commands"; fi
 	rm -rf  $(CLAUDE)/agents   && ln -sf $(REPO)/claude/agents    $(CLAUDE)/agents
-	@echo "  linked: skills/, commands/, agents/"
+	@echo "  linked: skills/, agents/"
 
 	@echo "=== oh-my-ai: Codex 설정 적용 ==="
 	@if ! command -v codex >/dev/null 2>&1; then if [ -x "$(REPO)/install.sh" ]; then CODEX_NON_INTERACTIVE=1 sh "$(REPO)/install.sh" || npm install -g --prefix "$HOME/.local" @openai/codex; else npm install -g --prefix "$HOME/.local" @openai/codex; fi; fi

@@ -25,8 +25,10 @@ ln -sf "$REPO/claude/CLAUDE.md"     "$CLAUDE_DIR/CLAUDE.md"
 ln -sf "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json"
 ln -sf "$REPO/AGENTS.md"            "$CODEX_DIR/AGENTS.md"
 
-rm -rf  "$CLAUDE_DIR/skills"   && ln -sf "$REPO/claude/skills"   "$CLAUDE_DIR/skills"
-rm -rf  "$CLAUDE_DIR/commands" && ln -sf "$REPO/claude/commands" "$CLAUDE_DIR/commands"
+rm -rf  "$CLAUDE_DIR/skills"   && ln -sf "$REPO/skills"          "$CLAUDE_DIR/skills"
+if [ -L "$CLAUDE_DIR/commands" ] && [ "$(readlink "$CLAUDE_DIR/commands")" = "$REPO/claude/commands" ]; then
+    rm "$CLAUDE_DIR/commands"
+fi
 rm -rf  "$CLAUDE_DIR/agents"   && ln -sf "$REPO/claude/agents"   "$CLAUDE_DIR/agents"
 
 grep -qxF "source $REPO/devcontainer/start-pg-proxy.sh" "$HOME/.bashrc" || \

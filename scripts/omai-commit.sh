@@ -14,7 +14,7 @@ cd "$REPO"
 
 # cascade 위생 검사 (계정 전환 전에 — 실패 시 깨끗이 중단)
 if [ "${OMAI_SKIP_CASCADE:-}" != "1" ]; then
-  bash "$REPO/claude/scripts/cascade-check.sh" || exit 1
+  bash "$REPO/scripts/cascade-check.sh" || exit 1
 fi
 
 # 현재 계정 기억 → 종료 시(성공/실패 무관) 항상 복귀

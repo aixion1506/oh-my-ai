@@ -1,7 +1,7 @@
 # 하네스 설계 (harness design)
 
 개인 AI 하네스(oh-my-ai)의 설계·결정·현황 기록.
-용어는 `claude/CLAUDE.md` 의 "하네스 용어" 참조 (하네스 / 트리거↔플레이북 / cascade).
+용어는 생성된 `CLAUDE.md` 또는 `AGENTS.md` 의 "하네스 용어" 참조 (하네스 / 트리거↔플레이북 / cascade).
 성격: **개인 의사결정 기록** — WHY 중심, 고민 흔적 포함, 상태표 유지. (Confluence 공유용 아님.)
 
 ## 1. 한 줄 정의
@@ -25,11 +25,11 @@
 |------|------|------|------|
 | `CLAUDE.md` (하네스용어·표현원칙·품질기준·작업라우팅·배치규칙·자동화트리거·스킬출처) | 트리거 + 원칙(상시 규칙) | 결정적(항상 로드) | 운영 |
 | `skills/harness-automation` | toil 자동화 판단·구조화 플레이북 | 확률적(description) | 운영, **미검증** |
-| `commands/release-note` | 릴리즈노트 자동화 | 수동(`/` 호출) | 운영 |
+| `skills/release-note` | Jira 릴리즈를 사용자 체감 릴리즈 노트로 정리 | 확률적(description) + 명시적 호출 | 운영 |
 | `automation-backlog.md` + SessionStart 훅 | toil 후보 누적 + 세션 주입 | 결정적(훅) | 운영, **데이터 0** |
 | `skills/project-context` + SessionStart 훅 | 세션 간 컨텍스트 단절 해소: docs/context/ living doc 감지·주입 | 결정적(훅) + 확률적(스킬) | 운영, **미검증** |
-| `settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` | 스킬/커맨드 사용 측정 | 결정적(훅) | 운영, **데이터 수집 시작** |
-| `hooks/oh-my-ai-push-guard.sh` (PreToolUse) | 회사계정 oh-my-ai push 차단 | 결정적(훅) | 운영, 분기 검증 완료 |
+| `claude/settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` | 스킬/커맨드 사용 측정 | 결정적(훅) | 운영, **데이터 수집 시작** |
+| `claude/hooks/oh-my-ai-push-guard.sh` (PreToolUse) | 회사계정 oh-my-ai push 차단 | 결정적(훅) | 운영, 분기 검증 완료 |
 | `docs/devcontainer-workflow.md` | oh-my-ai/심링크/계정 워크플로 상세 | 레퍼런스(트리거로 강등) | 운영 |
 | `MINE.md` | 커스텀 산출물 인덱스 | 문서 | 운영 |
 | 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, 적용 1건 |

@@ -4,7 +4,7 @@
 > oh-my-ai 레포를 만지거나 `~/.claude`/`~/.codex` 연결 구조가 헷갈릴 때 읽는다. (평소 세션엔 불필요 → 항상 로드 안 함.)
 
 ## 심링크 구조 (매번 헤매던 부분)
-- **`~/.claude/`와 `~/.codex/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `~/.claude/CLAUDE.md`는 `claude/CLAUDE.md` 생성물을, `~/.codex/AGENTS.md`는 `AGENTS.md` 생성물을 가리킨다. Claude의 `settings.json`, `commands/`, `skills/` 등은 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
+- **`~/.claude/`와 `~/.codex/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `~/.claude/CLAUDE.md`는 `claude/CLAUDE.md` 생성물을, `~/.claude/skills`는 공용 `skills/` 원본을, `~/.codex/AGENTS.md`는 `AGENTS.md` 생성물을 가리킨다. Claude의 `settings.json`, `hooks/`, `agents/`는 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
 - 그래서:
   - Claude 스킬/커맨드처럼 심링크된 엔트리를 고치면 레포에 바로 반영됨.
   - 공유 instruction은 `CLAUDE.md`나 `AGENTS.md` 생성물을 직접 고치지 말고 `instructions/harness.md` 또는 `instructions/adapters/*.md`를 고친 뒤 `make instructions`를 실행한다.
@@ -17,14 +17,14 @@
 ## Portable 경로 (머신별 절대경로 하드코딩 금지)
 - 머신마다 절대경로가 다르다 (홈이 `/home/vscode`인데 심링크는 `/home/shpark/...`로 적혀 있고 양쪽이 같은 실경로로 resolve됨).
 - 그래서 **레포에 커밋되는 설정(settings.json 등)에 머신별 절대경로를 하드코딩하지 말 것.** 런타임에 풀어 쓴다:
-  `"$(dirname "$(readlink -f ~/.claude/settings.json)")"` → 레포의 `claude/` 디렉토리.
+  `"$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"` → 레포 루트.
 
 ## 커밋/푸시 — 개인 계정 전용 (안전 규칙)
 - **oh-my-ai(dotfiles) 레포는 절대 회사 계정(shpark26/shpark-nurilab)으로 커밋하지 않는다.** 항상 개인 계정(`aixion1506` / `aixion1506@gmail.com`).
 - `setup.sh`가 이 레포의 local git config(user.name/email)를 aixion1506으로 자동 설정함 (= 커밋 author는 자동으로 맞음).
 - push 권한은 개인 계정 필요. **단축 스크립트 권장:**
   ```bash
-  bash claude/scripts/omai-commit.sh "메시지" [경로...]   # 전환→add→commit→push→복귀 한 번에
+  bash scripts/omai-commit.sh "메시지" [경로...]   # 전환→add→commit→push→복귀 한 번에
   ```
   수동(동등):
   ```bash

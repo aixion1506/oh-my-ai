@@ -5,6 +5,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$REPO/instructions/harness.md"
 CLAUDE_ADAPTER="$REPO/instructions/adapters/claude.md"
 CODEX_ADAPTER="$REPO/instructions/adapters/codex.md"
+ROOT_CLAUDE_OUTPUT="$REPO/CLAUDE.md"
 CLAUDE_OUTPUT="$REPO/claude/CLAUDE.md"
 CODEX_OUTPUT="$REPO/AGENTS.md"
 
@@ -20,8 +21,10 @@ render() {
   } > "$output"
 }
 
+render "$CLAUDE_ADAPTER" "$ROOT_CLAUDE_OUTPUT"
 render "$CLAUDE_ADAPTER" "$CLAUDE_OUTPUT"
 render "$CODEX_ADAPTER" "$CODEX_OUTPUT"
 
+printf 'Rendered %s\n' "$ROOT_CLAUDE_OUTPUT"
 printf 'Rendered %s\n' "$CLAUDE_OUTPUT"
 printf 'Rendered %s\n' "$CODEX_OUTPUT"
