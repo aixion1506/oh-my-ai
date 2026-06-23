@@ -24,6 +24,7 @@
 - `settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` — 스킬/커맨드 사용 측정 (월간 prune용)
 - `hooks/oh-my-ai-push-guard.sh` (PreToolUse) — oh-my-ai 회사계정 push 차단 (soft 규칙 → hard 결정성)
 - `scripts/omai-commit.sh` — oh-my-ai 커밋·푸시 한 줄(계정 자동 전환·복귀). 반복 4단계 자동화.
+- `scripts/cascade-check.sh` — 커스텀 산출물 MINE.md 등록 검사 (omai-commit 통합, drift 방지)
 
 ## 공유 파일에 내가 넣은 편집분 (참고)
 - `CLAUDE.md` — 표현 원칙 / 반복 업무 자동화 트리거 / devcontainer 심링크 구조 명시
