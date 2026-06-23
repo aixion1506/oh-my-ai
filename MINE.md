@@ -8,6 +8,7 @@
 
 ### born-here (처음부터 내가)
 - `skills/release-note/` — Jira 릴리즈를 사용자 체감 릴리즈 노트로 자동 정리
+- `skills/worklog-note/` — 장황한 노션 업무일지를 headline 1줄+세부 압축으로 한눈에 들어오게 정리
 - `skills/harness-automation/` — 반복 업무(toil) 감지 후 자동화 판단·구조화 방법론
 - `skills/project-context/` — 세션 간 컨텍스트 단절 해소: docs/context/ living doc 생성·업데이트·핸드오프
 

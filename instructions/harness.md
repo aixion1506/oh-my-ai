@@ -53,6 +53,7 @@
 | 작업 | 붙는 것 |
 |------|---------|
 | 릴리즈 노트 작성 | `release-note` 스킬 |
+| 노션 업무일지·Todo 작성·정리 (Done/Todo/회의) | `worklog-note` 스킬 |
 | 반복 업무(toil) 감지·도구화 | `harness-automation` 스킬 (트리거는 아래 섹션) |
 | 새 도메인·서비스 작업 시작 (context 없음) | `project-context` 스킬 (CREATE 모드) |
 | 중요 설계·아키텍처 결정 내린 직후 | `project-context` 스킬 (UPDATE 모드) |
