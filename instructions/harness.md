@@ -1,15 +1,3 @@
-<!-- GENERATED FILE. Edit instructions/harness.md or instructions/adapters/*.md, then run make instructions. -->
-
-# Claude Code adapter
-
-This file is generated from the shared oh-my-ai instruction source.
-
-- Source of truth: `instructions/harness.md`
-- Regenerate with: `make instructions`
-- Do not edit `claude/CLAUDE.md` directly. Edit `instructions/harness.md` or this adapter, then regenerate.
-
----
-
 # 개인 개발 스타일
 
 ## 하네스 용어 (이 시스템의 공용어)

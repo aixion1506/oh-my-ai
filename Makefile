@@ -1,12 +1,17 @@
 REPO    := $(shell pwd)
 CLAUDE  := $(HOME)/.claude
+CODEX   := $(HOME)/.codex
 
-.PHONY: install update
+.PHONY: install update instructions
 
-install:
+instructions:
+	./scripts/render-instructions.sh
+
+install: instructions
 	@echo "=== oh-my-ai: Claude 설정 적용 ==="
 
 	@# 설정 파일 심링크
+	mkdir -p $(CLAUDE)
 	ln -sf $(REPO)/claude/CLAUDE.md     $(CLAUDE)/CLAUDE.md
 	ln -sf $(REPO)/claude/settings.json $(CLAUDE)/settings.json
 	@echo "  linked: CLAUDE.md, settings.json"
@@ -16,6 +21,11 @@ install:
 	rm -rf  $(CLAUDE)/commands && ln -sf $(REPO)/claude/commands  $(CLAUDE)/commands
 	rm -rf  $(CLAUDE)/agents   && ln -sf $(REPO)/claude/agents    $(CLAUDE)/agents
 	@echo "  linked: skills/, commands/, agents/"
+
+	@echo "=== oh-my-ai: Codex 설정 적용 ==="
+	mkdir -p $(CODEX)
+	ln -sf $(REPO)/AGENTS.md $(CODEX)/AGENTS.md
+	@echo "  linked: AGENTS.md"
 
 	@# 플러그인 설치
 	@echo "Installing plugins..."
@@ -31,7 +41,7 @@ install:
 	claude plugin install backend-api-security@claude-code-workflows
 	claude plugin install security-compliance@claude-code-workflows
 
-	@echo "=== 완료. Claude Code 재시작하면 적용됩니다 ==="
+	@echo "=== 완료. AI 도구를 재시작하면 적용됩니다 ==="
 
 update:
 	git pull

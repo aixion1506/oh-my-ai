@@ -1,13 +1,18 @@
 # devcontainer / oh-my-ai 워크플로 (상세)
 
-> CLAUDE.md의 "devcontainer / oh-my-ai 작업 — 트리거"에서 가리키는 상세 레퍼런스.
-> oh-my-ai 레포를 만지거나 ~/.claude 구조가 헷갈릴 때 읽는다. (평소 세션엔 불필요 → 항상 로드 안 함.)
+> `instructions/harness.md`의 "devcontainer / oh-my-ai 작업 — 트리거"에서 가리키는 상세 레퍼런스.
+> oh-my-ai 레포를 만지거나 `~/.claude`/`~/.codex` 연결 구조가 헷갈릴 때 읽는다. (평소 세션엔 불필요 → 항상 로드 안 함.)
 
 ## 심링크 구조 (매번 헤매던 부분)
-- **`~/.claude/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `CLAUDE.md`, `settings.json`, `commands/`, `skills/` → 각각 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
+- **`~/.claude/`와 `~/.codex/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `~/.claude/CLAUDE.md`는 `claude/CLAUDE.md` 생성물을, `~/.codex/AGENTS.md`는 `AGENTS.md` 생성물을 가리킨다. Claude의 `settings.json`, `commands/`, `skills/` 등은 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
 - 그래서:
-  - 심링크된 엔트리(위 4개)를 고치면 레포에 바로 반영됨.
-  - `~/.claude/` 최상위에 **새 파일**을 만들면 레포에 안 들어간다 — 레포(`~/Github/oh-my-ai/claude/`)에 직접 만들고, 필요하면 `commands/`·`skills/` 같은 **이미 심링크된 디렉토리 안**에 두거나 별도 심링크를 건다.
+  - Claude 스킬/커맨드처럼 심링크된 엔트리를 고치면 레포에 바로 반영됨.
+  - 공유 instruction은 `CLAUDE.md`나 `AGENTS.md` 생성물을 직접 고치지 말고 `instructions/harness.md` 또는 `instructions/adapters/*.md`를 고친 뒤 `make instructions`를 실행한다.
+  - `~/.claude/`나 `~/.codex/` 최상위에 **새 파일**을 만들면 레포에 안 들어간다 — 레포에 직접 만들고, 필요하면 별도 심링크를 건다.
+
+## Codex instruction 연결
+- `setup.sh`는 `~/.codex/AGENTS.md`를 레포의 `AGENTS.md` 생성물로 심링크한다.
+- Codex CLI 설치와 인증/세션 관리는 instruction 배포와 분리한다.
 
 ## Portable 경로 (머신별 절대경로 하드코딩 금지)
 - 머신마다 절대경로가 다르다 (홈이 `/home/vscode`인데 심링크는 `/home/shpark/...`로 적혀 있고 양쪽이 같은 실경로로 resolve됨).

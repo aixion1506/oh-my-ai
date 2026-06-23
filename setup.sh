@@ -3,12 +3,18 @@ set -e
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
+CODEX_DIR="$HOME/.codex"
 
 echo "=== oh-my-ai setup ==="
+
+"$REPO/scripts/render-instructions.sh"
+
 mkdir -p "$CLAUDE_DIR"
+mkdir -p "$CODEX_DIR"
 
 ln -sf "$REPO/claude/CLAUDE.md"     "$CLAUDE_DIR/CLAUDE.md"
 ln -sf "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json"
+ln -sf "$REPO/AGENTS.md"            "$CODEX_DIR/AGENTS.md"
 
 rm -rf  "$CLAUDE_DIR/skills"   && ln -sf "$REPO/claude/skills"   "$CLAUDE_DIR/skills"
 rm -rf  "$CLAUDE_DIR/commands" && ln -sf "$REPO/claude/commands" "$CLAUDE_DIR/commands"
