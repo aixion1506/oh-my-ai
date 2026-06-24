@@ -13,8 +13,8 @@
   └─ 트리거(CLAUDE.md, 항상 켜짐) ──매칭──> 플레이북(스킬, 필요시) ──> 산출
         (라우팅 표 / 규칙)                  (상세 절차)
 
-  무언가 만들거나 바꾸면
-  └─ cascade ──> 트리거 엔트리 + MINE.md + (README) + 플레이북  (동반 갱신)
+  커스텀 스킬을 만들거나 바꾸면
+  └─ SKILL.md metadata ──make──> 트리거 엔트리 + MINE.md + AI별 instruction  (자동 projection)
 ```
 - **트리거 = 결정적**(항상 로드되니 확실히 발동). **플레이북 = 확률적**(description 매칭).
 - 그래서 **반드시 떠야 하는 건 트리거(CLAUDE.md)/훅에, 두꺼운 절차는 플레이북에.**
@@ -31,14 +31,14 @@
 | `claude/settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` | 스킬/커맨드 사용 측정 | 결정적(훅) | 운영, **데이터 수집 시작** |
 | `claude/hooks/oh-my-ai-push-guard.sh` (PreToolUse) | 회사계정 oh-my-ai push 차단 | 결정적(훅) | 운영, 분기 검증 완료 |
 | `docs/devcontainer-workflow.md` | oh-my-ai/심링크/계정 워크플로 상세 | 레퍼런스(트리거로 강등) | 운영 |
-| `MINE.md` | 커스텀 산출물 인덱스 | 문서 | 운영 |
-| 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, 적용 1건 |
+| `MINE.md` | SKILL.md 메타데이터로 생성되는 커스텀 산출물 인덱스 | 생성물 | 운영 |
+| 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, born-here 5건 적용 |
 
 ## 4. 설계 결정 + WHY (고민 흔적)
 - **트리거=CLAUDE.md / 플레이북=스킬**: 항상 로드는 비싸고 attention 희석 → CLAUDE.md는 얇게, 상세는 on-demand 스킬.
 - **backlog + SessionStart 훅**: 세션은 매번 기억 0 → 크로스세션 toil 누적이 사각지대. 훅=읽기 보장(결정적), 쓰기는 내 규율(soft). soft를 persistent로 끌어올리는 장치.
 - **rule of three / premature vendoring 금지**: 아직 안 굳은 걸 일찍 도구화·소유하면 재작업·유지비. (역설: 하네스 자체를 한 세션에 빨리 지음 → 검증 필요.)
-- **cascade는 의존 대상만**: 모든 파일 건드리면 과잉. README는 외부 독자층이라 cascade 대상 아님.
+- **스킬 메타데이터를 단일 원본으로**: 라우팅·MINE·AI별 instruction은 `make instructions`가 자동 projection. 수동 cascade는 drift와 토큰 낭비를 만들므로 제거.
 - **명명**: 라우터/핸들러(기계적) 기각 → **트리거/플레이북**(목적 표현). **cascade > wiring** (동작 vs 상태; 원하는 건 "퍼져서 갱신"=동작).
 - **portable 경로**: settings.json 심링크를 역추적해 레포 위치 도출 → 머신/홈(`vscode`↔`shpark`) 달라도 동작. 절대경로 하드코딩 금지.
 
@@ -52,4 +52,4 @@
 - must-have를 **결정적 메커니즘(훅·스크립트·CI)** 으로 점진 이전.
 - 측정 훅 깔림 → **데이터 쌓이면 월간 리뷰로 prune·강화** (안 쓰는 스킬/커맨드 정리).
 - **#2 vendored 스킬 audit**: 승격 유지 vs 마켓플레이스로 제거 — 순차 진행.
-- **다음 도메인**: `/daily-report` (작업 라우팅 + description으로 연결).
+- **자동 projection 실사용 검증**: 다음 커스텀 스킬 추가 시 SKILL.md 한 곳만 수정해 라우팅·MINE 생성 확인.

@@ -7,7 +7,7 @@
 - **`~/.claude/`, `~/.codex/`, `~/.agents/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `~/.claude/CLAUDE.md`는 `claude/CLAUDE.md` 생성물을, `~/.claude/skills`와 Codex 공식 사용자 스킬 경로 `~/.agents/skills`는 공용 `skills/` 원본을, `~/.codex/AGENTS.md`는 `AGENTS.md` 생성물을 가리킨다. Claude의 `settings.json`, `hooks/`, `agents/`는 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
 - 그래서:
   - Claude 스킬/커맨드처럼 심링크된 엔트리를 고치면 레포에 바로 반영됨.
-  - 공유 instruction은 `CLAUDE.md`나 `AGENTS.md` 생성물을 직접 고치지 말고 `instructions/harness.md` 또는 `instructions/adapters/*.md`를 고친 뒤 `make instructions`를 실행한다.
+  - 공유 instruction과 인덱스는 생성물을 직접 고치지 말고 `instructions/harness.md`, `instructions/mine.md`, `instructions/adapters/*.md`, 또는 `SKILL.md` 메타데이터를 고친 뒤 `make instructions`를 실행한다.
   - `~/.claude/`나 `~/.codex/` 최상위에 **새 파일**을 만들면 레포에 안 들어간다 — 레포에 직접 만들고, 필요하면 별도 심링크를 건다.
 
 ## Codex instruction 연결

@@ -3,6 +3,7 @@ name: project-context
 description: Use when starting a new session on a codebase, resuming interrupted work from a previous session, after making an architectural or design decision, or before ending a session or creating a PR — to create, update, or hand off docs/context/ project context files.
 metadata:
   source: born-here
+  summary: 세션 간 설계 배경과 작업 상태를 이어주는 컨텍스트 관리
 ---
 
 # Project Context — 생성·업데이트·핸드오프

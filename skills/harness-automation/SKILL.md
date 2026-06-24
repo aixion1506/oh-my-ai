@@ -3,6 +3,7 @@ name: harness-automation
 description: Use after deciding to automate a recurring/manual task — to evaluate whether it's ripe, pick the right form (skill vs slash-command vs agent vs script), structure it, and manage its lifecycle. The detection/nudge trigger lives in CLAUDE.md; this skill is the post-confirmation structuring method.
 metadata:
   source: born-here
+  summary: 반복 업무를 감지하고 적절한 자동화 형태로 구조화
 ---
 
 # 반복 업무 자동화 — 구조화 양식
@@ -28,7 +29,7 @@ metadata:
 ## 구조화
 컨펌된 형태로 만든다. 스킬을 만들/고칠 땐 `writing-skills` 절차를 따른다. oh-my-ai 레포에 작성 후 **개인계정으로 커밋**(devcontainer 워크플로 규칙).
 
-**만든 직후 3종 연결 (이게 "만들기"의 일부 — 잊지 말 것):** CLAUDE.md의 "작업 라우팅 > 확장 규칙"을 따른다 — ① 날카로운 `description` ② CLAUDE.md 라우팅 표에 한 줄 ③ `MINE.md` 등록. 셋 다 해야 다음에 자동으로 붙는다.
+**만든 직후 단일 원본 등록:** `SKILL.md` frontmatter에 날카로운 `description`, `metadata.source`, `metadata.summary`를 작성한다. 반드시 상시 발동해야 할 때만 `metadata.route`를 추가하고 `make instructions`를 실행한다. 라우팅 표와 `MINE.md`는 직접 편집하지 않는다.
 
 ## 수명 관리
 만든 도구는 **사용 추적**. 장기 미사용이면 정리 — 죽은 스킬/커맨드는 context 비용·혼란이라 음(-)의 가치.
