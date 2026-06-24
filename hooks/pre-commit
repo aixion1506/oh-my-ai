@@ -1,0 +1,8 @@
+#!/bin/sh
+# harness source 변경 시 make instructions 자동 실행
+# 대상: instructions/harness.md, instructions/mine.md, instructions/adapters/, skills/*/SKILL.md
+if git diff --cached --name-only | grep -qE '(instructions/harness\.md|instructions/mine\.md|instructions/adapters/|skills/[^/]+/SKILL\.md)'; then
+  printf 'harness source changed → make instructions\n'
+  cd "$(git rev-parse --show-toplevel)" && make instructions
+  git add CLAUDE.md claude/CLAUDE.md AGENTS.md MINE.md
+fi

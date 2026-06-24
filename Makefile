@@ -48,6 +48,10 @@ install: instructions
 	claude plugin install backend-api-security@claude-code-workflows
 	claude plugin install security-compliance@claude-code-workflows
 
+	@# git hook 설치
+	ln -sf $(REPO)/hooks/pre-commit $(REPO)/.git/hooks/pre-commit
+	@echo "  linked: .git/hooks/pre-commit"
+
 	@echo "=== 완료. AI 도구를 재시작하면 적용됩니다 ==="
 
 update:

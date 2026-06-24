@@ -3,9 +3,16 @@ name: release-note
 description: Jira 릴리즈의 fixVersion과 담당자 기준 이슈를 조회해 에픽/스토리 수준의 사용자 체감 릴리즈 노트로 정리한다. Jira release-report URL이나 fixVersion ID를 기반으로 릴리즈 노트를 작성하거나, 결과를 Confluence 페이지에 안전하게 반영할 때 사용한다.
 metadata:
   source: born-here
+  route: 릴리즈 노트 작성
+  summary: Jira 릴리즈를 사용자 체감 릴리즈 노트로 자동 정리
 ---
 
 # 릴리즈 노트 작성
+
+> 스킬 시작 시 실행:
+> ```bash
+> printf '%s | release-note\n' "$(date +'%F %H:%M')" >> ~/.claude/harness-usage.log
+> ```
 
 너는 Jira 릴리즈의 한 담당자가 처리한 이슈를 **일반 사용자도 이해할 수 있는 릴리즈 노트**로 정리한다.
 
@@ -89,8 +96,11 @@ JQL: `fixVersion = <ID> AND assignee = "<accountId>" ORDER BY issuetype, created
 **제품(대분류)** — 실제 노출 위치 기준:
 - `SMS Scanner` — 문자 검사 엔진/서비스 동작·응답
 - `URL Scanner` — URL 검사 엔진 동작
+- `Griffin AI` — griffinsmishing-ai 스미싱 판정 AI 서비스 (모델·추론 엔진 자체 변화)
+- `NSFW AI` — nsfw-ai 이미지 분석 서비스 (모델·추론 엔진 자체 변화)
 - `Web` — 일반 사용자 웹 화면
 - `Console` — 관리/기업 콘솔(리포트·통계·블랙/화이트리스트)
+- `PrivateAPI` — Private REST API (파트너/내부 연동)
 - `API` — 외부 연동 API(KISA 등) 및 계정/프로필
 
 **분류**: `새 기능` / `기능 개선` / `버그 수정`
@@ -103,6 +113,10 @@ JQL: `fixVersion = <ID> AND assignee = "<accountId>" ORDER BY issuetype, created
 `제품 / 분류 / 세부 내용` 3컬럼. **세부 내용**은 `중분류 → 소분류(구체 설명)` 네스트 구조.
 
 마크다운 표(세부 내용 셀은 `중분류<br>　• 소분류` 형태)와, 시트 붙여넣기용 평문(들여쓰기 불릿) 둘 다 출력한다.
+
+**빈 분류 행 처리:** 버그 수정/기능 개선/새 기능 중 해당 항목이 없는 행은 **회사 양식(Confluence 고정 템플릿)이면 유지**한다 — 빈 행이 "이 분류에 업데이트 없음"을 명시하는 신호다. 자유형식 표라면 제거해도 무방.
+
+**중분류 카테고리 일관성:** 한 셀 내에서 기준을 통일한다. "스캔 요청(요청 타입별)"과 "SMS 검사 서비스(서비스별)"를 같은 셀에 섞지 않는다. 실제로 다른 변화면 임의로 병합하지 않는다.
 
 소분류 문구 규칙:
 - 일반인이 봐도 이해되게. 전문용어(tenant, DeadlineExceeded, request_infos, gRPC 등) 금지.

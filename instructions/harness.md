@@ -52,19 +52,18 @@
 
 | 작업 | 붙는 것 |
 |------|---------|
-| 릴리즈 노트 작성 | `release-note` 스킬 |
-| 노션 업무일지·Todo 작성·정리 (Done/Todo/회의) | `worklog-note` 스킬 |
-| 슬랙 일일보고 작성 (오늘 한 일 프로젝트별·진척%) | `daily-report` 스킬 |
+{{GENERATED_SKILL_ROUTES}}
 | 반복 업무(toil) 감지·도구화 | `harness-automation` 스킬 (트리거는 아래 섹션) |
 | 새 도메인·서비스 작업 시작 (context 없음) | `project-context` 스킬 (CREATE 모드) |
 | 중요 설계·아키텍처 결정 내린 직후 | `project-context` 스킬 (UPDATE 모드) |
 | 세션 종료 / PR 생성 전 | `project-context` 스킬 (HANDOFF 모드) |
 
-**확장 규칙 — 새 작업영역을 만들 때 항상 이 3종을 연결한다 (이게 "타타탁"의 정체):**
-1. 스킬/커맨드에 **날카로운 `description`("Use when…")** — 작업과 매칭돼 자동 발동시키는 핵심
-2. 위 **라우팅 표에 한 줄** 추가 — 항상 로드되는 공유 instruction 원본이라 확실하게 연결됨
-3. **`MINE.md`에 등록**
-→ 반드시 떠야 하면 1·2(공유 instruction 원본=결정적)에, 떠주면 좋은 깊은 내용은 스킬 description(확률적)에. 이 3개를 안 하면 "만들기"가 끝난 게 아니다.
+**확장 규칙 — 커스텀 스킬의 단일 원본은 `SKILL.md`다:**
+1. frontmatter `description`을 날카롭게 쓴다 — 작업과 매칭돼 자동 발동시키는 핵심
+2. `metadata.source`와 `metadata.summary`를 쓴다 — `MINE.md` 등록 원본
+3. 반드시 상시 라우팅할 스킬만 `metadata.route`를 쓴다 — 위 표의 생성 원본
+4. `make instructions`를 실행한다 — 라우팅 표·`MINE.md`·AI별 instruction을 한 번에 생성
+→ 기본은 description 기반 확률적 발견이다. 반드시 떠야 하는 작업만 `route`로 상시 토큰을 사용한다.
 
 ## 배치 규칙 (새 지시·기능은 성격대로 — root 비대화 방지)
 새로 추가할 땐 생성물(`CLAUDE.md`, `claude/CLAUDE.md`, `AGENTS.md`)에 바로 쓰지 말고 성격으로 분류한다:
@@ -86,6 +85,13 @@
   - `source: born-here` — 처음부터 내가 만든 것
   - `source: <origin>` — 외부 베이스 (예: `planetscale/postgres`). 재동기화·출처표시용.
 - 외부를 승격하거나 새로 만들면 `MINE.md` 에도 등록한다.
+
+## 스킬 사용 로그 — 원칙
+PostToolUse 훅이 `Skill` 도구 호출만 잡는다. 라우트 트리거로 스킬을 암묵적으로 따르거나 Skill 도구를 호출하지 않고 스킬 내용을 실행할 때는 누락된다. 이를 보완하기 위해 **스킬에 해당하는 작업을 시작하는 시점에 직접 기록**한다:
+```bash
+printf '%s | <skill-name>\n' "$(date +'%F %H:%M')" >> ~/.claude/harness-usage.log
+```
+훅이 이미 잡았으면 중복 기록해도 무방하다.
 
 ## 프로젝트 컨텍스트 — 트리거
 - 세션 시작 시 `[HARNESS:context]` 메시지가 보이면: 목록에서 현재 작업(브랜치·Jira·도메인)과 관련된 파일을 **먼저 Read**한다.
