@@ -4,14 +4,15 @@
 > oh-my-ai 레포를 만지거나 `~/.claude`/`~/.codex` 연결 구조가 헷갈릴 때 읽는다. (평소 세션엔 불필요 → 항상 로드 안 함.)
 
 ## 심링크 구조 (매번 헤매던 부분)
-- **`~/.claude/`와 `~/.codex/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `~/.claude/CLAUDE.md`는 `claude/CLAUDE.md` 생성물을, `~/.claude/skills`는 공용 `skills/` 원본을, `~/.codex/AGENTS.md`는 `AGENTS.md` 생성물을 가리킨다. Claude의 `settings.json`, `hooks/`, `agents/`는 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
+- **`~/.claude/`, `~/.codex/`, `~/.agents/` 자체는 진짜 디렉토리다.** "심링크"는 그 안의 **개별 엔트리**에만 걸려 있다: `~/.claude/CLAUDE.md`는 `claude/CLAUDE.md` 생성물을, `~/.claude/skills`와 Codex 공식 사용자 스킬 경로 `~/.agents/skills`는 공용 `skills/` 원본을, `~/.codex/AGENTS.md`는 `AGENTS.md` 생성물을 가리킨다. Claude의 `settings.json`, `hooks/`, `agents/`는 dotfiles 레포 **`~/Github/oh-my-ai/claude/`** 의 동명 파일/디렉토리를 가리킨다. (레포 경로는 `~/oh-my-ai`가 아니라 **`~/Github/oh-my-ai`**.)
 - 그래서:
   - Claude 스킬/커맨드처럼 심링크된 엔트리를 고치면 레포에 바로 반영됨.
   - 공유 instruction은 `CLAUDE.md`나 `AGENTS.md` 생성물을 직접 고치지 말고 `instructions/harness.md` 또는 `instructions/adapters/*.md`를 고친 뒤 `make instructions`를 실행한다.
   - `~/.claude/`나 `~/.codex/` 최상위에 **새 파일**을 만들면 레포에 안 들어간다 — 레포에 직접 만들고, 필요하면 별도 심링크를 건다.
 
 ## Codex instruction 연결
-- `setup.sh`는 `~/.codex/AGENTS.md`를 레포의 `AGENTS.md` 생성물로 심링크한다.
+- `setup.sh`는 `~/.codex/AGENTS.md`를 레포의 `AGENTS.md` 생성물로, `~/.agents/skills`를 공용 `skills/` 원본으로 심링크한다.
+- 기존 `~/.agents/skills`가 실제 디렉터리면 `~/.agents/skills.pre-oh-my-ai`로 한 번 백업한 뒤 공용 원본을 연결한다.
 - Codex CLI 설치와 인증/세션 관리는 instruction 배포와 분리한다.
 
 ## Portable 경로 (머신별 절대경로 하드코딩 금지)

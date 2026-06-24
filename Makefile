@@ -1,6 +1,7 @@
 REPO    := $(shell pwd)
 CLAUDE  := $(HOME)/.claude
 CODEX   := $(HOME)/.codex
+AGENT_HOME := $(HOME)/.agents
 
 .PHONY: install update instructions
 
@@ -24,9 +25,14 @@ install: instructions
 
 	@echo "=== oh-my-ai: Codex 설정 적용 ==="
 	@if ! command -v codex >/dev/null 2>&1; then if [ -x "$(REPO)/install.sh" ]; then CODEX_NON_INTERACTIVE=1 sh "$(REPO)/install.sh" || npm install -g --prefix "$HOME/.local" @openai/codex; else npm install -g --prefix "$HOME/.local" @openai/codex; fi; fi
-	mkdir -p $(CODEX)
+	mkdir -p $(CODEX) $(AGENT_HOME)
 	ln -sf $(REPO)/AGENTS.md $(CODEX)/AGENTS.md
-	@echo "  linked: AGENTS.md"
+	@if [ -d "$(AGENT_HOME)/skills" ] && [ ! -L "$(AGENT_HOME)/skills" ]; then \
+		if [ -e "$(AGENT_HOME)/skills.pre-oh-my-ai" ]; then echo "backup exists: $(AGENT_HOME)/skills.pre-oh-my-ai" >&2; exit 1; fi; \
+		mv "$(AGENT_HOME)/skills" "$(AGENT_HOME)/skills.pre-oh-my-ai"; \
+	fi
+	rm -f $(AGENT_HOME)/skills && ln -sf $(REPO)/skills $(AGENT_HOME)/skills
+	@echo "  linked: AGENTS.md, skills/"
 
 	@# 플러그인 설치
 	@echo "Installing plugins..."

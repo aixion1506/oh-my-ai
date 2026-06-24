@@ -83,7 +83,8 @@ cd ~/Github/oh-my-ai
 make install
 ```
 
-`make install`은 `~/.claude/CLAUDE.md`, `~/.claude/skills`, `~/.codex/AGENTS.md`를 레포의 생성물/공용 원본으로 심링크한다.
+`make install`은 `~/.claude/CLAUDE.md`, `~/.claude/skills`, `~/.codex/AGENTS.md`, `~/.agents/skills`를 레포의 생성물/공용 원본으로 심링크한다.
+기존 `~/.agents/skills`가 실제 디렉터리면 최초 적용 시 `~/.agents/skills.pre-oh-my-ai`로 보존한 뒤 링크한다.
 공유 규칙은 `instructions/harness.md`를 수정한 뒤 `make instructions`로 재생성한다. `make install`은 재생성 후 Claude/Codex instruction 심링크를 함께 잡는다.
 
 업데이트:
@@ -101,7 +102,7 @@ VS Code Settings (JSON)에 한 번만 추가:
 "dotfiles.installCommand": "setup.sh"
 ```
 
-이후 새 devcontainer 뜰 때마다 VS Code가 자동으로 레포 clone + `setup.sh` 실행. `~/.claude/CLAUDE.md`와 `~/.codex/AGENTS.md`까지 연결한다.
+이후 새 devcontainer 뜰 때마다 VS Code가 자동으로 레포 clone + `setup.sh` 실행. `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.agents/skills`까지 연결한다.
 
 ### devcontainer (심링크 방식)
 
@@ -111,7 +112,7 @@ VS Code Settings (JSON)에 한 번만 추가:
 
 ## 스킬/커맨드/에이전트 추가
 
-실제 머신에서는 `~/.claude/skills/`에 추가하면 레포의 `skills/`에 바로 반영됨 (심링크). 공유 instruction은 `instructions/harness.md`를 수정하고 `make instructions`를 실행한다. 커밋은 **개인계정 전환을 자동화한 단축 스크립트** 권장:
+`~/.claude/skills`와 `~/.agents/skills`는 모두 레포의 `skills/`를 가리킨다. 어느 런타임에서 수정해도 공용 원본에 바로 반영된다. 공유 instruction은 `instructions/harness.md`를 수정하고 `make instructions`를 실행한다. 커밋은 **개인계정 전환을 자동화한 단축 스크립트** 권장:
 
 ```bash
 bash scripts/omai-commit.sh "feat(skill): ..."   # 전환→add→commit→push→복귀 한 번에

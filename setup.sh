@@ -4,6 +4,7 @@ set -e
 REPO="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 CODEX_DIR="$HOME/.codex"
+AGENT_DIR="$HOME/.agents"
 
 echo "=== oh-my-ai setup ==="
 
@@ -11,6 +12,7 @@ echo "=== oh-my-ai setup ==="
 
 mkdir -p "$CLAUDE_DIR"
 mkdir -p "$CODEX_DIR"
+mkdir -p "$AGENT_DIR"
 
 # devcontainer에는 codex CLI가 없을 수 있으므로 dotfiles 적용 시 같이 설치한다.
 if ! command -v codex >/dev/null 2>&1; then
@@ -24,6 +26,14 @@ fi
 ln -sf "$REPO/claude/CLAUDE.md"     "$CLAUDE_DIR/CLAUDE.md"
 ln -sf "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json"
 ln -sf "$REPO/AGENTS.md"            "$CODEX_DIR/AGENTS.md"
+if [ -d "$AGENT_DIR/skills" ] && [ ! -L "$AGENT_DIR/skills" ]; then
+    if [ -e "$AGENT_DIR/skills.pre-oh-my-ai" ]; then
+        echo "backup exists: $AGENT_DIR/skills.pre-oh-my-ai" >&2
+        exit 1
+    fi
+    mv "$AGENT_DIR/skills" "$AGENT_DIR/skills.pre-oh-my-ai"
+fi
+rm -f "$AGENT_DIR/skills" && ln -sf "$REPO/skills" "$AGENT_DIR/skills"
 
 rm -rf  "$CLAUDE_DIR/skills"   && ln -sf "$REPO/skills"          "$CLAUDE_DIR/skills"
 if [ -L "$CLAUDE_DIR/commands" ] && [ "$(readlink "$CLAUDE_DIR/commands")" = "$REPO/claude/commands" ]; then
