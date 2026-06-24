@@ -1,0 +1,4 @@
+interface:
+  display_name: "Execution Recovery"
+  short_description: "도구·권한·샌드박스 실패의 재시도 폭주를 차단"
+  default_prompt: "Use $execution-recovery to recover from a repeated tool or infrastructure failure without wasting tokens."

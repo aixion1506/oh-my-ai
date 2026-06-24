@@ -8,5 +8,6 @@
 <!-- 예시: - [YYYY-MM-DD] 무엇이 toil인가 — 본 횟수 N — 후보 형태 -->
 
 ## 완료 / 폐기
+- [2026-06-24] 동일 인프라 오류 재시도·토큰 폭주 → execution-recovery circuit breaker + incident 기록 (DONE)
 - [2026-06-22] oh-my-ai 커밋 계정전환 4단계 수동 → `scripts/omai-commit.sh` (DONE)
 - [2026-06-19] 릴리즈 노트 작성 → `/release-note` 커맨드 (DONE)

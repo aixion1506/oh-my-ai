@@ -10,6 +10,7 @@
 
 ### born-here (처음부터 내가)
 - `skills/daily-report/` — 오늘 한 일을 프로젝트별 진척률과 함께 취합·정리
+- `skills/execution-recovery/` — 도구·권한·샌드박스 장애의 재시도 폭주를 차단하고 안전하게 대피
 - `skills/harness-automation/` — 반복 업무를 감지하고 적절한 자동화 형태로 구조화
 - `skills/project-context/` — 세션 간 설계 배경과 작업 상태를 이어주는 컨텍스트 관리
 - `skills/release-note/` — Jira 릴리즈를 사용자 체감 릴리즈 노트로 자동 정리
@@ -23,6 +24,7 @@
 - `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
 - `claude/settings.json` SessionStart 훅 #2 — 현재 디렉토리의 docs/context/ 파일 목록 자동 주입
 - `docs/harness-design.md` — 하네스 설계·결정·현황 기록 (WHY 중심, 상태표)
+- `docs/incidents/2026-06-24-bwrap-retry-loop.md` — 편집 도구 장애의 재시도·토큰 폭주 incident와 방지 규칙
 - `docs/devcontainer-workflow.md` — oh-my-ai/심링크/계정 워크플로 상세 (CLAUDE.md에서 강등)
 - `claude/settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` — 스킬/커맨드 사용 측정 (월간 prune용)
 - `claude/hooks/oh-my-ai-push-guard.sh` (PreToolUse) — oh-my-ai 회사계정 push 차단 (soft 규칙 → hard 결정성)

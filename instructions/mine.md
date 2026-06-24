@@ -17,6 +17,7 @@
 - `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
 - `claude/settings.json` SessionStart 훅 #2 — 현재 디렉토리의 docs/context/ 파일 목록 자동 주입
 - `docs/harness-design.md` — 하네스 설계·결정·현황 기록 (WHY 중심, 상태표)
+- `docs/incidents/2026-06-24-bwrap-retry-loop.md` — 편집 도구 장애의 재시도·토큰 폭주 incident와 방지 규칙
 - `docs/devcontainer-workflow.md` — oh-my-ai/심링크/계정 워크플로 상세 (CLAUDE.md에서 강등)
 - `claude/settings.json` PostToolUse 훅 + `~/.claude/harness-usage.log` — 스킬/커맨드 사용 측정 (월간 prune용)
 - `claude/hooks/oh-my-ai-push-guard.sh` (PreToolUse) — oh-my-ai 회사계정 push 차단 (soft 규칙 → hard 결정성)

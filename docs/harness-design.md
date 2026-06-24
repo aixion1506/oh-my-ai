@@ -25,6 +25,7 @@
 |------|------|------|------|
 | `CLAUDE.md` (하네스용어·표현원칙·품질기준·작업라우팅·배치규칙·자동화트리거·스킬출처) | 트리거 + 원칙(상시 규칙) | 결정적(항상 로드) | 운영 |
 | `skills/harness-automation` | toil 자동화 판단·구조화 플레이북 | 확률적(description) | 운영, **미검증** |
+| `skills/execution-recovery` | 도구 장애 재시도 폭주 차단·대피 플레이북 | 상시 트리거 + 스킬 | 운영, 실사용 검증 대기 |
 | `skills/release-note` | Jira 릴리즈를 사용자 체감 릴리즈 노트로 정리 | 확률적(description) + 명시적 호출 | 운영 |
 | `automation-backlog.md` + SessionStart 훅 | toil 후보 누적 + 세션 주입 | 결정적(훅) | 운영, **데이터 0** |
 | `skills/project-context` + SessionStart 훅 | 세션 간 컨텍스트 단절 해소: docs/context/ living doc 감지·주입 | 결정적(훅) + 확률적(스킬) | 운영, **미검증** |
@@ -39,6 +40,7 @@
 - **backlog + SessionStart 훅**: 세션은 매번 기억 0 → 크로스세션 toil 누적이 사각지대. 훅=읽기 보장(결정적), 쓰기는 내 규율(soft). soft를 persistent로 끌어올리는 장치.
 - **rule of three / premature vendoring 금지**: 아직 안 굳은 걸 일찍 도구화·소유하면 재작업·유지비. (역설: 하네스 자체를 한 세션에 빨리 지음 → 검증 필요.)
 - **스킬 메타데이터를 단일 원본으로**: 라우팅·MINE·AI별 instruction은 `make instructions`가 자동 projection. 수동 cascade는 drift와 토큰 낭비를 만들므로 제거.
+- **실행 장애 circuit breaker**: 동일 실패는 최대 1회, 결정적 인프라 오류는 재시도 0회. 대피·승인을 각각 1회로 제한한다.
 - **명명**: 라우터/핸들러(기계적) 기각 → **트리거/플레이북**(목적 표현). **cascade > wiring** (동작 vs 상태; 원하는 건 "퍼져서 갱신"=동작).
 - **portable 경로**: settings.json 심링크를 역추적해 레포 위치 도출 → 머신/홈(`vscode`↔`shpark`) 달라도 동작. 절대경로 하드코딩 금지.
 
