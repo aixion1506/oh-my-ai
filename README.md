@@ -1,12 +1,16 @@
 # oh-my-ai
 
-개인 AI 도구 설정·맥락을 git으로 관리하는 레포.
+개인용 **AI Agent Control Plane / Orchestration Harness**.
 
-> 단순 설정 백업이 아니다. **Claude Code나 Codex 같은 AI 런타임을 내 워크플로에 맞춰 길들이는 개인 하네스 레이어**다. 도구의 유용함은 쓰되, **진화의 방향은 사람이 잡는다.**
+> 단순 설정 백업이 아니다. **Claude Code, Codex, OpenClone 같은 AI 런타임을 내 워크플로에 맞춰 느슨하게 연결하는 개인 하네스 레이어**다. 도구의 유용함은 쓰되, **진화의 방향은 사람이 잡는다.**
 
 ## 뭐가 특별한가 (하네스 레이어)
 
 반복되는 업무를 AI가 **감지해 제안**하고, 내가 **컨펌하면 도구로 굳힌다.** 자동으로 굴러가는 게 아니라 — **사람이 게이트하며 쌓는다.** 쓸수록 내가 진화시킨다.
+
+oh-my-ai는 하나의 AI agent가 아니라, 여러 런타임과 도구를 붙였다 떼는 **control plane / orchestration harness**다. 원칙·컨텍스트·스킬·안전 정책·작업 라우팅은 oh-my-ai에 남기고, Claude Code/Codex/OpenClone 같은 실행 표면은 adapter로 연결한다.
+
+Jikji, Superpowers, MCP, `rg`/`find`, `rsync` 같은 외부 도구도 필요하면 optional backend/adapter로 붙일 수 있다. 좋은 도구가 나오면 모듈처럼 붙이고, 마음에 안 들면 교체한다. 특정 모델·런타임·도구가 아니라 **개인 워크플로 레이어**가 본체다.
 
 - **감지 + 컨펌 게이트**: 반복·수작업·실수 잦은 절차가 보이면 AI가 "이거 자동화할까?" 넛지 → **컨펌해야** 커맨드/스킬로 구조화한다 (안 누르면 안 만듦). (`skills/harness-automation`, `automation-backlog.md`)
 - **작업 라우팅**: 작업을 시작하면 그 도메인에 맞는 스킬·커맨드·문서가 자동으로 붙는다. (`instructions/harness.md`의 라우팅 표)
@@ -18,8 +22,18 @@
 
 ### 설계 원칙 (다른 dotfiles와 다른 점)
 
-- **런타임 비속박**: 개인 규칙의 근원은 `instructions/harness.md`이고, `CLAUDE.md`, `claude/CLAUDE.md`, `AGENTS.md`는 AI별 adapter로 생성된다. 특정 모델·런타임에 묶이지 않는다. (모델은 성능 따라 갈아끼우고, 레이어는 유지한다.)
+- **런타임 비속박**: 개인 규칙의 근원은 `instructions/harness.md`이고, `CLAUDE.md`, `claude/CLAUDE.md`, `AGENTS.md`는 AI별 adapter로 생성된다. 특정 모델·런타임·도구에 묶이지 않는다. Claude Code/Codex/OpenClone 같은 런타임과 Jikji/Superpowers/MCP/`rg`/`find`/`rsync` 같은 도구는 backend/adapter로 느슨하게 붙이고, 성능·취향·안전 기준에 따라 갈아끼운다. 레이어는 유지한다.
 - **사람이 고삐 (human-gate)**: 회사 코드를 다루므로 AI에 전권을 주지 않는다. 도구는 제안·보조하고, **실행 결정은 사람이** 내린다.
+
+개념 구조:
+
+```text
+oh-my-ai (Personal AI Agent Control Plane / Orchestration Harness)
+├─ source of truth: instructions / context docs / skills / safety policy / routing
+├─ implemented adapters: Claude Code, Codex
+├─ implemented tools: hooks, harness-event, rg/find-based local inspection
+└─ optional backend candidates: Jikji, Superpowers, MCP, rsync, other agent runtimes
+```
 
 > 설계·결정·현황 전체는 [`docs/harness-design.md`](docs/harness-design.md) (단일 기준점).
 
