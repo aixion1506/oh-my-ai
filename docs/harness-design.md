@@ -65,3 +65,5 @@
 | **settings.json wiring 체크** | 훅 만들고 연결 빼먹는 일 실제로 생기면 | 훅 파일 존재 ↔ settings.json 참조 대조 |
 | **golden prompts** (회귀 감지) | 큰 하네스 변경 후 | 수동 eyeball (prompt 하네스는 자동 pass/fail 불가). revert는 복구일 뿐 |
 | **자동 projection 실사용 검증** | 다음 커스텀 스킬 추가 시 | SKILL.md 한 곳만 수정 → 라우팅·MINE 자동 생성 확인 |
+| **측정 emitter 가시화** | /insights 쓰기 전 또는 노트북에서도 로그 0이면 | `make install`이 `harness-event`를 링크하는지 확인. 훅 `; true`가 silent-fail → `make doctor` 류 health check로 가시화 (fail-closed 아님 — 텔레메트리가 작업 막으면 안 됨) |
+| **팀 테스트 스택** (bats + CI + install-smoke) | **팀 단위 도입 시** | git 훅은 팀에서 enforcement 안 됨(.git/ 비공유·`--no-verify`) → CI로 이전. PR CI에 blocking 스크립트 테스트 + drift 가드(`make instructions && git diff --exit-code`) + install smoke. solo면 premature |
