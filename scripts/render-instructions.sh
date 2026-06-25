@@ -87,6 +87,15 @@ expand_template() {
   done < "$template"
 }
 
+trim_trailing_blank_lines() {
+  trim_input="$1"
+  trim_output="$2"
+  awk '
+    NF { while (blank > 0) { print ""; blank-- } print; next }
+    { blank++ }
+  ' "$trim_input" > "$trim_output"
+}
+
 render() {
   adapter="$1"
   output="$2"
@@ -97,7 +106,8 @@ render() {
     printf '\n---\n\n'
     expand_template "$SOURCE"
   } > "$temp_output"
-  mv "$temp_output" "$output"
+  trim_trailing_blank_lines "$temp_output" "$temp_output.trimmed"
+  mv "$temp_output.trimmed" "$output"
 }
 
 render "$CLAUDE_ADAPTER" "$ROOT_CLAUDE_OUTPUT"
@@ -109,7 +119,8 @@ MINE_TEMP="$TMP_DIR/MINE.md.rendered"
   printf '%s\n\n' '<!-- GENERATED FILE. Edit instructions/mine.md or skills/*/SKILL.md metadata, then run make instructions. -->'
   expand_template "$MINE_SOURCE"
 } > "$MINE_TEMP"
-mv "$MINE_TEMP" "$MINE_OUTPUT"
+trim_trailing_blank_lines "$MINE_TEMP" "$MINE_TEMP.trimmed"
+mv "$MINE_TEMP.trimmed" "$MINE_OUTPUT"
 
 printf 'Rendered %s\n' "$ROOT_CLAUDE_OUTPUT"
 printf 'Rendered %s\n' "$CLAUDE_OUTPUT"

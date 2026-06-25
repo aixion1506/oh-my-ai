@@ -21,13 +21,13 @@ metadata:
 ## 형태 선택 — 하나만 추천 (survey 금지)
 | 형태 | 언제 |
 |------|------|
-| 슬래시 커맨드 | 메인 세션에서 내가 실행하는 다단계 워크플로 (조회→가공→출력) |
+| 슬래시 커맨드 | 메인 세션에서 사용자가 실행하는 다단계 워크플로 (조회→가공→출력) |
 | 에이전트 | 독립 위임해 결과만 받는 작업, 병렬화 이득 있을 때 |
 | 스킬 | 특정 도메인 지식·판단 패턴을 반복 적용 (절차/규율) |
 | 셸 스크립트·alias | 판단 불필요한 결정적 명령 시퀀스 |
 
 ## 구조화
-컨펌된 형태로 만든다. 스킬을 만들/고칠 땐 `writing-skills` 절차를 따른다. oh-my-ai 레포에 작성 후 **개인계정으로 커밋**(devcontainer 워크플로 규칙).
+컨펌된 형태로 만든다. 스킬을 만들/고칠 땐 `writing-skills` 절차를 따른다. oh-my-ai 레포에 작성 후 커밋·푸시 전 현재 `remote`, `branch`, `author`, GitHub 인증 계정을 확인한다.
 
 **만든 직후 단일 원본 등록:** `SKILL.md` frontmatter에 날카로운 `description`, `metadata.source`, `metadata.summary`를 작성한다. 반드시 상시 발동해야 할 때만 `metadata.route`를 추가하고 `make instructions`를 실행한다. 라우팅 표와 `MINE.md`는 직접 편집하지 않는다.
 
