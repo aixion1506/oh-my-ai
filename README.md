@@ -196,6 +196,18 @@ VS Code Settings (JSON)에 한 번만 추가:
 
 → [docs/devcontainer-symlink.md](docs/devcontainer-symlink.md)
 
+## Optional workflow skills
+
+일부 born-here 스킬은 shared core가 아니라 특정 업무 도구를 쓰는 사용자를 위한 optional workflow다. 기본 라우팅에는 노출하지 않고, 필요한 사용자가 스킬 이름으로 직접 호출한다.
+
+| Skill | 필요한 context | 용도 |
+|------|----------------|------|
+| `daily-report` | Slack daily report, optional Notion worklog/Todo | 오늘 한 일을 프로젝트별 진척률과 함께 일일보고로 정리 |
+| `worklog-note` | Notion or similar worklog/Todo workspace | 장황한 업무일지·Todo·회의 메모를 스캔 가능하게 정리 |
+| `release-note` | Jira fixVersion/release-report, optional Confluence page | Jira 릴리즈 이슈를 사용자 체감 릴리즈 노트로 정리 |
+
+이 스킬들은 삭제하지 않는다. Slack/Notion/Jira/Confluence를 쓰지 않는 사용자에게 기본값처럼 보이지 않도록 `metadata.route`만 제거한다.
+
 ## 스킬/커맨드/에이전트 추가
 
 커스텀 스킬은 `SKILL.md` frontmatter에 `source`, `summary`, 필요시 `route`를 한 번만 작성한다. `make instructions`가 라우팅 표와 `MINE.md`를 생성한다.
