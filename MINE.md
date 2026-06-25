@@ -12,6 +12,7 @@
 - `skills/daily-report/` — 오늘 한 일을 프로젝트별 진척률과 함께 취합·정리
 - `skills/execution-recovery/` — 도구·권한·샌드박스 장애의 재시도 폭주를 차단하고 안전하게 대피
 - `skills/harness-automation/` — 반복 업무를 감지하고 적절한 자동화 형태로 구조화
+- `skills/local-search/` — rg/find와 Jikji의 역할을 분리하는 로컬 파일·문서 탐색 플레이북
 - `skills/project-context/` — 세션 간 설계 배경과 작업 상태를 이어주는 컨텍스트 관리
 - `skills/release-note/` — Jira 릴리즈를 사용자 체감 릴리즈 노트로 자동 정리
 - `skills/worklog-note/` — 장황한 노션 업무일지를 한눈에 들어오도록 정리

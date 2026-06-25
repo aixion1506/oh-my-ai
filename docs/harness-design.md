@@ -60,7 +60,7 @@
 | **vendored 스킬 audit** | 외부 스킬(golang·kotlin 등)이 실제 거슬릴 때 | 승격 유지 vs 마켓플레이스로 제거 |
 | **must-have 결정적화** | 점진적 (안전·핵심 규칙부터) | soft 규칙 → 훅/스크립트/CI로 이전 |
 | **verdict 캡처** | "품질 판단 기록 필요" 느낄 때 | 품질은 사람이 느낌 — 정량 신호 아님(그래서 측정과 분리) |
-| **FTS5 검색** | `docs/context/` 파일 수십 개 넘으면 | living doc 전문 검색 |
+| **로컬 검색 하네스** | 자연어 단서 기반 파일·문서 탐색에서 raw `rg`/`find` 반복이 3회 이상 보이면 | Jikji는 외부 CLI 기반 optional backend 후보로만 검증한다. `docs/context/` 전용 FTS5는 하위 후보로 유지한다. 코드 심볼·정확 문자열·정규식·config key 검색은 `rg` 우선, 자연어 단서 기반 문서/파일 discovery는 Jikji 우선 검토. Markdown/docs/files가 source of truth이고, SQLite/FTS5/`.jikji/`/`.jikji_agent_map.md`/`.jikji/doc_text/`는 Git·rsync 대상이 아닌 재생성 가능한 검색 index/cache/read model이다. |
 | **universal cascade** (git pre-commit) | 생 `git commit`으로 drift 한 번 새면 | 현재는 omai-commit 경로만 강제. judgment(배치)는 훅 불가 |
 | **settings.json wiring 체크** | 훅 만들고 연결 빼먹는 일 실제로 생기면 | 훅 파일 존재 ↔ settings.json 참조 대조 |
 | **golden prompts** (회귀 감지) | 큰 하네스 변경 후 | 수동 eyeball (prompt 하네스는 자동 pass/fail 불가). revert는 복구일 뿐 |
