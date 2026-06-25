@@ -50,9 +50,18 @@
 2. **실사용 검증 0.** 한 세션에 많이 지음 → 한 달 써봐야 살아남는지/죽은 config인지 판별 가능.
 3. **Codex SkillStart는 soft.** native Skill 이벤트가 없어 AGENTS 규칙의 명시 emit에 의존한다. 누락률을 본 뒤 wrapper/MCP 승격 여부를 판단한다.
 
-## 6. 다음 단계
-- (당장 더 짓기 X) **실사용으로 검증·prune** 먼저. 멈추고 한동안 써보는 게 맞다.
-- must-have를 **결정적 메커니즘(훅·스크립트·CI)** 으로 점진 이전.
-- 측정 훅 깔림 → **데이터 쌓이면 월간 리뷰로 prune·강화** (안 쓰는 스킬/커맨드 정리).
-- **#2 vendored 스킬 audit**: 승격 유지 vs 마켓플레이스로 제거 — 순차 진행.
-- **자동 projection 실사용 검증**: 다음 커스텀 스킬 추가 시 SKILL.md 한 곳만 수정해 라우팅·MINE 생성 확인.
+## 6. 다음 단계 (전부 usage-gated — 트리거 전엔 premature)
+> 원칙: 당장 더 짓지 말고 **실사용으로 검증·prune 먼저.** 아래는 각 항목을 "언제" 착수할지.
+
+| 항목 | 트리거 (언제 착수) | 메모 (디테일·주의) |
+|------|-------------------|-------------------|
+| **/insights** (죽은 스킬 탐지) | usage 로그 데이터 쌓이면 | report-only(자동삭제 X). `실패횟수` 플래그는 현재 로그에 에러필드 없어 제외 |
+| **월간 prune·강화** | 데이터 쌓인 뒤 월 1회 | `harness-usage.log` `uniq -c` → 안 쓰는 스킬 정리, 자주 쓰는 건 강화 |
+| **vendored 스킬 audit** | 외부 스킬(golang·kotlin 등)이 실제 거슬릴 때 | 승격 유지 vs 마켓플레이스로 제거 |
+| **must-have 결정적화** | 점진적 (안전·핵심 규칙부터) | soft 규칙 → 훅/스크립트/CI로 이전 |
+| **verdict 캡처** | "품질 판단 기록 필요" 느낄 때 | 품질은 사람이 느낌 — 정량 신호 아님(그래서 측정과 분리) |
+| **FTS5 검색** | `docs/context/` 파일 수십 개 넘으면 | living doc 전문 검색 |
+| **universal cascade** (git pre-commit) | 생 `git commit`으로 drift 한 번 새면 | 현재는 omai-commit 경로만 강제. judgment(배치)는 훅 불가 |
+| **settings.json wiring 체크** | 훅 만들고 연결 빼먹는 일 실제로 생기면 | 훅 파일 존재 ↔ settings.json 참조 대조 |
+| **golden prompts** (회귀 감지) | 큰 하네스 변경 후 | 수동 eyeball (prompt 하네스는 자동 pass/fail 불가). revert는 복구일 뿐 |
+| **자동 projection 실사용 검증** | 다음 커스텀 스킬 추가 시 | SKILL.md 한 곳만 수정 → 라우팅·MINE 자동 생성 확인 |
