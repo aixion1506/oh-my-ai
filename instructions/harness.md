@@ -87,11 +87,13 @@
 - 외부를 승격하거나 새로 만들면 `MINE.md` 에도 등록한다.
 
 ## 스킬 사용 로그 — 원칙
-PostToolUse 훅이 `Skill` 도구 호출만 잡는다. 라우트 트리거로 스킬을 암묵적으로 따르거나 Skill 도구를 호출하지 않고 스킬 내용을 실행할 때는 누락된다. 이를 보완하기 위해 **스킬에 해당하는 작업을 시작하는 시점에 직접 기록**한다:
+사용 로그는 oh-my-ai의 XDG application state directory에 모은다: `${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/harness-usage.log`.
+- Claude의 명시적 `Skill` 도구 호출은 PostToolUse 훅이 자동 기록한다.
+- Codex 또는 암묵적으로 스킬을 적용할 때는 작업 시작 시 아래 공용 이벤트를 한 번 발생시킨다:
 ```bash
-printf '%s | <skill-name>\n' "$(date +'%F %H:%M')" >> ~/.claude/harness-usage.log
+"$HOME/.local/bin/harness-event" emit skill-start --skill <skill-name> --runtime <claude|codex>
 ```
-훅이 이미 잡았으면 중복 기록해도 무방하다.
+Git remote는 credential을 제거한 `host/owner/repo`로 정규화되어 저장소별로 집계된다.
 
 ## 프로젝트 컨텍스트 — 트리거
 - 세션 시작 시 `[HARNESS:context]` 메시지가 보이면: 목록에서 현재 작업(브랜치·Jira·도메인)과 관련된 파일을 **먼저 Read**한다.

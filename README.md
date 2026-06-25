@@ -12,7 +12,7 @@
 - **작업 라우팅**: 작업을 시작하면 그 도메인에 맞는 스킬·커맨드·문서가 자동으로 붙는다. (`instructions/harness.md`의 라우팅 표)
 - **경험 누적 = 내가 키우는 파생 스킬**: 외부 스킬을 베이스로 내 경험·context를 얹어 "내 스킬"로 키운다.
 - **세션이 끊겨도 이어짐**: 작업 맥락(결정·설계 배경)을 `docs/context/`에 남겨, 새 세션·다른 날에도 이어받는다. (`skills/project-context`)
-- **사용 측정 + 안전 가드**: 어떤 스킬/커맨드를 실제 쓰는지 로그로 쌓아 **안 쓰는 걸 식별·정리**한다 (`~/.claude/harness-usage.log`). 안전 규칙(개인계정 커밋)은 훅으로 강제(`claude/hooks/`).
+- **사용 측정 + 안전 가드**: 어떤 스킬을 실제 쓰는지 Git 저장소 정보와 함께 **oh-my-ai XDG state**에 기록한다 (`~/.local/state/oh-my-ai/harness-usage.log`). 안전 규칙(개인계정 커밋)은 훅으로 강제(`claude/hooks/`).
 - **목적 위주 표현 원칙**: 커밋·일일보고·문서를 "무엇을 했나"가 아니라 "왜/무엇을 위해"로 쓴다.
 - **내가 만든 것 인덱스**: 커스텀 산출물만 모아 한눈에 → [`MINE.md`](MINE.md)
 
@@ -67,6 +67,7 @@ claude/
   agents/                ← 커스텀 에이전트
 scripts/
   render-instructions.sh ← 스킬 메타데이터로 라우팅·MINE·AI별 instruction 생성
+  harness-event.mjs      ← 런타임 중립 SkillStart 기록·저장소별 집계
   omai-commit.sh         ← 개인 계정 커밋·푸시 자동화
   cascade-check.sh       ← 비스킬 산출물 등록 drift 검사
 hooks/
@@ -74,6 +75,17 @@ hooks/
 docs/
   harness-design.md      ← 하네스 설계·결정·현황 (단일 기준점)
   devcontainer-workflow.md ← oh-my-ai/심링크/계정 워크플로 상세
+```
+
+## 스킬 사용량 조회
+
+공용 로그는 Git에 커밋하지 않고 `${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/harness-usage.log`에 JSONL로 저장한다.
+
+```bash
+harness-event report                                      # 현재 Git 저장소
+harness-event report --all                                # 전체 저장소
+harness-event report --repo github.com/aixion1506/oh-my-ai
+harness-event report --since-days 30
 ```
 
 ## 설치

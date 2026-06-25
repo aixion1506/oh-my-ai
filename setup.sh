@@ -13,6 +13,7 @@ echo "=== oh-my-ai setup ==="
 mkdir -p "$CLAUDE_DIR"
 mkdir -p "$CODEX_DIR"
 mkdir -p "$AGENT_DIR"
+mkdir -p "$HOME/.local/bin"
 
 # devcontainer에는 codex CLI가 없을 수 있으므로 dotfiles 적용 시 같이 설치한다.
 if ! command -v codex >/dev/null 2>&1; then
@@ -26,6 +27,7 @@ fi
 ln -sf "$REPO/claude/CLAUDE.md"     "$CLAUDE_DIR/CLAUDE.md"
 ln -sf "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json"
 ln -sf "$REPO/AGENTS.md"            "$CODEX_DIR/AGENTS.md"
+ln -sf "$REPO/scripts/harness-event.mjs" "$HOME/.local/bin/harness-event"
 if [ -d "$AGENT_DIR/skills" ] && [ ! -L "$AGENT_DIR/skills" ]; then
     if [ -e "$AGENT_DIR/skills.pre-oh-my-ai" ]; then
         echo "backup exists: $AGENT_DIR/skills.pre-oh-my-ai" >&2
