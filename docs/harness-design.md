@@ -302,6 +302,149 @@ candidate → confirmed 승격에 필요한 조건:
 
 `skills/handoff-prompt/SKILL.md`는 PR #4에서 추가됐다. 3회 이상 수동 사용 후 절차가 안정되면 내용을 다듬는다.
 
+### Local-only Capture MVP 설계
+
+상태: **문서화된 설계**. 구현(hook, script, make target, 자동 저장)은 아직 없다.
+
+이 섹션은 "언젠가 구현할 때 어떤 구조로 할지"를 미리 합의해 두는 것이 목적이다. 실제 구현 시에는 이 설계를 기준으로 별도 승인을 받고 진행한다.
+
+---
+
+#### raw log 저장 경로
+
+```
+${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/capture/<runtime>/
+```
+
+예시:
+```
+~/.local/state/oh-my-ai/capture/claude/
+~/.local/state/oh-my-ai/capture/codex/
+~/.local/state/oh-my-ai/capture/gpt/
+```
+
+**원칙:**
+- 절대 repo 안에 두지 않는다. `.claude/`, `~/Github/` 등 repo 경로 금지.
+- XDG state 디렉토리는 재생성 가능하고, Git tracking 대상이 아니다.
+- `~/.gitignore`로 이 경로를 보호하는 것은 profile/local의 선택사항이다.
+
+---
+
+#### 파일명 규칙
+
+```
+<YYYY-MM-DD>-<session_id_short>.jsonl
+```
+
+- `session_id_short`: session_id UUID의 앞 8자 (예: `a1b2c3d4`)
+- 세션당 파일 1개
+- JSONL 포맷: 한 줄 = event envelope 1개 (streaming append)
+- 예시: `2026-06-26-a1b2c3d4.jsonl`
+
+content 원문은 각 event 라인의 `content` 필드에 저장한다. redacted가 `true`이면 content는 마스킹된 값이다.
+
+```jsonl
+{"event_id":"...","session_id":"...","timestamp":"...","runtime":"claude","repo":"github.com/aixion1506/oh-my-ai","event_type":"turn.user","content_hash":"...","redacted":false,"content":"..."}
+{"event_id":"...","session_id":"...","timestamp":"...","runtime":"claude","repo":"github.com/aixion1506/oh-my-ai","event_type":"turn.assistant","content_hash":"...","redacted":false,"content":"..."}
+```
+
+---
+
+#### Retention 정책
+
+| 항목 | 기본값 | 설정 위치 |
+|------|--------|-----------|
+| 보존 기간 | 7일 | `HARNESS_CAPTURE_RETENTION_DAYS` (profile/local) |
+| 삭제 방식 | 수동 또는 prune script | 자동 삭제 없음 |
+| 삭제 전 확인 | 필요 | 자동 삭제 없음 — 사람이 prune 실행 |
+
+- 보존 기간은 개인 정책이므로 shared instruction에 기본값 하드코딩 금지.
+- 자동 삭제는 구현하지 않는다. prune script가 있어도 사람이 직접 실행한다.
+
+---
+
+#### Enable / Disable profile 설정
+
+| 설정 | 값 | 위치 |
+|------|----|------|
+| `HARNESS_CAPTURE_ENABLED` | `true` / `false` (기본: 미설정 = disabled) | profile/local |
+| `HARNESS_CAPTURE_RETENTION_DAYS` | 숫자 (기본: 7) | profile/local |
+| `HARNESS_CAPTURE_PATH` | 절대 경로 override (기본: XDG state) | profile/local |
+
+**원칙:**
+- 기본값은 **disabled**다. opt-in으로만 활성화한다.
+- shared instruction에 enable 로직, 경로, 보존 기간을 하드코딩하지 않는다.
+- 회사 repo에서의 capture 비활성화도 profile/local로 처리한다.
+
+---
+
+#### Candidate Queue 위치
+
+```
+${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/candidates/
+```
+
+파일명: `<YYYY-MM-DD>-<session_id_short>-candidates.jsonl`
+
+각 라인 포맷:
+```jsonl
+{"type":"summary","label":"CANDIDATE","content":"...","timestamp":"...","session_id":"..."}
+{"type":"decision","label":"CANDIDATE","content":"...","timestamp":"...","session_id":"..."}
+{"type":"todo","label":"CANDIDATE","content":"...","timestamp":"...","session_id":"..."}
+```
+
+**원칙:**
+- `label`은 항상 `CANDIDATE`다. `CONFIRMED`, `FACT` 금지.
+- 기본적으로 세션 종료 시 만료된다. 명시적으로 저장하지 않으면 다음 세션에서 사용할 수 없다.
+- candidate 파일도 Git tracking 금지다.
+
+---
+
+#### Human Confirmation Flow
+
+```
+세션 중 생성된 candidate 목록
+        ↓
+사용자가 직접 검토
+(capture-review script 또는 AI 세션 내 표시 — 구현 전에는 수동)
+        ↓
+항목별 명시적 선택
+(묵시적 동의, 일괄 승인 금지)
+        ↓
+승격 대상 artifact 지정
+docs/context / automation-backlog 중 하나
+        ↓
+사람이 내용을 직접 rewrite (candidate 원문 그대로 복붙 금지)
+        ↓
+commit (curated artifact로 Git tracking 시작)
+```
+
+핵심 제약:
+- candidate 원문을 그대로 docs/context나 automation-backlog에 쓰지 않는다.
+- 사람이 rewrite하는 이유: 자동 요약은 hallucination을 포함하고, 불필요한 맥락을 담을 수 있다.
+- handoff prompt도 동일하다 — candidate에서 직접 붙여넣지 않고, 검토 후 rewrite.
+
+---
+
+#### 나중에 필요한 Hook / Script (미구현, 목록만)
+
+아래는 구현 승인 전까지 만들지 않는다. 언젠가 구현할 때 어떤 단위가 필요한지 미리 정의한 것이다.
+
+| 이름 | 형태 | 역할 | 트리거 조건 |
+|------|------|------|------------|
+| `capture-write` | PostToolUse hook 또는 런타임 adapter | raw event를 JSONL에 append | HARNESS_CAPTURE_ENABLED=true |
+| `capture-session-end` | SessionEnd hook | session.end 이벤트 기록, candidate 생성 트리거 | HARNESS_CAPTURE_ENABLED=true |
+| `capture-review` | script | candidate 목록 표시, 사람의 항목 선택 수신 | 수동 실행 |
+| `capture-prune` | script | retention 기간 초과 파일 삭제 | 수동 실행 (자동 스케줄 없음) |
+
+구현 순서 제약:
+1. hook 구현 전에 candidate queue 포맷이 확정돼야 한다.
+2. capture-review 구현 전에 human confirmation flow가 실제로 수동 검증돼야 한다.
+3. capture-session-end는 candidate 생성 로직이 완성된 뒤에 연결한다.
+4. 자동 prune(cron 등)은 구현하지 않는다. 수동 실행만 허용한다.
+
+---
+
 ## 6. 현재 한계 (정직)
 1. **대부분 soft(프롬프트 기반).** 결정적인 건 훅뿐(SessionStart 주입 + 사용측정). 개인 계정 정책 같은 실행 가드는 shared가 아니라 profile/local hook으로 분리한다.
 2. **실사용 검증 0.** 한 세션에 많이 지음 → 한 달 써봐야 살아남는지/죽은 config인지 판별 가능.
