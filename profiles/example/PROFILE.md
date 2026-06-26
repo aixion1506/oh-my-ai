@@ -2,6 +2,31 @@
 
 이 파일은 shared harness 위에 얹는 개인 설정 예시다. 실제 계정명, 토큰, 회사명, 내부 URL은 커밋하지 않는다.
 
+## 사용 흐름 (Quick Start)
+
+```bash
+# 1. 내 profile scaffold 생성 (profiles/local/<name>/ 은 gitignored)
+make init-profile PROFILE=<name>
+
+# 2. 생성된 파일의 <placeholder> 값을 실제 값으로 채운다
+#    profiles/local/<name>/commit-helper.sh  — GITHUB_PRIMARY_USER 등
+#    profiles/local/<name>/push-guard.sh     — GITHUB_PRIMARY_USER 등
+#    profiles/local/<name>/claude-settings.json — permission, plugin 목록
+
+# 3. 실행 스크립트를 ~/.local/bin/ 에 링크
+make install-profile PROFILE=<name>
+
+# 4. 설치 상태 확인
+make doctor
+
+# 5. profile 활성화 (지속하려면 ~/.bashrc 또는 ~/.zshrc 에 추가)
+export HARNESS_PROFILE=<name>
+```
+
+`profiles/local/` 은 gitignored다. 실제 계정값이나 토큰을 이 디렉토리에 커밋하지 않는다.
+
+---
+
 ## 응답 / 구현 선호
 - 대화 언어: 사용자가 지정한 언어를 따른다.
 - execution mode: `patch-with-approval` (shared 기본값)
