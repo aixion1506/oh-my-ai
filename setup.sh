@@ -78,7 +78,7 @@ safe_link() {
   # stale symlink: points somewhere that no longer exists → replace automatically
   if [ -L "$dest" ] && [ ! -e "$dest" ]; then
     say "stale: $label was $(readlink "$dest") (missing) — relinking to $src"
-    run rm "$dest"
+    run rm -f "$dest"
     run ln -s "$src" "$dest"
     say "linked: $label -> $src"
     return 0
