@@ -22,6 +22,7 @@
 - (아직 없음 — 외부 스킬을 커스터마이즈하기 시작하면 여기로 승격 + `source: <origin>` 표기)
 
 ## 데이터/기타
+- `instructions/harness.md` — Claude/Codex 공통 운영 정책 원본 (문서 산출물 추적·작업 라우팅·Git 원칙)
 - `instructions/mine.md` — `MINE.md` 자동 생성용 템플릿
 - `instructions/execution-policy.md` — 파일 수정 방식 선택을 위한 execution mode 정책
 - `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
