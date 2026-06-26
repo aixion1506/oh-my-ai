@@ -88,7 +88,7 @@ AGENTS.md                ← Codex가 루트에서 읽는 생성물 (make instru
 automation-backlog.md    ← 공용 자동화 후보 누적장
 MINE.md                  ← SKILL.md 메타데이터로 생성되는 커스텀 산출물 인덱스
 skills/
-  ...                    ← 공용 스킬 원본 (harness-automation, project-context …)
+  ...                    ← 공유 가능한 custom skill 원본 (harness-automation, project-context …)
 claude/
   CLAUDE.md              ← ~/.claude/CLAUDE.md로 연결되는 Claude 생성물
   settings.json          ← 플러그인 설정 + 훅(SessionStart 주입 / 사용 측정)
@@ -162,6 +162,19 @@ make update   # git pull + non-destructive shared install
 - `make doctor`는 현재 링크/로컬 파일 상태를 읽기 전용으로 보여준다.
 - 개인 profile은 opt-in이다. 실제 profile/private script는 `profiles/local/<name>/`에 두고 커밋하지 않는다.
 - profile script를 설치하려면 `make install-profile PROFILE=<name>`을 사용한다. profile hook/settings는 자동 활성화하지 않고 직접 병합한다.
+- 선택적 Claude plugin/settings 예시는 `profiles/example/claude-settings.json.example`에서 확인하고, 필요한 항목만 사용자가 직접 opt-in해 병합한다.
+
+## Local skills policy
+
+`skills/*`는 이 shared repo에 커밋해도 되는 공유/custom skill 원본으로 간주한다. 개인 장비·회사 계정·비공개 워크플로에 묶인 local skill은 shared repo에 넣지 않고 `~/.claude/skills`, `~/.agents/skills`, 별도 private repo, 또는 private plugin으로 관리한다.
+
+기존 `~/.claude/skills`와 `~/.agents/skills`는 shared skills와 자동 병합하거나 대체하지 않는다. `make doctor`는 충돌 여부와 현재 링크/로컬 파일 상태만 보여주는 읽기 전용 점검이며, 백업·비교·병합·삭제·symlink 전환은 사용자가 명시적으로 선택한다.
+
+기존 local skills와 shared skills를 동시에 쓰고 싶다면 자동 병합에 의존하지 말고 다음 중 하나를 수동으로 고른다.
+
+- 기존 local skills를 유지하고 필요한 shared skill만 직접 복사한다.
+- 기존 local skills를 백업한 뒤 shared `skills/` symlink로 전환한다.
+- private repo/plugin에 개인 skill을 두고 런타임별 설정에서 명시적으로 연결한다.
 
 ## Execution Mode 선택
 

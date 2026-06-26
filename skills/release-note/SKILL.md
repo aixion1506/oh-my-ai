@@ -10,8 +10,9 @@ metadata:
 
 > 스킬 시작 시 실행:
 > ```bash
-> printf '%s | release-note\n' "$(date +'%F %H:%M')" >> ~/.claude/harness-usage.log
+> "$HOME/.local/bin/harness-event" emit skill-start --skill release-note --runtime "${HARNESS_RUNTIME:-claude}"
 > ```
+> 사용 로그는 `${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/harness-usage.log`에 저장한다.
 
 너는 Jira 릴리즈의 한 담당자가 처리한 이슈를 **일반 사용자도 이해할 수 있는 릴리즈 노트**로 정리한다.
 
