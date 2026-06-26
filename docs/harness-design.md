@@ -34,6 +34,19 @@
 | `MINE.md` | SKILL.md 메타데이터로 생성되는 커스텀 산출물 인덱스 | 생성물 | 운영 |
 | 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, born-here 5건 적용 |
 
+### 4계층 Path Mapping (transition layout)
+
+현재 레포 레이아웃은 transition 상태다. `core/`, `library/`, `extensions/` 같은 최상위 물리 디렉토리 분리는 아직 하지 않는다. 역할 분리는 이 표로 명시한다.
+
+| 계층 | 역할 | 현재 물리 위치 | Git tracking |
+|------|------|---------------|--------------|
+| **Core Harness** | 원칙·라우팅·생성 파이프라인 | `instructions/`, `Makefile`, `setup.sh`, generated `CLAUDE.md`/`AGENTS.md`/`MINE.md` | 추적 |
+| **Shared Library / Workflows** | 공용 스킬·자동화 backlog | `skills/`, `automation-backlog.md` | 추적 |
+| **Personal Profile** | 개인 설정·계정 정책·로컬 스크립트 | `profiles/example/` (공유 템플릿), `profiles/local/<name>/` (사용자 생성, gitignored) | example만 추적 |
+| **Ecosystem Extension** | 런타임 adapter·hook·측정 스크립트 | `claude/`, `scripts/` | 추적 |
+
+Physical migration(`core/`, `library/` 등 상위 디렉토리 생성)은 usage-gated — 현재 레이아웃이 실제로 혼란을 유발할 때 착수한다.
+
 ## 4. 설계 결정 + WHY (고민 흔적)
 - **트리거=CLAUDE.md / 플레이북=스킬**: 항상 로드는 비싸고 attention 희석 → CLAUDE.md는 얇게, 상세는 on-demand 스킬.
 - **backlog + SessionStart 훅**: 세션은 매번 기억 0 → 크로스세션 toil 누적이 사각지대. 훅=읽기 보장(결정적), 쓰기는 사용자 규율(soft). soft를 persistent로 끌어올리는 장치.

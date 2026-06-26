@@ -15,12 +15,20 @@ usage() {
 usage:
   setup.sh --doctor
   setup.sh --install-shared [--dry-run]
+  setup.sh --init-profile --profile <name> [--dry-run]
   setup.sh --install-profile --profile <name> [--dry-run]
+
+Profile onboarding flow:
+  1. make init-profile PROFILE=<name>   — scaffold profiles/local/<name>/ from example
+  2. edit profiles/local/<name>/        — fill in <placeholder> values
+  3. make install-profile PROFILE=<name> — link executable scripts to ~/.local/bin/
+  4. make doctor                         — verify install state
 
 Policy:
   - Existing ~/.claude/skills and ~/.agents/skills are never overwritten.
   - Existing settings, hooks, agents, and scripts are skipped unless already managed by this repo.
   - Profiles are opt-in. Use profiles/example for templates and profiles/local/<name> for private local profiles.
+  - profiles/local/ is gitignored. Never commit real account values or tokens.
 EOF
 }
 
@@ -28,6 +36,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --doctor) MODE="doctor" ;;
     --install-shared) MODE="install-shared" ;;
+    --init-profile) MODE="init-profile" ;;
     --install-profile) MODE="install-profile" ;;
     --profile) shift; PROFILE_NAME="${1:-}" ;;
     --dry-run) DRY_RUN=1 ;;
@@ -96,6 +105,22 @@ doctor() {
   path_state "$LOCAL_BIN/harness-event" "$REPO/scripts/harness-event.mjs"
   say ""
   say "If a path says exists-local or exists-symlink, install-shared will skip it."
+  say ""
+  if [ -n "${HARNESS_PROFILE:-}" ]; then
+    profile_local="$REPO/profiles/local/$HARNESS_PROFILE"
+    if [ -d "$profile_local" ]; then
+      say "profile: profiles/local/$HARNESS_PROFILE (exists)"
+      for f in "$profile_local"/*.sh; do
+        [ -f "$f" ] || continue
+        script_name="$(basename "$f")"
+        path_state "$LOCAL_BIN/$script_name" "$f"
+      done
+    else
+      say "missing: profiles/local/$HARNESS_PROFILE — run: make init-profile PROFILE=$HARNESS_PROFILE"
+    fi
+  else
+    say "hint: set HARNESS_PROFILE=<name> to use a local profile (optional — see profiles/example/)"
+  fi
 }
 
 install_shared() {
@@ -114,6 +139,64 @@ install_shared() {
   say "=== done: existing user files were skipped, not overwritten ==="
 }
 
+init_profile() {
+  if [ -z "$PROFILE_NAME" ]; then
+    echo "PROFILE is required for init-profile" >&2
+    usage >&2
+    exit 2
+  fi
+  dest_dir="$REPO/profiles/local/$PROFILE_NAME"
+  if [ -d "$dest_dir" ]; then
+    say "skip: profiles/local/$PROFILE_NAME already exists — not overwriting"
+    say "      to reinitialize, remove the directory first:"
+    say "        rm -rf profiles/local/$PROFILE_NAME"
+    return 0
+  fi
+
+  src_dir="$REPO/profiles/example"
+  say "=== oh-my-ai init-profile: $PROFILE_NAME ==="
+  run mkdir -p "$dest_dir"
+
+  if [ -f "$src_dir/PROFILE.md" ]; then
+    run cp "$src_dir/PROFILE.md" "$dest_dir/PROFILE.md"
+    say "created: profiles/local/$PROFILE_NAME/PROFILE.md"
+  fi
+
+  for f in "$src_dir"/*.example; do
+    [ -f "$f" ] || continue
+    dest_name="$(basename "${f%.example}")"
+    run cp "$f" "$dest_dir/$dest_name"
+    say "created: profiles/local/$PROFILE_NAME/$dest_name"
+  done
+
+  if [ -d "$src_dir/skills" ]; then
+    run mkdir -p "$dest_dir/skills"
+    for f in "$src_dir/skills"/*.example; do
+      [ -f "$f" ] || continue
+      dest_name="$(basename "${f%.example}")"
+      run cp "$f" "$dest_dir/skills/$dest_name"
+      say "created: profiles/local/$PROFILE_NAME/skills/$dest_name"
+    done
+  fi
+
+  for script in "$dest_dir"/*.sh; do
+    [ -f "$script" ] || continue
+    run chmod +x "$script"
+    say "chmod +x: $(basename "$script")"
+  done
+
+  say ""
+  say "Next steps:"
+  say "  1. Edit profiles/local/$PROFILE_NAME/ — fill in <placeholder> values"
+  say "     (commit-helper.sh, push-guard.sh, claude-settings.json)"
+  say "  2. Export in your shell: export HARNESS_PROFILE=$PROFILE_NAME"
+  say "     (add to ~/.bashrc or ~/.zshrc to persist)"
+  say "  3. Run: make install-profile PROFILE=$PROFILE_NAME"
+  say "  4. Run: make doctor"
+  say ""
+  say "profiles/local/ is gitignored. Do not commit real account values or tokens."
+}
+
 install_profile() {
   if [ -z "$PROFILE_NAME" ]; then
     echo "PROFILE is required for install-profile" >&2
@@ -126,7 +209,7 @@ install_profile() {
   fi
   if [ ! -d "$profile_dir" ]; then
     echo "profile not found: $PROFILE_NAME" >&2
-    echo "looked in: $REPO/profiles/local/$PROFILE_NAME and $REPO/profiles/$PROFILE_NAME" >&2
+    echo "  create it first: make init-profile PROFILE=$PROFILE_NAME" >&2
     exit 1
   fi
 
@@ -146,12 +229,21 @@ install_profile() {
   if [ "$found" -eq 0 ]; then
     say "no executable profile scripts to install"
   fi
-  say "Profile hooks/settings are not auto-enabled. Merge them manually if needed."
+  if [ -f "$profile_dir/claude-settings.json" ]; then
+    say ""
+    say "note: claude-settings.json found — not auto-merged into ~/.claude/settings.json"
+    say "      review and merge manually if you want profile-specific permissions or plugins:"
+    say "        $profile_dir/claude-settings.json"
+  fi
+  say ""
+  say "Profile scripts linked to ~/.local/bin/. Hooks and settings are NOT auto-enabled."
+  say "To use push-guard.sh as a Claude PreToolUse hook, add it to your local settings.json manually."
 }
 
 case "$MODE" in
   doctor) doctor ;;
   install-shared) install_shared ;;
+  init-profile) init_profile ;;
   install-profile) install_profile ;;
   *) echo "invalid mode: $MODE" >&2; exit 2 ;;
 esac
