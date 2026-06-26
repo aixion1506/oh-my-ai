@@ -133,8 +133,13 @@ v1 MVP는 구현이 아니라 문서화된 contract다.
 - handoff prompt export contract
 - handoff prompt template 초안
 
+완료 (v1 MVP):
+- event schema 초안 (→ 아래 섹션)
+- redaction contract (→ 아래 섹션)
+- handoff prompt export contract + template (→ 아래 섹션)
+- `skills/handoff-prompt/SKILL.md` (PR #4)
+
 보류:
-- `skills/handoff-prompt/SKILL.md`
 - `skills/session-handoff/SKILL.md`
 - Claude/Codex hook 구현
 - make target/script 추가
@@ -211,6 +216,83 @@ v1 MVP는 구현이 아니라 문서화된 contract다.
 - 민감 정보가 포함된 prompt를 다른 AI 세션에 전달
 - next session에 raw log 자동 주입
 
+### Event Schema
+
+conversation-capture가 관측하는 이벤트의 envelope 정의. 특정 런타임(Claude transcript_path, Codex conversation log, GPT export)의 포맷에 **직접 의존하지 않는다.** 각 런타임 adapter가 자기 포맷을 이 schema로 변환한다.
+
+**Envelope 필드 (모든 runtime 공통)**
+
+| 필드 | 타입 | 설명 | 저장 위치 |
+|------|------|------|-----------|
+| `event_id` | UUID v4 | 이벤트 고유 식별자 | raw log local-only |
+| `session_id` | string | 세션 로컬 식별자 (Git 커밋 금지) | raw log local-only |
+| `timestamp` | ISO 8601 | 이벤트 발생 시각 | raw log local-only |
+| `runtime` | enum | `claude` \| `codex` \| `gpt` \| `unknown` | raw log local-only |
+| `repo` | string | 정규화된 저장소 식별자 (`host/owner/repo`, credential 제거) | raw log local-only |
+| `event_type` | enum | 아래 목록 | raw log local-only |
+| `content_hash` | SHA-256 | raw content의 해시 (deduplication용, content 원문 아님) | raw log local-only |
+| `redacted` | boolean | content 마스킹 여부 | raw log local-only |
+
+**Event Type 목록**
+
+| 타입 | 설명 |
+|------|------|
+| `session.start` | 세션 시작 경계 |
+| `session.end` | 세션 종료 경계 |
+| `turn.user` | 사용자 입력 |
+| `turn.assistant` | 어시스턴트 응답 (completion) |
+| `tool.use` | 도구 호출 시작 |
+| `tool.result` | 도구 결과 반환 |
+| `context.inject` | 외부 컨텍스트 주입 (hook, file read 등) |
+
+**런타임 중립성 원칙**
+
+- raw log 포맷은 runtime-specific이고 local-only다. 이 schema는 envelope만 정의한다.
+- content 원문은 raw log 안에만 존재한다. curated artifact에는 포함하지 않는다.
+- `content_hash`는 deduplication에만 쓴다. content 재구성에 사용하지 않는다.
+- `session_id`는 local-only 식별자다. Git 커밋 대상이 아니다.
+
+---
+
+### Redaction Contract
+
+candidate가 curated artifact(docs/context, automation-backlog)나 handoff prompt로 승격되기 전에 반드시 거쳐야 하는 검토 기준.
+
+**필수 마스킹 대상**
+
+아래 패턴은 candidate 생성 단계에서 자동으로 마스킹해야 한다. 자동화 구현 여부와 무관하게 **사람이 수동으로도 확인해야 한다.**
+
+| 대상 | 예시 패턴 |
+|------|-----------|
+| API key / token | `sk-*`, `ghp_*`, `glpat-*`, `Bearer <값>`, `Authorization: *` |
+| 홈 디렉토리 경로 | `/home/<user>/`, `/Users/<user>/`, `/root/`, `~` |
+| 이메일 주소 | `*@*.*` |
+| IP 주소 (tool output 내) | `\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}` |
+| `transcript_path` 값 | Claude 런타임 특정 경로 |
+| `session_id` 값 | local-only 식별자 |
+| SSH 비공개 키 내용 | `-----BEGIN * PRIVATE KEY-----` |
+
+**Human confirmation 기준**
+
+candidate → confirmed 승격에 필요한 조건:
+
+1. **명시적 확인**: 사용자가 해당 candidate를 인지하고 "맞다"고 확인해야 한다. 이의 없음(묵시적 동의)은 확인이 아니다.
+2. **개별 검토**: 여러 candidate를 한 번에 일괄 승격하지 않는다. 각 candidate를 개별적으로 검토한다.
+3. **세션 내 확인**: candidate는 세션 종료 시 만료된다. 세션을 넘긴 candidate는 재확인이 필요하다.
+4. **경계 명시**: 확인 대상이 어떤 artifact(docs/context인지 automation-backlog인지)인지 함께 확인한다.
+
+**Candidate ≠ Truth (반복 명시)**
+
+이 항목은 반복해서 명시한다.
+
+- candidate는 `[CANDIDATE]`로 레이블하고, `[FACT]` 또는 `[CONFIRMED]`로 표기하지 않는다.
+- 자동 요약은 hallucination을 포함할 수 있고, 중요한 맥락을 생략할 수 있다.
+- 동일 세션에서 candidate 간 모순이 생기는 것은 정상이다 (세션 컨텍스트는 진화한다).
+- candidate는 자동화된 결정의 입력으로 쓰지 않는다.
+- candidate를 그대로 handoff prompt에 붙여넣지 않는다. 사람이 검토하고 rewrite해야 한다.
+
+---
+
 ### 이름 결정
 
 구현 산출물 이름은 `handoff-prompt`가 더 정확하다. `session-handoff`는 capture, 저장, context update까지 포함하는 넓은 기능처럼 보인다. 현재 contract에서는:
@@ -218,7 +300,7 @@ v1 MVP는 구현이 아니라 문서화된 contract다.
 - `handoff-prompt`: 출력/export format
 - `project-context`: 장기 저장소
 
-향후 3회 이상 수동 handoff에 써본 뒤 필요하면 `skills/handoff-prompt/SKILL.md`로 분리한다.
+`skills/handoff-prompt/SKILL.md`는 PR #4에서 추가됐다. 3회 이상 수동 사용 후 절차가 안정되면 내용을 다듬는다.
 
 ## 6. 현재 한계 (정직)
 1. **대부분 soft(프롬프트 기반).** 결정적인 건 훅뿐(SessionStart 주입 + 사용측정). 개인 계정 정책 같은 실행 가드는 shared가 아니라 profile/local hook으로 분리한다.
