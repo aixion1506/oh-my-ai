@@ -33,11 +33,15 @@ bubblewrap/network namespace/AppArmor path, not in the repository command.
 Observed on an Ubuntu 24.04 family environment with:
 
 ```text
+Codex CLI: codex-cli 0.142.0
 bubblewrap 0.9.0
 kernel.unprivileged_userns_clone = 1
 user.max_user_namespaces = 255645
 kernel.apparmor_restrict_unprivileged_userns = 1
 ```
+
+Note: bwrap sandbox behavior may vary across Codex CLI versions. Record the
+version shown by `codex --version` when reproducing on a different version.
 
 ## Diagnosis
 
