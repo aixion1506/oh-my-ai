@@ -75,6 +75,14 @@ safe_link() {
     say "ok: $label already managed"
     return 0
   fi
+  # stale symlink: points somewhere that no longer exists → replace automatically
+  if [ -L "$dest" ] && [ ! -e "$dest" ]; then
+    say "stale: $label was $(readlink "$dest") (missing) — relinking to $src"
+    run rm "$dest"
+    run ln -s "$src" "$dest"
+    say "linked: $label -> $src"
+    return 0
+  fi
   if [ -e "$dest" ] || [ -L "$dest" ]; then
     say "skip: $label exists; not overwriting ($dest)"
     say "      manual options: keep as-is, back it up yourself, or merge/link intentionally"
