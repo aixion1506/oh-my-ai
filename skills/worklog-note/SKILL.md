@@ -1,10 +1,9 @@
 ---
 name: worklog-note
-description: Use when writing, condensing, or cleaning up 노션 업무일지·Todo 항목 (오늘 한 일 Done, Todo 로드맵, 회의 메모) — especially when entries are verbose, jargon-heavy, auto-generated, or hard to scan at a glance.
+description: Optional workflow skill for Notion-style worklogs, Todo roadmaps, and meeting notes. Use only when the user keeps worklogs in Notion or a similar workspace and wants verbose entries condensed for scanning.
 metadata:
   source: born-here
-  route: 노션 업무일지·Todo 작성·정리 (Done/Todo/회의)
-  summary: 장황한 노션 업무일지를 한눈에 들어오도록 정리
+  summary: Optional Notion 업무일지 정리 workflow
 ---
 
 # 업무일지(Done/Todo) 작성

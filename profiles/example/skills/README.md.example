@@ -1,0 +1,13 @@
+# Local skill placeholders
+
+This directory is only an example for private profile layouts.
+
+Do not commit real personal or company-local skill contents to the shared repo.
+Keep them in one of these places instead:
+
+- `~/.claude/skills`
+- `~/.agents/skills`
+- `profiles/local/<name>/skills` if the directory is ignored and private
+- a separate private repository or private plugin
+
+If you need to use shared skills and local skills together, choose the merge/link/copy strategy manually after checking `make doctor`.

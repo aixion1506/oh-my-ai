@@ -1,9 +1,4 @@
 {
-  "permissions": {
-    "allow": [
-      "mcp__plugin_atlassian_atlassian__atlassianUserInfo"
-    ]
-  },
   "hooks": {
     "SessionStart": [
       {
@@ -32,38 +27,6 @@
           }
         ]
       }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")\")\"; bash \"$REPO/claude/hooks/oh-my-ai-push-guard.sh\"",
-            "timeout": 10
-          }
-        ]
-      }
     ]
-  },
-  "enabledPlugins": {
-    "superpowers@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true,
-    "context7@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "serena@claude-plugins-official": true,
-    "atlassian@claude-plugins-official": true,
-    "backend-api-security@claude-code-workflows": true,
-    "security-compliance@claude-code-workflows": true
-  },
-  "extraKnownMarketplaces": {
-    "claude-code-workflows": {
-      "source": {
-        "source": "github",
-        "repo": "wshobson/agents"
-      }
-    }
-  },
-  "effortLevel": "high",
-  "theme": "light-daltonized"
+  }
 }

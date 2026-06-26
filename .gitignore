@@ -31,7 +31,9 @@ claude/projects/
 # ====== 로컬 오버라이드 ======
 *.local.json
 .env
+.env.local
 .claude.json
+profiles/local/
 
 # ====== 로컬 검색 인덱스/cache (재생성 가능, 원본 아님) ======
 .jikji/

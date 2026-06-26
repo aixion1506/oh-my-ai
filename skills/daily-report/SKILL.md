@@ -1,10 +1,9 @@
 ---
 name: daily-report
-description: Use when writing a 슬랙 일일보고 / 회사 일일 업무보고 — 오늘 한 일을 프로젝트별로 진척률과 함께 정리할 때. 직접 대화 입력 + 노션 업무일지에서 취합(하이브리드).
+description: Optional workflow skill for Slack-style daily reports. Use only when the user works with Slack daily reports and, optionally, Notion worklogs/Todo pages; it summarizes today's work by project with progress percentages.
 metadata:
   source: born-here
-  route: 슬랙 일일보고 작성 (오늘 한 일 프로젝트별·진척%)
-  summary: 오늘 한 일을 프로젝트별 진척률과 함께 취합·정리
+  summary: Optional Slack/Notion 일일보고 workflow
 ---
 
 # 슬랙 일일보고 작성

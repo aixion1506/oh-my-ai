@@ -1,18 +1,18 @@
 ---
 name: release-note
-description: Jira 릴리즈의 fixVersion과 담당자 기준 이슈를 조회해 에픽/스토리 수준의 사용자 체감 릴리즈 노트로 정리한다. Jira release-report URL이나 fixVersion ID를 기반으로 릴리즈 노트를 작성하거나, 결과를 Confluence 페이지에 안전하게 반영할 때 사용한다.
+description: Optional workflow skill for Jira/Confluence release operations. Use only when Jira fixVersion or release-report context is available and the user wants user-facing release notes, optionally with safe Confluence page updates.
 metadata:
   source: born-here
-  route: 릴리즈 노트 작성
-  summary: Jira 릴리즈를 사용자 체감 릴리즈 노트로 자동 정리
+  summary: Optional Jira/Confluence 릴리즈 노트 workflow
 ---
 
 # 릴리즈 노트 작성
 
 > 스킬 시작 시 실행:
 > ```bash
-> printf '%s | release-note\n' "$(date +'%F %H:%M')" >> ~/.claude/harness-usage.log
+> "$HOME/.local/bin/harness-event" emit skill-start --skill release-note --runtime "${HARNESS_RUNTIME:-claude}"
 > ```
+> 사용 로그는 `${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/harness-usage.log`에 저장한다.
 
 너는 Jira 릴리즈의 한 담당자가 처리한 이슈를 **일반 사용자도 이해할 수 있는 릴리즈 노트**로 정리한다.
 

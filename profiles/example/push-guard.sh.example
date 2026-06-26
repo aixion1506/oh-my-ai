@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Example only. Copy to profiles/local/<profile>/push-guard.sh and wire it from a local hook if needed.
+# Expects Claude PreToolUse JSON on stdin when used as a Claude Bash hook.
+set -euo pipefail
+
+: "${GITHUB_PRIMARY_USER:?set GITHUB_PRIMARY_USER locally}"
+
+CMD=$(jq -r '.tool_input.command // empty' 2>/dev/null || true)
+case "$CMD" in *"git push"*) ;; *) exit 0 ;; esac
+
+ACTIVE=$(gh auth status 2>/dev/null | awk '/ account /{for(i=1;i<=NF;i++) if($i=="account") a=$(i+1)} /Active account: true/{print a; exit}' || true)
+
+if [ -n "$ACTIVE" ] && [ "$ACTIVE" != "$GITHUB_PRIMARY_USER" ]; then
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"push blocked: active GitHub account does not match GITHUB_PRIMARY_USER"}}'
+fi

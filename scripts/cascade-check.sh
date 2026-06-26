@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cascade-check: 비스킬 커스텀 산출물이 MINE.md에 등록됐는지 검사 (drift 방지)
 # 스크립트/훅/에이전트는 MINE.md에 있어야 한다. born-here 스킬은 자동 생성한다.
-# 통과: exit 0 / 미등록: 목록 출력 + exit 1.  (omai-commit 에서 OMAI_SKIP_CASCADE=1 로 우회)
+# 통과: exit 0 / 미등록: 목록 출력 + exit 1. 개인 자동화는 OMAI_SKIP_CASCADE=1 로 우회 가능.
 set -uo pipefail
 
 REPO=$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")

@@ -30,23 +30,22 @@
 | `automation-backlog.md` + SessionStart 훅 | toil 후보 누적 + 세션 주입 | 결정적(훅) | 운영, **데이터 0** |
 | `skills/project-context` + SessionStart 훅 | 세션 간 컨텍스트 단절 해소: docs/context/ living doc 감지·주입 | 결정적(훅) + 확률적(스킬) | 운영, **미검증** |
 | 공용 SkillStart 이벤트 + XDG state | Claude/Codex 사용을 Git 저장소 단위로 측정 | Claude 훅 + Codex 명시 emit | 운영, Codex는 soft |
-| `claude/hooks/oh-my-ai-push-guard.sh` (PreToolUse) | 회사계정 oh-my-ai push 차단 | 결정적(훅) | 운영, 분기 검증 완료 |
 | `docs/devcontainer-workflow.md` | oh-my-ai/심링크/계정 워크플로 상세 | 레퍼런스(트리거로 강등) | 운영 |
 | `MINE.md` | SKILL.md 메타데이터로 생성되는 커스텀 산출물 인덱스 | 생성물 | 운영 |
 | 스킬 출처(provenance) 컨벤션 | born-here vs 외부 파생 | 규칙 | 정의됨, born-here 5건 적용 |
 
 ## 4. 설계 결정 + WHY (고민 흔적)
 - **트리거=CLAUDE.md / 플레이북=스킬**: 항상 로드는 비싸고 attention 희석 → CLAUDE.md는 얇게, 상세는 on-demand 스킬.
-- **backlog + SessionStart 훅**: 세션은 매번 기억 0 → 크로스세션 toil 누적이 사각지대. 훅=읽기 보장(결정적), 쓰기는 내 규율(soft). soft를 persistent로 끌어올리는 장치.
+- **backlog + SessionStart 훅**: 세션은 매번 기억 0 → 크로스세션 toil 누적이 사각지대. 훅=읽기 보장(결정적), 쓰기는 사용자 규율(soft). soft를 persistent로 끌어올리는 장치.
 - **rule of three / premature vendoring 금지**: 아직 안 굳은 걸 일찍 도구화·소유하면 재작업·유지비. (역설: 하네스 자체를 한 세션에 빨리 지음 → 검증 필요.)
 - **스킬 메타데이터를 단일 원본으로**: 라우팅·MINE·AI별 instruction은 `make instructions`가 자동 projection. 수동 cascade는 drift와 토큰 낭비를 만들므로 제거.
 - **실행 장애 circuit breaker**: 동일 실패는 최대 1회, 결정적 인프라 오류는 재시도 0회. 대피·승인을 각각 1회로 제한한다.
 - **런타임 중립 사용 측정**: 이벤트 schema와 XDG state는 공용으로 두고 Claude/Codex는 얇은 emitter만 가진다. raw 로그는 Git에 커밋하지 않고 repo 필드로 집계한다.
 - **명명**: 라우터/핸들러(기계적) 기각 → **트리거/플레이북**(목적 표현). **cascade > wiring** (동작 vs 상태; 원하는 건 "퍼져서 갱신"=동작).
-- **portable 경로**: settings.json 심링크를 역추적해 레포 위치 도출 → 머신/홈(`vscode`↔`shpark`) 달라도 동작. 절대경로 하드코딩 금지.
+- **portable 경로**: settings.json 심링크를 역추적해 레포 위치 도출 → 머신/홈이 달라도 동작. 절대경로 하드코딩 금지.
 
 ## 5. 현재 한계 (정직)
-1. **대부분 soft(프롬프트 기반).** 결정적인 건 훅뿐(SessionStart 주입 + 사용측정 + 회사계정 push 가드). 안전·핵심 규칙부터 점진적으로 hard화 중.
+1. **대부분 soft(프롬프트 기반).** 결정적인 건 훅뿐(SessionStart 주입 + 사용측정). 개인 계정 정책 같은 실행 가드는 shared가 아니라 profile/local hook으로 분리한다.
 2. **실사용 검증 0.** 한 세션에 많이 지음 → 한 달 써봐야 살아남는지/죽은 config인지 판별 가능.
 3. **Codex SkillStart는 soft.** native Skill 이벤트가 없어 AGENTS 규칙의 명시 emit에 의존한다. 누락률을 본 뒤 wrapper/MCP 승격 여부를 판단한다.
 
@@ -61,7 +60,7 @@
 | **must-have 결정적화** | 점진적 (안전·핵심 규칙부터) | soft 규칙 → 훅/스크립트/CI로 이전 |
 | **verdict 캡처** | "품질 판단 기록 필요" 느낄 때 | 품질은 사람이 느낌 — 정량 신호 아님(그래서 측정과 분리) |
 | **로컬 검색 하네스** | 자연어 단서 기반 파일·문서 탐색에서 raw `rg`/`find` 반복이 3회 이상 보이면 | Jikji는 외부 CLI 기반 optional backend 후보로만 검증한다. `docs/context/` 전용 FTS5는 하위 후보로 유지한다. 코드 심볼·정확 문자열·정규식·config key 검색은 `rg` 우선, 자연어 단서 기반 문서/파일 discovery는 Jikji 우선 검토. Markdown/docs/files가 source of truth이고, SQLite/FTS5/`.jikji/`/`.jikji_agent_map.md`/`.jikji/doc_text/`는 Git·rsync 대상이 아닌 재생성 가능한 검색 index/cache/read model이다. |
-| **universal cascade** (git pre-commit) | 생 `git commit`으로 drift 한 번 새면 | 현재는 omai-commit 경로만 강제. judgment(배치)는 훅 불가 |
+| **universal cascade** (git pre-commit) | 생 `git commit`으로 drift 한 번 새면 | shared pre-commit 또는 CI로 승격. 개인 커밋 자동화에 의존하지 않는다. |
 | **settings.json wiring 체크** | 훅 만들고 연결 빼먹는 일 실제로 생기면 | 훅 파일 존재 ↔ settings.json 참조 대조 |
 | **golden prompts** (회귀 감지) | 큰 하네스 변경 후 | 수동 eyeball (prompt 하네스는 자동 pass/fail 불가). revert는 복구일 뿐 |
 | **자동 projection 실사용 검증** | 다음 커스텀 스킬 추가 시 | SKILL.md 한 곳만 수정 → 라우팅·MINE 자동 생성 확인 |

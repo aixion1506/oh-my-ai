@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Example only. Copy to profiles/local/<profile>/commit-helper.sh and fill local values.
+set -euo pipefail
+
+: "${GITHUB_PRIMARY_USER:?set GITHUB_PRIMARY_USER locally}"
+
+MSG="${1:-}"
+if [ -z "$MSG" ]; then
+  echo 'usage: commit-helper.sh "message" [paths...]' >&2
+  exit 1
+fi
+shift || true
+
+REMOTE=$(git remote get-url origin 2>/dev/null || true)
+BRANCH=$(git branch --show-current 2>/dev/null || true)
+AUTHOR=$(git config user.email 2>/dev/null || true)
+ACTIVE=$(gh auth status 2>/dev/null | awk '/ account /{for(i=1;i<=NF;i++) if($i=="account") a=$(i+1)} /Active account: true/{print a; exit}' || true)
+
+printf 'remote=%s
+branch=%s
+author=%s
+gh_account=%s
+' "$REMOTE" "$BRANCH" "$AUTHOR" "$ACTIVE"
+
+if [ "$#" -gt 0 ]; then
+  git add -- "$@"
+else
+  git add -A
+fi
+
+git commit -m "$MSG"
