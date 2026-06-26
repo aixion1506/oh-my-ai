@@ -44,12 +44,188 @@
 - **명명**: 라우터/핸들러(기계적) 기각 → **트리거/플레이북**(목적 표현). **cascade > wiring** (동작 vs 상태; 원하는 건 "퍼져서 갱신"=동작).
 - **portable 경로**: settings.json 심링크를 역추적해 레포 위치 도출 → 머신/홈이 달라도 동작. 절대경로 하드코딩 금지.
 
-## 5. 현재 한계 (정직)
+## 5. Conversation capture / handoff prompt contract
+
+상태: **설계 contract 단계**. skill, hook, script, make target, sub-agent, 자동 orchestration은 아직 만들지 않는다.
+
+목표는 세션 전환 때 누락되기 쉬운 "현재 브랜치·PR·금지사항·검증·다음 액션"을 안정적으로 넘기는 것이다. 단, 대화 전체를 장기 저장하거나 자동으로 다음 세션에 주입하는 기능이 아니다.
+
+### 책임 경계
+
+| 구성요소 | 책임 | 다루는 입력 | 산출 | 저장 원칙 |
+|----------|------|-------------|------|-----------|
+| `conversation-capture` | 대화 이벤트 관측 계층. raw event 수집, redaction, summary/decision/todo 후보 생성 | user prompt, assistant response, tool use, session summary 같은 런타임 이벤트 | raw local log, redacted candidate | raw는 local-only. Git tracking 금지. candidate는 truth가 아님 |
+| `handoff-prompt` export | 다음 AI 세션에 붙여넣는 단기 실행 프롬프트 생성 | confirmed summary/decision/todo, 현재 repo 상태, 사용자가 명시한 금지사항 | 복붙용 prompt | 기본 저장 안 함. 저장하더라도 local-only 임시 산출물 |
+| `project-context` | 장기 맥락 저장소. 설계 배경·결정 로그·파일 맵을 `docs/context/`에 축적 | human-confirmed 결정, 장기 보존할 작업 맥락 | `docs/context/*` living doc | curated 내용만 Git tracking 가능 |
+| `automation-backlog` | 반복 업무 후보 누적 | human-confirmed toil 후보 | backlog item | raw 대화가 아니라 확인된 후보만 Git tracking 가능 |
+
+핵심 결정:
+- raw event는 `conversation-capture`만 다룬다.
+- `handoff-prompt`는 raw log가 아니라 **redacted + confirmed + task-scoped** 정보만 사용한다.
+- summary/decision/todo candidate는 자동 summary일 뿐 truth가 아니다.
+- human confirmation 전에는 `docs/context`나 `automation-backlog`로 승격하지 않는다.
+- `project-context`는 장기 context이고, `handoff-prompt`는 다음 세션용 단기 export다.
+
+### 데이터 흐름
+
+```text
+Claude / Codex / GPT 대화
+        ↓
+conversation-capture
+        ↓
+raw local log
+  - local-only
+  - Git tracking 금지
+  - 외부 승격 금지
+        ↓
+redacted summary / decision / todo candidates
+  - 아직 truth 아님
+  - 자동 승격 금지
+        ↓
+human confirmation
+        ↓
+curated artifacts
+  - docs/context: 장기 설계·작업 맥락
+  - automation-backlog: 반복 업무 후보
+        ↓
+handoff-prompt export
+  - 다음 AI 세션에 붙여넣는 단기 실행 프롬프트
+  - raw log 주입 금지
+        ↓
+다음 AI 세션
+```
+
+`handoff-prompt`는 반드시 `docs/context`를 거쳐야만 만들 수 있는 것은 아니다. 현재 repo 상태, PR 상태, 검증 결과, 사용자가 명시한 금지사항, confirmed summary만으로도 만들 수 있어야 한다.
+
+### 저장 모델
+
+| 데이터 | 저장 위치 | Git tracking | 다음 AI 세션 주입 | 정책 |
+|--------|-----------|--------------|-------------------|------|
+| raw conversation log | XDG state 또는 profile-local private path | 금지 | 금지 | 외부 승격 금지 |
+| conversation event | raw local log 내부 | 금지 | 금지 | tool output 원문 포함 가능성 있음 |
+| summary candidate | local-only queue/cache | 기본 금지 | 직접 주입 금지 | human confirmation 전 truth 아님 |
+| decision candidate | local-only queue/cache | 기본 금지 | 직접 주입 금지 | 확인 후에만 승격 |
+| todo candidate | local-only queue/cache | 기본 금지 | 직접 주입 금지 | 자동 backlog 반영 금지 |
+| curated context | `docs/context/*` | 가능 | 가능 | redacted + confirmed 내용만 |
+| automation candidate | `automation-backlog.md` | 가능 | 가능 | confirmed toil 후보만 |
+| handoff prompt | 기본 미저장. 필요 시 local temp | 기본 금지 | 가능 | redacted + confirmed + task-scoped only |
+
+### 계층 분류
+
+| 계층 | 포함 | 제외 |
+|------|------|------|
+| Core Harness | event schema, redaction contract, raw log vs curated summary 분리 원칙, human confirmation requirement, handoff prompt contract | 특정 런타임 transcript 포맷 의존 |
+| Ecosystem Extension | Claude hook, Codex hook, GPT export adapter, 실제 capture 구현, event logger script, handoff prompt generator | shared core 강제 활성화 |
+| Personal Profile | capture enable/disable, 저장 경로, retention 기간, 회사 repo 정책, 개인 handoff 선호 포맷 | shared instruction에 개인 정책 포함 |
+
+Core는 **계약과 안전 경계**만 가진다. 실제 hook/script/generator는 런타임별 extension으로 둔다. enable 여부와 보존 기간은 profile/local 정책이다.
+
+### MVP 범위
+
+v1 MVP는 구현이 아니라 문서화된 contract다.
+
+포함:
+- event schema 초안
+- redaction contract
+- raw log local-only 원칙
+- raw log / candidate / curated context / handoff prompt 분리 원칙
+- human confirmation requirement
+- handoff prompt export contract
+- handoff prompt template 초안
+
+보류:
+- `skills/handoff-prompt/SKILL.md`
+- `skills/session-handoff/SKILL.md`
+- Claude/Codex hook 구현
+- make target/script 추가
+- raw log 자동 요약
+- `docs/context` 자동 반영
+- `automation-backlog` 자동 반영
+- sub-agent runtime
+- 자동 orchestration
+- PR/stash 자동 추론
+- 외부 저장소 동기화
+- 민감정보 자동 redaction 완전 자동화
+
+### Handoff prompt export contract
+
+`handoff-prompt`는 저장물이 아니라 다음 세션에 붙여넣는 export 산출물이다. 최소 항목:
+
+```markdown
+# Agent Handoff Prompt
+
+## Goal
+- <작업 목표와 완료 기준>
+
+## Current Repo State
+- Repository: <owner/repo 또는 local path>
+- Current branch: <branch>
+- Base branch: <base>
+- Worktree status: <clean / dirty + 파일 목록>
+- Last commit: <sha 제목>
+- Remote: <credential 제거한 remote>
+
+## Related Work
+- Primary PR: <번호/URL/상태>
+- Related PRs: <건드리면 안 되는 PR 포함>
+- Tags / release baselines: <있으면>
+
+## Do Not Touch
+- <master 직접 push 금지 등>
+- <다른 PR 브랜치 금지>
+- <stash@{n} 금지>
+- <reset/rebase/force push 금지>
+- <generated file 직접 수정 금지>
+
+## Local State / Stash
+- Stashes: <관련 항목만>
+- Must not apply/drop: <주의 stash>
+- Local-only files/profiles: <profiles/local 등>
+
+## Completed Work
+- <완료된 변경 요약>
+- <중요 결정과 이유>
+
+## Verification
+- `<command>`: <pass/fail/blocked>
+- Known environment issues: <bwrap loopback 등 있으면>
+- Generated file drift: <make instructions 후 clean 여부>
+
+## Next Action
+1. <정확한 다음 액션>
+2. <그 다음 액션>
+
+## Expected Final Report
+- Branch:
+- Changed files:
+- Verification:
+- Risks:
+- Whether push/merge/tag was done:
+```
+
+금지:
+- raw log 원문 포함
+- tool output 원문 장기 복사
+- secret/token/path/user-specific 정보 미검증 포함
+- 자동 summary를 사실로 단정
+- 민감 정보가 포함된 prompt를 다른 AI 세션에 전달
+- next session에 raw log 자동 주입
+
+### 이름 결정
+
+구현 산출물 이름은 `handoff-prompt`가 더 정확하다. `session-handoff`는 capture, 저장, context update까지 포함하는 넓은 기능처럼 보인다. 현재 contract에서는:
+- `conversation-capture`: 입력/관측 계층
+- `handoff-prompt`: 출력/export format
+- `project-context`: 장기 저장소
+
+향후 3회 이상 수동 handoff에 써본 뒤 필요하면 `skills/handoff-prompt/SKILL.md`로 분리한다.
+
+## 6. 현재 한계 (정직)
 1. **대부분 soft(프롬프트 기반).** 결정적인 건 훅뿐(SessionStart 주입 + 사용측정). 개인 계정 정책 같은 실행 가드는 shared가 아니라 profile/local hook으로 분리한다.
 2. **실사용 검증 0.** 한 세션에 많이 지음 → 한 달 써봐야 살아남는지/죽은 config인지 판별 가능.
 3. **Codex SkillStart는 soft.** native Skill 이벤트가 없어 AGENTS 규칙의 명시 emit에 의존한다. 누락률을 본 뒤 wrapper/MCP 승격 여부를 판단한다.
 
-## 6. 다음 단계 (전부 usage-gated — 트리거 전엔 premature)
+## 7. 다음 단계 (전부 usage-gated — 트리거 전엔 premature)
 > 원칙: 당장 더 짓지 말고 **실사용으로 검증·prune 먼저.** 아래는 각 항목을 "언제" 착수할지.
 
 | 항목 | 트리거 (언제 착수) | 메모 (디테일·주의) |
