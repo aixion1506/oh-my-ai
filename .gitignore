@@ -24,6 +24,9 @@ claude/.last-update-result.json
 # ====== 플러그인 캐시 (claude plugin install 이 관리) ======
 claude/plugins/
 
+# ====== 하네스 로컬 상태 (telemetry/cache) ======
+.oh-my-ai/
+
 # ====== 머신별 상태 ======
 claude/mcp-needs-auth-cache.json
 claude/projects/

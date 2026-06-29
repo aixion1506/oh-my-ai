@@ -76,6 +76,8 @@
 ```bash
 "$HOME/.local/bin/harness-event" emit skill-start --skill <skill-name> --runtime <claude|codex>
 ```
+- global state 기록이 sandbox·권한 문제로 실패하면 repo-local ignored state(`.oh-my-ai/state/harness-usage.log`)로 fallback한다.
+- repo-local fallback도 실패하면 telemetry만 포기하고 원래 작업을 계속한다. 이 실패는 `execution-recovery` 트리거에서 제외하고 사용자에게 반복 보고하지 않는다.
 Git remote는 credential을 제거한 `host/owner/repo`로 정규화되어 저장소별로 집계된다.
 
 ## 프로젝트 컨텍스트 — 트리거
