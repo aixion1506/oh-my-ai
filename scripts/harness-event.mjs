@@ -61,12 +61,51 @@ function gitContext() {
   };
 }
 
-function statePath() {
+function globalStatePath() {
   const stateHome =
     process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state");
-  const directory = path.join(stateHome, "oh-my-ai");
-  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  return path.join(directory, "harness-usage.log");
+  return path.join(stateHome, "oh-my-ai", "harness-usage.log");
+}
+
+function repoLocalStatePath() {
+  const root = git("rev-parse", "--show-toplevel") || process.cwd();
+  return path.join(root, ".oh-my-ai", "state", "harness-usage.log");
+}
+
+function statePaths() {
+  return [...new Set([globalStatePath(), repoLocalStatePath()])];
+}
+
+function ensureParent(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+}
+
+function writableStatePath() {
+  for (const file of statePaths()) {
+    try {
+      ensureParent(file);
+      return file;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function appendTelemetry(record) {
+  for (const file of statePaths()) {
+    try {
+      ensureParent(file);
+      fs.appendFileSync(file, `${JSON.stringify(record)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
 }
 
 function emit(args) {
@@ -87,38 +126,32 @@ function emit(args) {
     ...gitContext(),
   };
 
-  fs.appendFileSync(statePath(), `${JSON.stringify(record)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+  appendTelemetry(record);
 }
 
 function report(args) {
-  const log = statePath();
   const all = args.includes("--all");
   const repo = all ? null : option(args, "--repo") || gitContext().repo;
   const sinceDays = Number(option(args, "--since-days") || 0);
   const cutoff = sinceDays > 0 ? Date.now() - sinceDays * 86400000 : 0;
   const counts = new Map();
 
-  if (!fs.existsSync(log)) {
-    console.log("count\trepo\truntime\tskill");
-    return;
-  }
-
-  for (const line of fs.readFileSync(log, "utf8").split("\n")) {
-    if (!line) continue;
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      continue;
+  for (const log of statePaths()) {
+    if (!fs.existsSync(log)) continue;
+    for (const line of fs.readFileSync(log, "utf8").split("\n")) {
+      if (!line) continue;
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (record.event !== "skill_start") continue;
+      if (repo && record.repo !== repo) continue;
+      if (cutoff && Date.parse(record.timestamp) < cutoff) continue;
+      const key = `${record.repo}\t${record.runtime}\t${record.skill}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
     }
-    if (record.event !== "skill_start") continue;
-    if (repo && record.repo !== repo) continue;
-    if (cutoff && Date.parse(record.timestamp) < cutoff) continue;
-    const key = `${record.repo}\t${record.runtime}\t${record.skill}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
   }
 
   console.log("count\trepo\truntime\tskill");
@@ -130,5 +163,5 @@ function report(args) {
 const [command, ...args] = process.argv.slice(2);
 if (command === "emit") emit(args);
 else if (command === "report") report(args);
-else if (command === "path") console.log(statePath());
+else if (command === "path") console.log(writableStatePath() || globalStatePath());
 else fail("usage: harness-event <emit|report|path>");

@@ -111,7 +111,7 @@ docs/
 
 ## 스킬 사용량 조회
 
-공용 로그는 Git에 커밋하지 않고 `${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/harness-usage.log`에 JSONL로 저장한다.
+공용 로그는 Git에 커밋하지 않고 `${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/harness-usage.log`에 JSONL로 저장한다. Codex sandbox 등에서 global state 기록이 막히면 `.oh-my-ai/state/harness-usage.log`에 repo-local ignored state로 fallback한다.
 
 ```bash
 harness-event report                                      # 현재 Git 저장소
