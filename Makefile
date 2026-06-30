@@ -1,13 +1,16 @@
 REPO    := $(shell pwd)
 PROFILE ?=
 
-.PHONY: install install-shared init-profile install-profile doctor instructions update
+.PHONY: install install-shared init-profile install-profile doctor instructions update work-start
 
 instructions:
 	./scripts/render-instructions.sh
 
 doctor:
 	./setup.sh --doctor
+
+work-start:
+	./scripts/work-start.sh
 
 install: install-shared
 
