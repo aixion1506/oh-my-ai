@@ -76,6 +76,31 @@ path_state() {
   fi
 }
 
+show_profile_skills() {
+  profile_dir="$1"
+  skills_dir="$profile_dir/skills"
+  rel_skills_dir="${skills_dir#$REPO/}"
+
+  if [ -d "$skills_dir" ]; then
+    say "profile private skills: $rel_skills_dir (exists)"
+    found_skill=0
+    for d in "$skills_dir"/*; do
+      [ -d "$d" ] || continue
+      if [ -f "$d/SKILL.md" ]; then
+        found_skill=1
+        say "  private skill: $(basename "$d")"
+      fi
+    done
+    if [ "$found_skill" -eq 0 ]; then
+      say "  no private skills with SKILL.md found"
+    fi
+    say "  note: private skills are gitignored and not automatically installed or linked."
+    say "        connect them manually or add an explicit opt-in installer later."
+  else
+    say "missing: $rel_skills_dir (optional private skills)"
+  fi
+}
+
 safe_link() {
   src="$1"
   dest="$2"
@@ -118,6 +143,7 @@ doctor() {
     profile_local="$REPO/profiles/local/$HARNESS_PROFILE"
     if [ -d "$profile_local" ]; then
       say "profile: profiles/local/$HARNESS_PROFILE (exists)"
+      show_profile_skills "$profile_local"
       for f in "$profile_local"/*.sh; do
         [ -f "$f" ] || continue
         script_name="$(basename "$f")"
@@ -225,6 +251,7 @@ install_profile() {
   if [ -f "$profile_dir/PROFILE.md" ]; then
     say "profile doc: $profile_dir/PROFILE.md"
   fi
+  show_profile_skills "$profile_dir"
   run mkdir -p "$LOCAL_BIN"
   found=0
   for f in "$profile_dir"/*; do
@@ -245,6 +272,8 @@ install_profile() {
   fi
   say ""
   say "Profile scripts linked to ~/.local/bin/. Hooks and settings are NOT auto-enabled."
+  say "Private skills under profiles/local/<profile>/skills/ are gitignored but NOT auto-merged into runtime skill paths."
+  say "Connect private skills manually or wait for an explicit opt-in installer."
   say "To use push-guard.sh as a Claude PreToolUse hook, add it to your local settings.json manually."
 }
 
