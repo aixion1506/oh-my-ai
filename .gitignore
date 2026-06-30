@@ -38,6 +38,11 @@ claude/projects/
 .claude.json
 profiles/local/
 
+# ====== 내부 기획 문서 (public repo 커밋 금지) ======
+docs/strategy/
+docs/internal/
+docs/roadmap-private/
+
 # ====== 로컬 검색 인덱스/cache (재생성 가능, 원본 아님) ======
 .jikji/
 .jikji_agent_map.md
