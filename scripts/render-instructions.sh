@@ -122,6 +122,8 @@ MINE_TEMP="$TMP_DIR/MINE.md.rendered"
 trim_trailing_blank_lines "$MINE_TEMP" "$MINE_TEMP.trimmed"
 mv "$MINE_TEMP.trimmed" "$MINE_OUTPUT"
 
+node "$REPO/scripts/render-skill-index.mjs"
+
 printf 'Rendered %s\n' "$ROOT_CLAUDE_OUTPUT"
 printf 'Rendered %s\n' "$CLAUDE_OUTPUT"
 printf 'Rendered %s\n' "$CODEX_OUTPUT"
