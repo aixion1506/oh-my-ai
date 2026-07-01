@@ -12,11 +12,11 @@ metadata:
 **감지·넛지 트리거는 CLAUDE.md(상시 로드)에 있다.** 이 스킬은 그 넛지가 **컨펌된 뒤** — "이걸 자동화하자"가 정해진 다음의 평가·형태선택·구조화·정리를 다룬다.
 
 ## 착수 게이트 (만들기 전 확인)
-1. **3회+ 반복**했는가 (rule of three). 1~2회면 backlog만.
+1. **3회+ 반복**했는가 (rule of three). 1~2회면 local 후보 로그만.
 2. **흐름이 안정**됐는가. 아직 바뀌는 중이면 보류 — 만들고 곧 4번 고칠 거면 이르다.
 3. **ROI > 유지비**인가.
 
-미달이면 `automation-backlog.md`(또는 메모리)에 후보로 캡처하고 흘려보낸다.
+미달이면 `.oh-my-ai/state/automation-candidates.log` 같은 local-only state에 후보로 캡처하고 흘려보낸다. `automation-backlog.md`는 사용자가 확인한 항목만 수동 승격하는 tracked backlog로 둔다.
 
 ## 형태 선택 — 하나만 추천 (survey 금지)
 | 형태 | 언제 |
@@ -41,5 +41,5 @@ metadata:
 - **형태 오선택** → 이 스킬의 **형태 선택 표**에 분별 기준 보강.
 
 규칙:
-- 미스는 즉석 수정 말고 `automation-backlog.md`에 한 줄 회고로 캡처, 체크포인트에서 반영.
+- 미스는 즉석 수정 말고 `.oh-my-ai/state/automation-candidates.log`에 한 줄 회고로 캡처하고, 사용자 확인 후 `automation-backlog.md`로 수동 승격한다.
 - **비대화 금지.** 새 규칙을 넣으면 낡거나 겹치는 줄을 지워 분량을 일정하게 유지한다.
