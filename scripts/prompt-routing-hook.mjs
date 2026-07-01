@@ -15,6 +15,8 @@ const format = args.has("--format=claude-json")
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const automationCandidatesPath = path.join(repoRoot, ".oh-my-ai", "state", "automation-candidates.log");
+const skillIndexPath = path.join(repoRoot, "skills", "skill-index.json");
+const SKILL_CANDIDATE_LIMIT = 2;
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -69,7 +71,8 @@ function buildContext(prompt) {
 
   const handoff = hasHandoffSignal(prompt, normalized);
   const pr = hasPrSignal(prompt, normalized);
-  if (handoff || pr) {
+  const legacyHandoffNudged = handoff || pr;
+  if (legacyHandoffNudged) {
     const prSuffix = pr ? " For PR creation, verify first and also consider whether `project-context` HANDOFF needs updating." : "";
     notes.push(
       "- Handoff/PR signal: consider the `handoff-prompt` skill for a short, confirmed next-session export." + prSuffix
@@ -78,6 +81,17 @@ function buildContext(prompt) {
 
   if (hasProjectContextSignal(prompt, normalized)) {
     notes.push("- Project context signal: consider `project-context` CREATE/UPDATE before proceeding; handoff must include decision background, not only a task list.");
+  }
+
+  const excludeSkillNames = legacyHandoffNudged ? ["handoff-prompt"] : [];
+  const skillCandidates = matchSkillCandidates(normalized, excludeSkillNames);
+  if (skillCandidates.length > 0) {
+    const rendered = skillCandidates
+      .map(candidate => `\`${candidate.name}\` (matched: ${candidate.matched.join(", ")})`)
+      .join(", ");
+    notes.push(
+      `- Skill routing candidates: ${rendered}. Do not auto-execute skills; inspect fit before applying.`
+    );
   }
 
   if (notes.length === 0) return "";
@@ -138,4 +152,39 @@ function hasPrSignal(prompt, normalized) {
 function hasProjectContextSignal(prompt, normalized) {
   if (/(context 없|컨텍스트 없|맥락 없|이 서비스 처음|새 서비스|새 도메인|처음.{0,10}서비스|처음.{0,10}도메인)/i.test(prompt)) return true;
   return /\b(no|without|missing)\s+(project\s+)?context\b/.test(normalized);
+}
+
+function loadSkillIndex() {
+  try {
+    const raw = fs.readFileSync(skillIndexPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.skills)) return [];
+    return parsed.skills;
+  } catch {
+    return [];
+  }
+}
+
+function matchSkillCandidates(normalized, excludeSkillNames) {
+  const excluded = new Set(excludeSkillNames);
+  const candidates = [];
+
+  for (const skill of loadSkillIndex()) {
+    if (!skill || excluded.has(skill.name)) continue;
+    const routing = skill.routing || {};
+    if (routing.visibility === "hidden") continue;
+    if (routing.risk_level === "high") continue;
+
+    const keywordValues = (routing.triggers || [])
+      .filter(trigger => trigger && trigger.kind === "keyword")
+      .flatMap(trigger => Array.isArray(trigger.values) ? trigger.values : []);
+
+    const matched = keywordValues.filter(value => normalized.includes(String(value).toLowerCase()));
+    if (matched.length > 0) {
+      candidates.push({ name: skill.name, matched });
+    }
+  }
+
+  candidates.sort((a, b) => b.matched.length - a.matched.length);
+  return candidates.slice(0, SKILL_CANDIDATE_LIMIT);
 }
