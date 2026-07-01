@@ -7,8 +7,10 @@
 ## 후보
 <!-- 예시: - [YYYY-MM-DD] 무엇이 toil인가 — 본 횟수 N — 후보 형태 -->
 - [2026-06-25] 자연어 단서 기반 로컬 파일·문서 탐색 최적화 — 본 횟수 1 — 후보 형태: Jikji 외부 설치 + local-search 얇은 래퍼 스킬
+- [2026-07-01] 세션 상태를 가독성+핵심 위주로 요약/정리 출력 — 본 횟수 1 — 후보 형태: `/recap`(요약=판단·강조 압축) + `/status`(정리=사실 스냅샷) slash command. **스킬 아님** — 순수 출력 포맷이라 command가 맞음. 포맷: 🎯지금하는일→🧠핵심결정표→📁지도→✅상태→▶️다음액션+표현원칙각주
 
 ## 완료 / 폐기
+- [2026-07-01] tracked backlog가 자동 감지 후보로 dirty될 위험 → PR #18에서 `.oh-my-ai/state/automation-candidates.log` local-only 후보 로그로 분리 (DONE)
 - [2026-06-24] Claude 전용 스킬 로그 → 공용 SkillStart + XDG state + Git 저장소별 집계 (DONE)
 - [2026-06-24] 동일 인프라 오류 재시도·토큰 폭주 → execution-recovery circuit breaker + incident 기록 (DONE)
 - [2026-06-22] oh-my-ai 커밋 계정전환 4단계 수동 → `scripts/omai-commit.sh` (DONE)
