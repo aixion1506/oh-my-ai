@@ -16,6 +16,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")\")\"; node \"$REPO/scripts/prompt-routing-hook.mjs\" --format=claude-json || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Skill",

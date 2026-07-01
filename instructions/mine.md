@@ -17,11 +17,14 @@
 - `instructions/mine.md` — `MINE.md` 자동 생성용 템플릿
 - `instructions/execution-policy.md` — 파일 수정 방식 선택을 위한 execution mode 정책
 - `automation-backlog.md` — harness-automation 용 toil 후보 누적장 (SessionStart 훅이 매 세션 띄움)
+- `claude/settings.json` UserPromptSubmit 훅 — toil·스킬 라우팅 신호를 감지해 컨텍스트 주입
+- `codex/hooks.json` UserPromptSubmit 훅 — Codex에서 toil·스킬 라우팅 신호를 감지해 컨텍스트 주입
 - `claude/settings.json` SessionStart 훅 #2 — 현재 디렉토리의 docs/context/ 파일 목록 자동 주입
 - `docs/harness-design.md` — 하네스 설계·결정·현황 기록 (WHY 중심, 상태표)
 - `docs/incidents/2026-06-24-bwrap-retry-loop.md` — 편집 도구 장애의 재시도·토큰 폭주 incident와 방지 규칙
 - `docs/devcontainer-workflow.md` — oh-my-ai/심링크/계정 워크플로 상세 (CLAUDE.md에서 강등)
 - `scripts/harness-event.mjs` + XDG state — Claude/Codex SkillStart를 Git 저장소 단위로 기록·집계 (월간 prune용)
+- `scripts/prompt-routing-hook.mjs` — UserPromptSubmit에서 toil·handoff·project-context 신호를 결정적으로 보강
 - `profiles/example/PROFILE.md` — 개인 profile 분리 예시 템플릿
 - `profiles/example/commit-helper.sh.example` — 개인 커밋 helper 예시 템플릿
 - `profiles/example/push-guard.sh.example` — 개인 push guard 예시 템플릿
@@ -30,4 +33,4 @@
 
 ## 공유 파일의 커스텀 편집분 (참고)
 - `CLAUDE.md` — 표현 원칙 / 반복 업무 자동화 트리거 / devcontainer 심링크 구조 명시
-- `claude/settings.json` — SessionStart 훅 (automation-backlog 주입)
+- `claude/settings.json` — SessionStart 훅 (automation-backlog 주입) + UserPromptSubmit 훅 (prompt routing)
