@@ -1,7 +1,20 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 const args = new Set(process.argv.slice(2));
-const format = args.has("--format=claude-json") ? "claude-json" : "text";
+const format = args.has("--format=claude-json")
+  ? "claude-json"
+  : args.has("--format=codex-json")
+    ? "codex-json"
+    : args.has("--format=text")
+      ? "text"
+      : "codex-json";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const automationCandidatesPath = path.join(repoRoot, ".oh-my-ai", "state", "automation-candidates.log");
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -17,20 +30,24 @@ process.stdin.on("end", () => {
     process.exit(0);
   }
 
-  if (format === "claude-json") {
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "UserPromptSubmit",
-        additionalContext: context,
-      },
-    }));
-    process.stdout.write("\n");
+  if (format === "claude-json" || format === "codex-json") {
+    writeUserPromptSubmitJson(context);
     return;
   }
 
   process.stdout.write(context);
   process.stdout.write("\n");
 });
+
+function writeUserPromptSubmitJson(context) {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: context,
+    },
+  }));
+  process.stdout.write("\n");
+}
 
 function parseInput(input) {
   if (!input.trim()) return {};
@@ -46,7 +63,8 @@ function buildContext(prompt) {
   const notes = [];
 
   if (hasToilSignal(prompt, normalized)) {
-    notes.push("- Toil signal: check `automation-backlog.md`; update the seen count or nudge only if the flow is recurring, stable, and worth automating. Do not create automation before user confirmation.");
+    appendAutomationCandidate(prompt);
+    notes.push("- Toil signal: check `.oh-my-ai/state/automation-candidates.log` for auto-detected candidates. Promote only user-confirmed items to `automation-backlog.md`; nudge only if the flow is recurring, stable, and worth automating. Do not create automation before user confirmation.");
   }
 
   const handoff = hasHandoffSignal(prompt, normalized);
@@ -69,6 +87,23 @@ function buildContext(prompt) {
     "The latest user prompt contains harness routing signals. Apply these checks before continuing:",
     ...notes,
   ].join("\n");
+}
+
+function appendAutomationCandidate(prompt) {
+  try {
+    fs.mkdirSync(path.dirname(automationCandidatesPath), { recursive: true });
+    const summary = prompt.replace(/\s+/g, " ").trim().slice(0, 500);
+    if (!summary) return;
+    const entry = {
+      ts: new Date().toISOString(),
+      source: "prompt-routing-hook",
+      signal: "toil",
+      prompt: summary,
+    };
+    fs.appendFileSync(automationCandidatesPath, JSON.stringify(entry) + "\n", "utf8");
+  } catch {
+    // Routing context is helpful but must never block prompt submission.
+  }
 }
 
 function hasToilSignal(prompt, normalized) {

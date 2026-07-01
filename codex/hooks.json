@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.codex/hooks.json)\")\")\"; node \"$REPO/scripts/prompt-routing-hook.mjs\" --format=text || true",
+            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.codex/hooks.json)\")\")\"; node \"$REPO/scripts/prompt-routing-hook.mjs\" --format=codex-json || true",
             "timeout": 5,
             "statusMessage": "Checking harness routing signals"
           }
