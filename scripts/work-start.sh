@@ -438,6 +438,21 @@ write_text_candidates_md() {
 
 rm -f "$SOURCES_TMP" "$DOCS_TMP" "$CODE_TMP" "$DECISIONS_TMP" "$RISKS_TMP" "$KEYWORDS_TMP"
 
+skill_match_script="$REPO/scripts/work-start-skill-match.mjs"
+skill_gap_md=$'## Skill candidates\n\n- skill gap: no routed skill matched this task; proceed without skill assist.\n'
+skill_gap_yaml=$'skill_candidates:\n  status: skill_gap\n  primary: []\n  secondary: []\n'
+skill_md="$skill_gap_md"
+skill_yaml="$skill_gap_yaml"
+if command -v node >/dev/null 2>&1 && [ -f "$skill_match_script" ]; then
+  skill_md_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=markdown 2>/dev/null || true)"
+  skill_yaml_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=yaml 2>/dev/null || true)"
+  [ -n "$skill_md_out" ] && skill_md="$skill_md_out"
+  [ -n "$skill_yaml_out" ] && skill_yaml="$skill_yaml_out"
+fi
+
+printf '\n%s\n' "$skill_md" >> "$OUT_DIR/starter-prompt.md"
+printf '\n%s\n' "$skill_yaml" >> "$OUT_DIR/context-manifest.yaml"
+
 echo "work-start artifact created: $OUT_DIR"
 echo "  - context-manifest.yaml"
 echo "  - starter-prompt.md"
