@@ -45,6 +45,19 @@ metadata:
 
 `workflow_hint`와 `external_context`는 v1에서 **기록/힌트 전용**이다. 실행하지 않는다.
 
+### v1.1 추가
+
+| v1.1 IN | v1.1 OUT |
+|---------|---------|
+| `skills/` inventory 스캔 (존재하는 SKILL.md만) | skill auto-execution |
+| task_type + keyword + description 기반 candidate 매칭 | private skill 자동 설치 |
+| primary / secondary / optional 티어 구분 | runtime skill path 변경 |
+| candidate + reason + matched signals 출력 | review lens chain |
+| private profile skill → manual reference only 표시 | workflow preset |
+| skill gap 표시 (repo에 없는 스킬 + fallback 제안) | orchestration |
+| intermediate checkpoint에 추천 스킬 후보 섹션 추가 | |
+| 컨펌 전 스킬 실행 금지 | |
+
 ---
 
 ## 핵심 규칙
@@ -149,6 +162,191 @@ metadata:
 
 ---
 
+## 3.5단계: Skill Candidate Routing
+
+repo context 수집 후, task_type과 domain keyword를 기반으로 `skills/*/SKILL.md` inventory를 스캔해
+적용 후보 스킬을 추천한다. **사용자 컨펌 전에는 어떤 스킬도 실행하지 않는다.**
+
+### Skill Metadata 최소 표준
+
+스킬 frontmatter에 아래 필드가 있으면 더 정확히 매칭된다.
+없는 경우 `description` 텍스트 기반 heuristic으로 fallback한다.
+
+```yaml
+metadata:
+  routing:
+    task_types: [code_change, debugging]  # 적합한 task_type
+    keywords: [golang, error]             # 매칭 키워드
+    use_when:
+      - "Go 코드에서 에러를 처리할 때"
+    do_not_use_when:
+      - "Python/Java 프로젝트에 적용할 때"
+    visibility: public                    # public | private
+    risk_level: low                       # low | medium | high
+    requires: []                          # 선행 조건
+```
+
+현재 대부분의 스킬은 이 표준 metadata를 갖추지 않으므로 v1.1은 description 기반 heuristic을 사용한다.
+metadata가 추가된 스킬은 자동으로 더 정확한 매칭을 얻는다.
+
+### Candidate 스캔 순서
+
+1. `ls skills/*/SKILL.md` — 현재 repo에 실제 존재하는 스킬만 대상
+2. `profiles/local/` 아래 스킬은 스캔하지 않고 manual reference로만 표시
+3. 각 스킬을 아래 기준으로 scoring 후 tier 분류
+
+### Candidate Scoring 기준
+
+| 신호 | 가중치 |
+|------|--------|
+| task_type이 routing.task_types에 포함 | 높음 |
+| task 텍스트 keyword가 routing.keywords 또는 description에 포함 | 중간 |
+| use_when 조건이 현재 context와 일치 | 중간 |
+| description이 task와 의미적으로 관련 | 낮음 |
+| visibility: private | 제외 (manual reference만) |
+
+### Tier 정의
+
+| tier | 기준 |
+|------|------|
+| **primary** | task_type 직접 매칭 + keyword 일치. 이 작업에서 거의 항상 필요 |
+| **secondary** | keyword 또는 description 매칭. 상황에 따라 유용 |
+| **optional** | 간접 관련. 사용자가 필요하면 참고 |
+
+### task_type별 routing table
+
+`skills/` 에 실제 존재하는 스킬만 포함한다. 없는 스킬은 skill gap으로 처리한다.
+
+**code_change**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `golang-error-handling` | golang 키워드 |
+| primary | `kotlin-patterns` | kotlin 키워드 |
+| primary | `springboot-patterns` | spring/java 키워드 |
+| secondary | `golang-dependency-injection` | golang + DI/서비스 구조 |
+| secondary | `golang-grpc` | golang + grpc/protobuf |
+| secondary | `kotlin-coroutines-flows` | kotlin + async/flow |
+| secondary | `kotlin-ktor-patterns` | kotlin + ktor/API |
+| secondary | `springboot-tdd` | spring + 테스트 |
+| secondary | `springboot-security` | spring + auth/security |
+| secondary | `jpa-patterns` | spring + DB/entity |
+| secondary | `postgres` | postgres/postgresql 키워드 |
+| secondary | `redis-development` | redis/cache 키워드 |
+| optional | `springboot-verification` | spring + 배포 전 검증 |
+| optional | `execution-recovery` | 도구 실패 동반 시 |
+
+**architecture_design**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `project-context` | 항상 |
+| secondary | `golang-grpc` | golang + API/MSA 설계 |
+| secondary | `kotlin-ktor-patterns` | kotlin + 서버 설계 |
+| secondary | `springboot-patterns` | spring + 레이어 설계 |
+| secondary | `golang-dependency-injection` | golang + 서비스 구조 |
+| secondary | `redis-development` | 캐시 아키텍처 포함 |
+| secondary | `kubernetes-skill` | 인프라/배포 설계 포함 |
+| optional | `database-migration` | 데이터 설계 포함 |
+
+**migration**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `database-migration` | DB/schema migration |
+| primary | `legacy-modernizer` | 시스템 현대화/모노리스 분리 |
+| primary | `kubernetes-skill` | 인프라/k8s migration |
+| secondary | `jpa-patterns` | JPA/Hibernate 관련 |
+| secondary | `postgres` | PostgreSQL migration |
+| secondary | `springboot-patterns` | Spring Boot 업그레이드 |
+| optional | `springboot-verification` | 검증 단계 포함 |
+
+**debugging**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `execution-recovery` | 도구/인프라 장애 |
+| secondary | `golang-error-handling` | golang 에러 추적 |
+| secondary | `postgres` | DB 쿼리/성능 문제 |
+| secondary | `springboot-patterns` | Spring 애플리케이션 디버깅 |
+| optional | `kubernetes-skill` | k8s 환경 문제 |
+
+**documentation**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `worklog-note` | Notion 정리 |
+| primary | `release-note` | 릴리즈 노트/Jira fixVersion |
+| primary | `daily-report` | Slack/일일보고 |
+| secondary | `project-context` | 설계 문서/decision record |
+| optional | `handoff-prompt` | 세션 전환 문서 포함 |
+
+**review**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `springboot-verification` | Spring Boot 프로젝트 |
+| secondary | `springboot-security` | 보안 리뷰 |
+| secondary | `golang-error-handling` | golang PR 리뷰 |
+| secondary | `golang-grpc` | gRPC API 리뷰 |
+| secondary | `healthcare-phi-compliance` | healthcare/PHI 관련 |
+| optional | `hipaa-compliance` | HIPAA 컴플라이언스 리뷰 |
+
+**handoff**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `handoff-prompt` | 항상 |
+| secondary | `project-context` | 설계 배경 포함 시 |
+| optional | `daily-report` | 일일 보고 포함 시 |
+
+**refactor**
+
+| tier | 스킬 | 조건 |
+|------|------|------|
+| primary | `legacy-modernizer` | 레거시 개선/모노리스 |
+| secondary | `golang-dependency-injection` | golang DI 리팩터 |
+| secondary | `springboot-patterns` | Spring 리팩터 |
+| secondary | `kotlin-patterns` | Kotlin 리팩터 |
+| optional | `database-migration` | 스키마 리팩터 포함 |
+
+### Skill Gap 처리
+
+repo에 없는 스킬이 필요한 경우 확정 추천하지 않는다.
+"skill gap — 현재 skills/ 에 없음" 으로 표시하고 fallback을 제안한다.
+
+현재 알려진 skill gap:
+
+| 필요한 스킬 | 상태 | fallback |
+|-----------|------|---------|
+| `systematic-debugging` | Superpowers plugin — skills/ 없음 | `execution-recovery` (인프라 장애 한정) |
+| `verification-before-completion` | Superpowers plugin — skills/ 없음 | `springboot-verification` (Spring 한정) |
+| `code-review` | `/code-review` 커맨드 존재, skills/ 없음 | `/code-review` 커맨드 직접 사용 |
+| `test-driven-development` | skills/ 없음 | `springboot-tdd` (Spring), `kotlin-testing` (Kotlin) |
+
+### Private Profile Skill 처리
+
+- `profiles/local/` 아래 스킬은 자동 스캔하지 않는다.
+- 사용자가 명시적으로 언급한 경우에만 `(private — manual reference only)` 로 표시한다.
+- 자동 로딩, 자동 실행, 경로 노출 금지.
+
+### Candidate 출력 형식
+
+```
+추천 스킬 후보:
+
+| tier | 스킬 | reason | matched signals |
+|------|------|--------|----------------|
+| primary | `golang-error-handling` | golang 에러 처리 작업 | keyword: golang, task_type: code_change |
+| secondary | `golang-dependency-injection` | DI 구조 변경 포함 가능 | keyword: golang, service |
+| optional | `execution-recovery` | 도구 실패 시 참고 | task: 인프라 포함 |
+
+skill gap:
+- `systematic-debugging` — skills/ 없음. fallback: `execution-recovery` (인프라 장애 한정)
+```
+
+---
+
 ## 4단계: Intermediate Checkpoint
 
 repo context 수집 후, **액션 전에** 중간 점검을 보고한다.
@@ -167,13 +365,25 @@ repo context 수집 후, **액션 전에** 중간 점검을 보고한다.
 ### 작업 유형
 - task_type: <분류>
 
+### 추천 스킬 후보
+| tier | 스킬 | reason | matched signals |
+|------|------|--------|----------------|
+| primary | `<skill-name>` | <이유> | <keyword, task_type 등> |
+| secondary | `<skill-name>` | <이유> | <keyword 등> |
+
+skill gap:
+- `<skill-name>` — skills/ 없음. fallback: <대안>
+
+(매칭 없으면: "매칭된 스킬 후보 없음 — skills/ 목록을 직접 확인하거나 스킬을 지정해주세요")
+
 ### 후보 방향
 - <진행 방향 후보 1~2개, candidate로 표기>
 
 ### 식별된 리스크
 - <data, security, rollback, compatibility, scope 관련>
 
-이 방향으로 진행해도 괜찮으신가요?
+위 스킬을 적용하면서 진행할까요?
+다른 스킬을 지정하거나 스킬 없이 진행할 수도 있습니다.
 ```
 
 ---
