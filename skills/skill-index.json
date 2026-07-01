@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "source": "skills/*/SKILL.md metadata.routing",
+  "skills": [
+    {
+      "name": "daily-report",
+      "path": "skills/daily-report/SKILL.md",
+      "description": "Optional workflow skill for Slack-style daily reports. Use only when the user works with Slack daily reports and, optionally, Notion worklogs/Todo pages; it summarizes today's work by project with progress percentages.",
+      "summary": "Optional Slack/Notion 일일보고 workflow",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "reporting"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "일일보고",
+              "데일리 리포트",
+              "daily report"
+            ]
+          },
+          {
+            "kind": "intent",
+            "values": [
+              "summarize_work_for_slack"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "일일보고",
+            "보고",
+            "진척률"
+          ],
+          "en": [
+            "daily report",
+            "slack report",
+            "progress"
+          ]
+        },
+        "use_when": [
+          "회사 Slack 일일보고 형식으로 오늘 작업을 프로젝트별 진척률과 함께 정리해야 하는 경우"
+        ],
+        "do_not_use_when": [
+          "Notion 업무일지나 Done/Todo 형식으로 스캔 가능한 개인 기록을 작성하는 경우"
+        ],
+        "requires": [
+          "today_session_context"
+        ]
+      }
+    },
+    {
+      "name": "handoff-prompt",
+      "path": "skills/handoff-prompt/SKILL.md",
+      "description": "Use when ending a session, switching AI tools, or creating a PR — to generate a structured handoff prompt that the next AI session can use as context. Covers branch state, completed work, do-not-touch constraints, verification results, and next actions. Does NOT capture raw logs or auto-summarize conversation.",
+      "summary": "세션 전환 시 다음 AI 세션에 붙여넣을 handoff prompt를 사람이 직접 작성하도록 안내",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "medium",
+        "task_types": [
+          "handoff",
+          "session-transfer"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "핸드오프",
+              "인수인계",
+              "새 세션",
+              "넘겨줘",
+              "handoff"
+            ]
+          },
+          {
+            "kind": "intent",
+            "values": [
+              "prepare_next_session_context"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "핸드오프",
+            "인수인계",
+            "넘겨",
+            "새 세션"
+          ],
+          "en": [
+            "handoff",
+            "transfer",
+            "next session"
+          ]
+        },
+        "use_when": [
+          "세션 종료나 AI 도구 전환 전에 다음 세션이 이어받을 수 있는 짧은 export prompt가 필요한 경우"
+        ],
+        "do_not_use_when": [
+          "장기 보존할 설계 맥락을 docs/context에 축적해야 하는 경우"
+        ],
+        "requires": [
+          "current_repo_state"
+        ]
+      }
+    },
+    {
+      "name": "worklog-note",
+      "path": "skills/worklog-note/SKILL.md",
+      "description": "Optional workflow skill for Notion-style worklogs, Todo roadmaps, and meeting notes. Use only when the user keeps worklogs in Notion or a similar workspace and wants verbose entries condensed for scanning.",
+      "summary": "Optional Notion 업무일지 정리 workflow",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "reporting",
+          "worklog"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "노션용",
+              "업무일지",
+              "Done/Todo",
+              "worklog"
+            ]
+          },
+          {
+            "kind": "intent",
+            "values": [
+              "summarize_work_for_notion"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "노션",
+            "업무일지",
+            "오늘 한 거",
+            "정리"
+          ],
+          "en": [
+            "notion",
+            "worklog",
+            "done",
+            "todo"
+          ]
+        },
+        "use_when": [
+          "Notion이나 유사한 개인 업무일지에 오늘 작업을 Done/Todo 형태로 정리해야 하는 경우"
+        ],
+        "do_not_use_when": [
+          "회사 Slack 일일보고처럼 프로젝트별 진척률이 필요한 경우"
+        ],
+        "requires": [
+          "today_session_context"
+        ]
+      }
+    }
+  ]
+}

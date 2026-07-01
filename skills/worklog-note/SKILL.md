@@ -4,6 +4,39 @@ description: Optional workflow skill for Notion-style worklogs, Todo roadmaps, a
 metadata:
   source: born-here
   summary: Optional Notion 업무일지 정리 workflow
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - reporting
+      - worklog
+    triggers:
+      - kind: keyword
+        values:
+          - 노션용
+          - 업무일지
+          - Done/Todo
+          - worklog
+      - kind: intent
+        values:
+          - summarize_work_for_notion
+    keywords:
+      ko:
+        - 노션
+        - 업무일지
+        - 오늘 한 거
+        - 정리
+      en:
+        - notion
+        - worklog
+        - done
+        - todo
+    use_when:
+      - Notion이나 유사한 개인 업무일지에 오늘 작업을 Done/Todo 형태로 정리해야 하는 경우
+    do_not_use_when:
+      - 회사 Slack 일일보고처럼 프로젝트별 진척률이 필요한 경우
+    requires:
+      - today_session_context
 ---
 
 # 업무일지(Done/Todo) 작성

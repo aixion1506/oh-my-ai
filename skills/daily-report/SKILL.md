@@ -4,6 +4,35 @@ description: Optional workflow skill for Slack-style daily reports. Use only whe
 metadata:
   source: born-here
   summary: Optional Slack/Notion 일일보고 workflow
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - reporting
+    triggers:
+      - kind: keyword
+        values:
+          - 일일보고
+          - 데일리 리포트
+          - daily report
+      - kind: intent
+        values:
+          - summarize_work_for_slack
+    keywords:
+      ko:
+        - 일일보고
+        - 보고
+        - 진척률
+      en:
+        - daily report
+        - slack report
+        - progress
+    use_when:
+      - 회사 Slack 일일보고 형식으로 오늘 작업을 프로젝트별 진척률과 함께 정리해야 하는 경우
+    do_not_use_when:
+      - Notion 업무일지나 Done/Todo 형식으로 스캔 가능한 개인 기록을 작성하는 경우
+    requires:
+      - today_session_context
 ---
 
 # 슬랙 일일보고 작성

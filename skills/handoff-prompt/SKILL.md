@@ -4,6 +4,39 @@ description: Use when ending a session, switching AI tools, or creating a PR —
 metadata:
   source: born-here
   summary: 세션 전환 시 다음 AI 세션에 붙여넣을 handoff prompt를 사람이 직접 작성하도록 안내
+  routing:
+    visibility: contextual
+    risk_level: medium
+    task_types:
+      - handoff
+      - session-transfer
+    triggers:
+      - kind: keyword
+        values:
+          - 핸드오프
+          - 인수인계
+          - 새 세션
+          - 넘겨줘
+          - handoff
+      - kind: intent
+        values:
+          - prepare_next_session_context
+    keywords:
+      ko:
+        - 핸드오프
+        - 인수인계
+        - 넘겨
+        - 새 세션
+      en:
+        - handoff
+        - transfer
+        - next session
+    use_when:
+      - 세션 종료나 AI 도구 전환 전에 다음 세션이 이어받을 수 있는 짧은 export prompt가 필요한 경우
+    do_not_use_when:
+      - 장기 보존할 설계 맥락을 docs/context에 축적해야 하는 경우
+    requires:
+      - current_repo_state
 ---
 
 # Handoff Prompt — 세션 전환 export 가이드
