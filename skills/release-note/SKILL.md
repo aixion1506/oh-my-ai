@@ -23,6 +23,10 @@ metadata:
 - **assignee accountId**: URL의 `assignee=` 파라미터(예: `assignee=712020%3A63acd...` → URL 디코드해서 `712020:63acd...`) 또는 별도 인자.
 - 둘 중 하나라도 빠졌으면 사용자에게 물어본다.
 
+**프론트엔드 분리 원칙:**
+- 사용자가 던져주는 URL의 assignee 필터는 **이미 백엔드 담당자만 추린 것**이다. 프론트엔드 팀은 별도로 릴리즈 노트를 관리한다.
+- 따라서 assignee 파라미터를 임의로 확장하거나 "프론트 이슈도 포함해야 하나?" 고민하지 않는다. 받은 URL 그대로 사용한다.
+
 ## 도구 준비
 
 사용 가능한 Jira/Confluence MCP 또는 app connector를 사용한다. 런타임마다 도구 이름이 다르므로 특정 tool ID에 의존하지 않는다.
@@ -31,19 +35,31 @@ metadata:
 - Confluence 수정 도구는 사용자가 페이지 반영을 명시한 경우에만 사용한다.
 - 조회와 수정에 필요한 권한이 없으면 실패 원인을 그대로 알리고 읽기 결과만 제공한다.
 
-## 1. Jira 조회
+## 작업 순서 개요
+
+릴리즈 노트 작성은 **2단계**로 나뉜다. 섞지 말 것.
+
+- **1단계 (수집·정리):** Jira 조회 → 로컬 파일 저장 → 필터링 → parent 롤업 → 표로 정리
+- **2단계 (유저 언어 재작성):** 1단계 결과를 유저가 이해할 수 있는 말로 다시 쓴다. 이슈 제목을 그대로 옮기지 않는다. 개발자 용어(scheme, fallback, gRPC, UUID, CAGG 등) 전면 제거. 버그는 PR까지 열어서 "유저가 실제로 겪은 현상"이 뭔지 확인 후 작성.
+
+## 1. Jira 조회 및 로컬 캐시
 
 cloudId 는 `nurilab-jira.atlassian.net` 를 사용한다.
 
-JQL: `fixVersion = <ID> AND assignee = "<accountId>" ORDER BY issuetype, created`
+JQL: `fixVersion = <ID> AND assignee in ("<accountId>", ...) ORDER BY issuetype, created`
+
+**조회 후 즉시 로컬 파일로 저장 — 필수:**
+- 조회 결과를 `docs/releases/<versionId>-issues.tsv`에 저장한다. 세션이 끊겨도 재조회 없이 파일에서 작업을 이어갈 수 있다.
+- 저장 형식: `key\ttype\tparent\tsummary` (헤더 포함)
+  ```bash
+  jq -r '["key","type","parent","summary"], (.issues.nodes[] | [.key, .fields.issuetype.name, (.fields.parent.key // "-"), .fields.summary]) | @tsv' <결과파일> > docs/releases/<versionId>-issues.tsv
+  ```
+- 이후 모든 작업은 이 tsv 파일을 기준으로 한다. Jira를 다시 조회하지 않는다.
 
 **토큰 절약 — 필수:**
-- Jira 도구가 필드 선택을 지원하면 **`summary`, `issuetype`만** 요청한다. 분류에 쓰는 것은 key·타입·요약뿐이다.
+- Jira 도구가 필드 선택을 지원하면 **`summary`, `issuetype`, `parent`** 를 요청한다. `parent` 는 자식 이슈 롤업 판단에 필수다.
 - 페이지 크기는 최대 100으로 요청하고, 응답 형식을 선택할 수 있으면 구조화된 결과를 우선한다.
-- 결과가 파일로 저장되면 파일 전체를 본문으로 읽지 말고 실제 응답 스키마를 확인한 뒤 `jq`로 key·타입·요약만 추출한다. `issues.nodes` 형태라면:
-  ```
-  jq -r '.issues.nodes[] | [.key, .fields.issuetype.name, .fields.summary] | @tsv' <파일>
-  ```
+- 결과가 파일로 저장되면 파일 전체를 본문으로 읽지 말고 `jq`로 필요한 필드만 추출한다.
 - 다음 페이지가 있으면 도구가 제공하는 cursor/page token으로 모두 가져온다. 여러 담당자면 assignee 조건을 빼고 한 번에 받아 그룹핑하는 편이 호출 수와 토큰을 줄인다.
 
 ## 2. 유저 체감 필터링 (자동 제외)
@@ -76,6 +92,12 @@ JQL: `fixVersion = <ID> AND assignee = "<accountId>" ORDER BY issuetype, created
 - **서브태스크**(하위 작업) = 커밋/브랜치 단위 개발 액션 ← **노트에 직접 쓰지 않음**
 
 판단 절차:
+0. **같은 부모를 공유하는 이슈는 부모 레벨로 롤업 (가장 먼저):**
+   - tsv에서 `parent` 컬럼을 기준으로 그룹핑한다.
+   - **부모 key가 결과셋 안에 있으면** → 자식 제거, 부모가 대표.
+   - **부모 key가 결과셋 밖에 있고 자식이 2개 이상이면** → `getJiraIssue`로 부모를 직접 조회해 summary를 확인하고, 자식 전체를 부모 1줄로 묶어 표현한다. 자식을 줄줄이 나열하지 않는다.
+   - **부모가 없거나(`-`) 자식이 혼자인데 부모가 결과셋 밖이면** → 해당 이슈 그대로 유지.
+   - (부모에 fixVersion 누락은 사람 실수로 발생할 수 있으므로 JQL 필터가 아닌 이 방식으로 판단한다.)
 1. 각 이슈가 어떤 **에픽/스토리에 속하는지** 먼저 묶는다. (제목의 `[stateless-N]`, `Phase N`, `[cutover-N]`, 같은 epic prefix, 같은 패키지/서비스 등이 단서.)
 2. 한 에픽 아래 잘게 쪼개진 Phase/버그/개선이 여러 개면, **개별로 쓰지 말고 그 에픽/스토리의 유저 체감 결과물 1줄(또는 소수)로 합친다.**
 3. 그 에픽 자체가 **백엔드 리팩터라 유저 비체감**이면(예: 서비스 분리, 무상태 cutover, request collapsing) → **노트에서 통째로 생략**하거나, 꼭 알려야 하면 추상화한 1줄만.
@@ -118,9 +140,12 @@ JQL: `fixVersion = <ID> AND assignee = "<accountId>" ORDER BY issuetype, created
 
 **중분류 카테고리 일관성:** 한 셀 내에서 기준을 통일한다. "스캔 요청(요청 타입별)"과 "SMS 검사 서비스(서비스별)"를 같은 셀에 섞지 않는다. 실제로 다른 변화면 임의로 병합하지 않는다.
 
-소분류 문구 규칙:
-- 일반인이 봐도 이해되게. 전문용어(tenant, DeadlineExceeded, request_infos, gRPC 등) 금지.
+소분류 문구 규칙 (2단계 — 유저 언어 재작성):
+- **이슈 제목을 그대로 옮기지 않는다.** 제목은 개발자 관점이다. 유저가 겪는 것 기준으로 다시 쓴다.
+- 전문용어(tenant, DeadlineExceeded, request_infos, gRPC, scheme, fallback, UUID, CAGG 등) 전면 금지.
 - 동작 중심으로: `~ 추가` / `~ 하도록 개선` / `~ 현상 수정`.
+- **버그는 PR을 열어 확인한다.** 이슈 제목만으로는 유저 체감을 정확히 알 수 없다. PR 본문의 "무엇을 왜 수정했는지"를 읽고, 유저 입장에서 어떤 현상이었는지를 문장으로 풀어 쓴다.
+  - 예: "scheme-변경 fallback이 changedUrls 대신 urls로 재조회" → "이미 검사한 URL이 다시 검사되던 현상을 수정했습니다."
 - 각 항목 끝에 추적용으로 이슈 키를 작게 덧붙여도 됨(사용자가 빼라면 뺀다).
 
 ## 5. 마무리
