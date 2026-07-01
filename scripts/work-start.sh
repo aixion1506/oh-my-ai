@@ -135,6 +135,30 @@ if [ ! -s "$KEYWORDS_TMP" ]; then
   printf '%s\n' "task" > "$KEYWORDS_TMP"
 fi
 
+infer_preset_hint() {
+  local text
+  text="$(printf '%s' "$TASK_TEXT" | tr '[:upper:]' '[:lower:]')"
+  if printf '%s' "$text" | grep -qE 'migration|cutover|dual.?write|이관|마이그레이션'; then
+    printf '%s' "migration"
+  elif printf '%s' "$text" | grep -qE 'debug|error|bug|fix|crash|exception|디버그|버그|오류'; then
+    printf '%s' "bugfix"
+  elif printf '%s' "$text" | grep -qE 'refactor|cleanup|restructure|리팩터'; then
+    printf '%s' "refactor"
+  elif printf '%s' "$text" | grep -qE 'review|pull.?request|리뷰'; then
+    printf '%s' "review"
+  elif printf '%s' "$text" | grep -qE 'doc|notion|confluence|readme|wiki|문서|노션'; then
+    printf '%s' "documentation"
+  elif printf '%s' "$text" | grep -qE 'handoff|인수인계|transfer'; then
+    printf '%s' "handoff"
+  elif printf '%s' "$text" | grep -qE 'design|architect|설계|아키텍처'; then
+    printf '%s' "architecture_design"
+  else
+    printf '%s' "general"
+  fi
+}
+
+preset_hint="$(infer_preset_hint)"
+
 rg_common_args=(
   --hidden
   --glob '!.git/**'
@@ -371,6 +395,15 @@ write_text_candidates_md() {
   echo "    - 'Are there local notes, meeting notes, ticket text, or chat excerpts to provide as TASK_FILE?'"
   echo "    - 'Are there known constraints, non-goals, or forbidden files?'"
   echo "    - 'What must be verified before any edit is made?'"
+  echo "workflow_hint:"
+  echo "  preset: '$preset_hint'"
+  echo "  lenses: []"
+  echo "  tools: []"
+  echo "  note: 'Hint only. Not executed in v1.'"
+  echo "external_context:"
+  echo "  status: missing"
+  echo "  sources: []"
+  echo "  note: 'External context is user-provided only in v1.'"
   echo "artifacts:"
   echo "  path: '$OUT_DIR'"
   echo "  local_only: true"
