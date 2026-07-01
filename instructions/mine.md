@@ -30,6 +30,7 @@
 - `profiles/example/push-guard.sh.example` — 개인 push guard 예시 템플릿
 - `scripts/cascade-check.sh` — 커스텀 비스킬 산출물 MINE.md 등록 검사
 - `scripts/render-instructions.sh` — 스킬 메타데이터와 공용 원본으로 MINE/Claude/Codex 산출물 생성
+- `scripts/fix-plugin-install-paths.sh` — devcontainer/host `$HOME` 불일치로 깨진 `~/.claude/plugins/installed_plugins.json`의 installPath를 진단·교정
 
 ## 공유 파일의 커스텀 편집분 (참고)
 - `CLAUDE.md` — 표현 원칙 / 반복 업무 자동화 트리거 / devcontainer 심링크 구조 명시

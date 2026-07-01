@@ -9,6 +9,7 @@
 - [2026-06-25] 자연어 단서 기반 로컬 파일·문서 탐색 최적화 — 본 횟수 1 — 후보 형태: Jikji 외부 설치 + local-search 얇은 래퍼 스킬
 
 ## 완료 / 폐기
+- [2026-07-01] `~/.claude/plugins/installed_plugins.json`의 installPath가 실행 환경 $HOME(devcontainer 잔재 등)과 어긋나 plugin install 직후 skill/MCP가 안 붙던 문제 — 사용자가 과거 반복 확인, 게이트 조기 확정 → `scripts/fix-plugin-install-paths.sh` (DONE)
 - [2026-06-24] Claude 전용 스킬 로그 → 공용 SkillStart + XDG state + Git 저장소별 집계 (DONE)
 - [2026-06-24] 동일 인프라 오류 재시도·토큰 폭주 → execution-recovery circuit breaker + incident 기록 (DONE)
 - [2026-06-22] oh-my-ai 커밋 계정전환 4단계 수동 → `scripts/omai-commit.sh` (DONE)
