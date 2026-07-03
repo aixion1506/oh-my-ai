@@ -127,6 +127,47 @@ safe_link() {
   say "linked: $label -> $src"
 }
 
+git_hook_path() {
+  hp="$(git -C "$REPO" rev-parse --git-path hooks/pre-commit 2>/dev/null || true)"
+  [ -n "$hp" ] || return 1
+  case "$hp" in
+    /*) printf '%s\n' "$hp" ;;
+    *) printf '%s\n' "$REPO/$hp" ;;
+  esac
+}
+
+git_hook_relative_target() {
+  # $1 = directory the symlink will live in
+  if command -v realpath >/dev/null 2>&1 && rel="$(realpath --relative-to="$1" "$REPO/hooks/pre-commit" 2>/dev/null)"; then
+    printf '%s\n' "$rel"
+  else
+    printf '%s\n' "$REPO/hooks/pre-commit"
+  fi
+}
+
+install_git_hook() {
+  hook_src="$REPO/hooks/pre-commit"
+  if [ ! -f "$hook_src" ]; then
+    say "skip: git pre-commit hook source missing ($hook_src)"
+    return 0
+  fi
+
+  hook_path="$(git_hook_path)" || {
+    say "skip: not inside a git repository; cannot install git pre-commit hook"
+    return 0
+  }
+  hook_dir="$(dirname "$hook_path")"
+  run mkdir -p "$hook_dir"
+
+  if [ -e "$hook_path" ] && [ ! -L "$hook_path" ]; then
+    say "warn: $hook_path exists and is not a symlink; leaving your manual pre-commit hook in place"
+    return 0
+  fi
+
+  hook_target="$(git_hook_relative_target "$hook_dir")"
+  safe_link "$hook_target" "$hook_path" "git pre-commit hook"
+}
+
 doctor() {
   say "=== oh-my-ai doctor (read-only) ==="
   path_state "$CLAUDE_DIR/CLAUDE.md" "$REPO/claude/CLAUDE.md"
@@ -137,6 +178,15 @@ doctor() {
   path_state "$CODEX_DIR/hooks.json" "$REPO/codex/hooks.json"
   path_state "$AGENT_DIR/skills" "$REPO/skills"
   path_state "$LOCAL_BIN/harness-event" "$REPO/scripts/harness-event.mjs"
+  hook_path="$(git_hook_path 2>/dev/null || true)"
+  if [ -n "$hook_path" ]; then
+    if [ -L "$hook_path" ] && [ ! -e "$hook_path" ]; then
+      say "dangling: $hook_path -> $(readlink "$hook_path") (missing) — run: make install-shared to relink"
+    else
+      hook_dir="$(dirname "$hook_path")"
+      path_state "$hook_path" "$(git_hook_relative_target "$hook_dir")"
+    fi
+  fi
   say ""
   say "If a path says exists-local or exists-symlink, install-shared will skip it."
   say ""
@@ -171,6 +221,7 @@ install_shared() {
   safe_link "$REPO/skills" "$CLAUDE_DIR/skills" "Claude shared skills"
   safe_link "$REPO/skills" "$AGENT_DIR/skills" "Codex shared skills"
   safe_link "$REPO/claude/agents" "$CLAUDE_DIR/agents" "Claude shared agents"
+  install_git_hook
 
   say "=== done: existing user files were skipped, not overwritten ==="
 }
