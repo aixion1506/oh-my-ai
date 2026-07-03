@@ -7,6 +7,25 @@ compatibility: Designed for Claude Code or similar AI coding agents, and for pro
 metadata:
   author: samber
   version: "1.1.2"
+  summary: Golang 의존성 주입 설계 가이드
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - code_change
+      - architecture_design
+    triggers:
+      - kind: keyword
+        values:
+          - golang dependency injection
+          - golang di
+          - golang 의존성 주입
+    keywords:
+      ko:
+        - golang 의존성 주입
+      en:
+        - golang dependency injection
+        - golang di
   openclaw:
     emoji: "🔌"
     homepage: https://github.com/samber/cc-skills-golang

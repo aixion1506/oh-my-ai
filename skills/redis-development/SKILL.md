@@ -5,6 +5,23 @@ license: MIT
 metadata:
   author: redis
   version: "1.0.0"
+  summary: Redis 데이터 구조·성능 최적화 가이드
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - code_change
+      - architecture_design
+    triggers:
+      - kind: keyword
+        values:
+          - redis
+          - 레디스
+    keywords:
+      ko:
+        - 레디스
+      en:
+        - redis
 ---
 
 # Redis Best Practices

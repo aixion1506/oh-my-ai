@@ -5,6 +5,24 @@ license: MIT
 metadata:
   author: planetscale
   version: "1.0.0"
+  summary: PostgreSQL 쿼리 최적화·트러블슈팅 가이드
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - code_change
+      - debugging
+    triggers:
+      - kind: keyword
+        values:
+          - postgres
+          - postgresql
+    keywords:
+      ko:
+        - 포스트그레스
+      en:
+        - postgres
+        - postgresql
 ---
 
 # PlanetScale Postgres

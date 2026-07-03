@@ -53,6 +53,105 @@
       }
     },
     {
+      "name": "golang-dependency-injection",
+      "path": "skills/golang-dependency-injection/SKILL.md",
+      "description": "Comprehensive guide for dependency injection (DI) in Golang. Covers why DI matters (testability, loose coupling, separation of concerns, lifecycle management), manual constructor injection, and DI library comparison (google/wire, uber-go/dig, uber-go/fx, samber/do). Use this skill when designing service architecture, setting up dependency injection, refactoring tightly coupled code, managing singletons or service factories, or when the user asks about inversion of control, service containers, or wiring dependencies in Go.",
+      "summary": "Golang 의존성 주입 설계 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change",
+          "architecture_design"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "golang dependency injection",
+              "golang di",
+              "golang 의존성 주입"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "golang 의존성 주입"
+          ],
+          "en": [
+            "golang dependency injection",
+            "golang di"
+          ]
+        }
+      }
+    },
+    {
+      "name": "golang-error-handling",
+      "path": "skills/golang-error-handling/SKILL.md",
+      "description": "Idiomatic Golang error handling — creation, wrapping with %w, errors.Is/As, errors.Join, custom error types, sentinel errors, panic/recover, the single handling rule, structured logging with slog, HTTP request logging middleware, and samber/oops for production errors. Built to make logs usable at scale with log aggregation 3rd-party tools. Apply when creating, wrapping, inspecting, or logging errors in Go code.",
+      "summary": "Golang 에러 처리·로깅 관용구 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change",
+          "debugging"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "golang error",
+              "go error handling",
+              "golang 에러"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "고랭 에러",
+            "에러 처리"
+          ],
+          "en": [
+            "golang error",
+            "go error handling"
+          ]
+        }
+      }
+    },
+    {
+      "name": "golang-grpc",
+      "path": "skills/golang-grpc/SKILL.md",
+      "description": "Provides gRPC usage guidelines, protobuf organization, and production-ready patterns for Golang microservices. Use when implementing, reviewing, or debugging gRPC servers/clients, writing proto files, setting up interceptors, handling gRPC errors with status codes, configuring TLS/mTLS, testing with bufconn, or working with streaming RPCs.",
+      "summary": "Golang gRPC 서버/클라이언트 구현 패턴 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "golang grpc",
+              "go grpc",
+              "golang protobuf"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "고랭 grpc"
+          ],
+          "en": [
+            "golang grpc",
+            "protobuf"
+          ]
+        }
+      }
+    },
+    {
       "name": "handoff-prompt",
       "path": "skills/handoff-prompt/SKILL.md",
       "description": "Use when ending a session, switching AI tools, or creating a PR — to generate a structured handoff prompt that the next AI session can use as context. Covers branch state, completed work, do-not-touch constraints, verification results, and next actions. Does NOT capture raw logs or auto-summarize conversation.",
@@ -104,6 +203,163 @@
         "requires": [
           "current_repo_state"
         ]
+      }
+    },
+    {
+      "name": "kotlin-coroutines-flows",
+      "path": "skills/kotlin-coroutines-flows/SKILL.md",
+      "description": "Kotlin Coroutines and Flow patterns for Android and KMP — structured concurrency, Flow operators, StateFlow, error handling, and testing.",
+      "summary": "Kotlin 코루틴·Flow 동시성 패턴 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "kotlin coroutine",
+              "kotlin flow",
+              "코틀린 코루틴"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "코틀린 코루틴"
+          ],
+          "en": [
+            "kotlin coroutine",
+            "kotlin flow"
+          ]
+        }
+      }
+    },
+    {
+      "name": "kotlin-patterns",
+      "path": "skills/kotlin-patterns/SKILL.md",
+      "description": "Idiomatic Kotlin patterns, best practices, and conventions for building robust, efficient, and maintainable Kotlin applications with coroutines, null safety, and DSL builders.",
+      "summary": "Kotlin 관용 패턴·컨벤션 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change",
+          "refactor"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "kotlin"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "코틀린"
+          ],
+          "en": [
+            "kotlin"
+          ]
+        }
+      }
+    },
+    {
+      "name": "postgres",
+      "path": "skills/postgres/SKILL.md",
+      "description": "PostgreSQL best practices, query optimization, connection troubleshooting, and performance improvement. Load when working with Postgres databases.",
+      "summary": "PostgreSQL 쿼리 최적화·트러블슈팅 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change",
+          "debugging"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "postgres",
+              "postgresql"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "포스트그레스"
+          ],
+          "en": [
+            "postgres",
+            "postgresql"
+          ]
+        }
+      }
+    },
+    {
+      "name": "redis-development",
+      "path": "skills/redis-development/SKILL.md",
+      "description": "Redis performance optimization and best practices. Use this skill when working with Redis data structures, Redis Query Engine (RQE), vector search with RedisVL, semantic caching with LangCache, or optimizing Redis performance.",
+      "summary": "Redis 데이터 구조·성능 최적화 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change",
+          "architecture_design"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "redis",
+              "레디스"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "레디스"
+          ],
+          "en": [
+            "redis"
+          ]
+        }
+      }
+    },
+    {
+      "name": "springboot-patterns",
+      "path": "skills/springboot-patterns/SKILL.md",
+      "description": "Spring Boot architecture patterns, REST API design, layered services, data access, caching, async processing, and logging. Use for Java Spring Boot backend work.",
+      "summary": "Spring Boot 아키텍처·API 설계 패턴 가이드",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "low",
+        "task_types": [
+          "code_change",
+          "architecture_design"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "spring boot",
+              "스프링부트",
+              "스프링 부트"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "스프링부트"
+          ],
+          "en": [
+            "spring boot"
+          ]
+        }
       }
     },
     {
