@@ -5,5 +5,5 @@ set -eu
 if git diff --cached --name-only | grep -qE '(instructions/harness\.md|instructions/mine\.md|instructions/adapters/|scripts/render-instructions\.sh|skills/[^/]+/SKILL\.md)'; then
   printf 'harness source changed → make instructions\n'
   cd "$(git rev-parse --show-toplevel)" && make instructions
-  git add CLAUDE.md claude/CLAUDE.md AGENTS.md MINE.md
+  git add CLAUDE.md claude/CLAUDE.md AGENTS.md MINE.md skills/skill-index.json
 fi
