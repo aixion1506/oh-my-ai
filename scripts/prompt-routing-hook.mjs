@@ -151,6 +151,9 @@ function hasPrSignal(prompt, normalized) {
 
 function hasProjectContextSignal(prompt, normalized) {
   if (/(context 없|컨텍스트 없|맥락 없|이 서비스 처음|새 서비스|새 도메인|처음.{0,10}서비스|처음.{0,10}도메인)/i.test(prompt)) return true;
+  if (/(하네스\s*(context|컨텍스트)|(context|컨텍스트)\s*기능|docs\/context|project-context)/i.test(prompt)) return true;
+  if (/(설계|결정|맥락|컨텍스트).{0,24}(파일|문서|저장|정리|남겨|기록)/i.test(prompt)) return true;
+  if (/(파일|문서|저장|정리|남겨|기록).{0,24}(설계|결정|맥락|컨텍스트)/i.test(prompt)) return true;
   return /\b(no|without|missing)\s+(project\s+)?context\b/.test(normalized);
 }
 

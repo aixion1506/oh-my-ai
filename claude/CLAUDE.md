@@ -49,6 +49,7 @@ This file is generated from the shared oh-my-ai instruction source.
 |------|---------|
 | 반복 업무(toil) 감지·도구화 | `harness-automation` 스킬 (트리거는 아래 섹션) |
 | 새 도메인·서비스 작업 시작 (context 없음) | `project-context` 스킬 (CREATE 모드) |
+| 설계·결정 맥락을 `docs/context/`에 저장·정리 요청 | `project-context` 스킬 (CREATE/UPDATE 모드) |
 | 중요 설계·아키텍처 결정 내린 직후 | `project-context` 스킬 (UPDATE 모드) |
 | 세션 종료 / PR 생성 전 | `project-context` 스킬 (HANDOFF 모드) |
 
