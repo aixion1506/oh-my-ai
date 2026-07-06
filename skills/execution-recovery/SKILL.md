@@ -34,6 +34,17 @@ metadata:
 
 승인 요청과 대피 경로는 같은 목적에 각각 한 번만 허용한다.
 
+### Codex bwrap slave 권한 오류
+
+`bwrap: Failed to make / slave: Permission denied`는 sandbox infra failure로 분류한다.
+
+- 파일 read/write 중 이 오류가 발생하면 같은 도구·같은 방식으로 재시도하지 않는다.
+- 읽기는 우선 `rg -n`으로 필요한 범위를 확인한다.
+- 라인 번호가 꼭 필요하면 scoped escalation으로 `nl -ba <file>`을 한 번만 요청한다.
+- 쓰기는 `apply_patch`가 같은 오류로 실패하면 scoped escalation으로 좁은 단일 치환 명령을 사용한다.
+- 승인 요청은 목적과 대상 파일을 좁게 적고, broad prefix rule을 요청하지 않는다.
+- 복구 과정이 원래 작업보다 커지면 중단하고 blocker를 보고한다.
+
 ## 토큰 circuit breaker
 
 - 큰 payload를 Base64로 감싸지 않는다.
