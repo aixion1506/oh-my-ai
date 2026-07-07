@@ -7,6 +7,24 @@ compatibility: Designed for Claude Code or similar AI coding agents, and for pro
 metadata:
   author: samber
   version: "1.1.3"
+  summary: Golang gRPC 서버/클라이언트 구현 패턴 가이드
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - code_change
+    triggers:
+      - kind: keyword
+        values:
+          - golang grpc
+          - go grpc
+          - golang protobuf
+    keywords:
+      ko:
+        - 고랭 grpc
+      en:
+        - golang grpc
+        - protobuf
   openclaw:
     emoji: "🌐"
     homepage: https://github.com/samber/cc-skills-golang

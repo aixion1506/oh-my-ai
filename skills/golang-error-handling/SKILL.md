@@ -7,6 +7,26 @@ compatibility: Designed for Claude Code or similar AI coding agents, and for pro
 metadata:
   author: samber
   version: "1.1.2"
+  summary: Golang 에러 처리·로깅 관용구 가이드
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - code_change
+      - debugging
+    triggers:
+      - kind: keyword
+        values:
+          - golang error
+          - go error handling
+          - golang 에러
+    keywords:
+      ko:
+        - 고랭 에러
+        - 에러 처리
+      en:
+        - golang error
+        - go error handling
   openclaw:
     emoji: "⚠️"
     homepage: https://github.com/samber/cc-skills-golang

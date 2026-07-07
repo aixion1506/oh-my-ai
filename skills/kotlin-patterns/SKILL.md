@@ -2,6 +2,23 @@
 name: kotlin-patterns
 description: Idiomatic Kotlin patterns, best practices, and conventions for building robust, efficient, and maintainable Kotlin applications with coroutines, null safety, and DSL builders.
 origin: ECC
+metadata:
+  summary: Kotlin 관용 패턴·컨벤션 가이드
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - code_change
+      - refactor
+    triggers:
+      - kind: keyword
+        values:
+          - kotlin
+    keywords:
+      ko:
+        - 코틀린
+      en:
+        - kotlin
 ---
 
 # Kotlin Development Patterns
