@@ -4,6 +4,46 @@ description: Use when starting a new session on a codebase, resuming interrupted
 metadata:
   source: born-here
   summary: 세션 간 설계 배경과 작업 상태를 이어주는 컨텍스트 관리
+  routing:
+    visibility: contextual
+    risk_level: low
+    task_types:
+      - project-context
+      - design-record
+      - handoff-context
+    triggers:
+      - kind: keyword
+        values:
+          - docs/context
+          - project-context
+          - 하네스 context
+          - 하네스 컨텍스트
+          - context 기능
+          - 컨텍스트 기능
+          - 설계 저장
+          - 설계를 파일에 저장
+          - 결정 로그
+      - kind: intent
+        values:
+          - preserve_design_context
+          - update_project_context
+    keywords:
+      ko:
+        - 컨텍스트
+        - 설계 저장
+        - 결정 로그
+      en:
+        - docs/context
+        - project context
+        - design record
+    use_when:
+      - 설계·결정 맥락을 docs/context에 장기 보존해야 하는 경우
+      - 사용자가 하네스 context 기능이나 컨텍스트 파일 저장을 직접 언급한 경우
+    do_not_use_when:
+      - 단기 세션 전환용 붙여넣기 프롬프트만 필요한 경우
+      - 일반 설계 상담만 요청했고 파일 저장·문서화 의도가 없는 경우
+    requires:
+      - human_confirmed_design_context
 ---
 
 # Project Context — 생성·업데이트·핸드오프
