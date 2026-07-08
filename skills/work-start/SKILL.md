@@ -4,6 +4,56 @@ description: "Use when a user invokes /work-start or says they want to start, pl
 metadata:
   source: born-here
   summary: 작업 시작 시 외부 맥락 회수 → repo 컨텍스트 수집 → 중간 점검 → 컨펌의 conversation-native 플레이북
+  routing:
+    visibility: contextual
+    risk_level: medium
+    category: work-start
+    scope: generated_artifact_only
+    requires_confirmation: true
+    task_types:
+      - work-start
+      - task-planning
+      - context-gathering
+    triggers:
+      - kind: keyword
+        values:
+          - /work-start
+          - work-start
+          - 작업 시작
+          - 작업 시작하자
+          - kick off
+      - kind: intent
+        values:
+          - start_task_with_context
+          - gather_repo_context_before_work
+    keywords:
+      ko:
+        - 작업 시작
+        - 외부 맥락
+        - 컨텍스트 수집
+      en:
+        - work-start
+        - task start
+        - context gathering
+    use_when:
+      - 새 작업을 시작하기 전에 외부 맥락과 repo 후보를 수집해야 하는 경우
+      - 작업 계획을 세우기 전에 관련 문서·코드·결정·위험 후보를 정리해야 하는 경우
+    do_not_use_when:
+      - 사용자가 파일 생성 없이 답변 본문만 요청한 경우
+      - 이미 대상 파일과 수정 범위가 명확하고 별도 context recovery가 필요 없는 경우
+    requires:
+      - task_description
+    allowed_outputs:
+      - context_manifest
+      - starter_prompt
+      - source_candidates
+      - context_gap_report
+    forbidden_outputs:
+      - unconfirmed_code_patch
+      - source_file_write
+      - file_creation_without_confirmation
+      - unconfirmed_external_action
+      - pr_creation
 ---
 
 # Work Start — 작업 시작 플레이북

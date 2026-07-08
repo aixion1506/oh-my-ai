@@ -159,6 +159,9 @@
       "routing": {
         "visibility": "contextual",
         "risk_level": "medium",
+        "category": "handoff",
+        "scope": "generated_artifact_only",
+        "requires_confirmation": true,
         "task_types": [
           "handoff",
           "session-transfer"
@@ -202,6 +205,15 @@
         ],
         "requires": [
           "current_repo_state"
+        ],
+        "allowed_outputs": [
+          "handoff_prompt",
+          "next_session_summary"
+        ],
+        "forbidden_outputs": [
+          "raw_log_capture",
+          "source_file_write",
+          "pr_creation"
         ]
       }
     },
@@ -307,6 +319,9 @@
       "routing": {
         "visibility": "contextual",
         "risk_level": "low",
+        "category": "context-capture",
+        "scope": "docs_only",
+        "requires_confirmation": true,
         "task_types": [
           "project-context",
           "design-record",
@@ -357,6 +372,15 @@
         ],
         "requires": [
           "human_confirmed_design_context"
+        ],
+        "allowed_outputs": [
+          "project_context_draft",
+          "decision_record_update"
+        ],
+        "forbidden_outputs": [
+          "unconfirmed_context_promotion",
+          "source_file_write_outside_docs_context",
+          "pr_creation"
         ]
       }
     },
@@ -392,6 +416,77 @@
       }
     },
     {
+      "name": "release-note",
+      "path": "skills/release-note/SKILL.md",
+      "description": "Optional workflow skill for Jira/Confluence release operations. Use only when Jira fixVersion or release-report context is available and the user wants user-facing release notes, optionally with safe Confluence page updates.",
+      "summary": "Optional Jira/Confluence 릴리즈 노트 workflow",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "medium",
+        "category": "release-note",
+        "scope": "generated_artifact_only",
+        "requires_confirmation": true,
+        "task_types": [
+          "release-note",
+          "release-report",
+          "user-facing-summary"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "릴리즈 노트",
+              "릴리즈노트",
+              "release note",
+              "release notes",
+              "배포 노트",
+              "changelog"
+            ]
+          },
+          {
+            "kind": "intent",
+            "values": [
+              "write_user_facing_release_notes",
+              "summarize_confirmed_changes_for_release"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "릴리즈 노트",
+            "변경사항",
+            "배포 요약"
+          ],
+          "en": [
+            "release note",
+            "release notes",
+            "changelog"
+          ]
+        },
+        "use_when": [
+          "Jira fixVersion 또는 확인된 변경 목록을 기준으로 사용자용 릴리즈 노트를 작성해야 하는 경우"
+        ],
+        "do_not_use_when": [
+          "구현 완료 여부를 repo 확인 없이 단정하려는 경우",
+          "배포 실행이나 PR 생성을 요청하는 경우"
+        ],
+        "requires": [
+          "confirmed_change_source"
+        ],
+        "allowed_outputs": [
+          "release_note_draft",
+          "excluded_issue_summary"
+        ],
+        "forbidden_outputs": [
+          "unverified_completion_claim",
+          "source_file_write",
+          "deployment_action",
+          "unconfirmed_external_action",
+          "pr_creation"
+        ]
+      }
+    },
+    {
       "name": "springboot-patterns",
       "path": "skills/springboot-patterns/SKILL.md",
       "description": "Spring Boot architecture patterns, REST API design, layered services, data access, caching, async processing, and logging. Use for Java Spring Boot backend work.",
@@ -421,6 +516,79 @@
             "spring boot"
           ]
         }
+      }
+    },
+    {
+      "name": "work-start",
+      "path": "skills/work-start/SKILL.md",
+      "description": "Use when a user invokes /work-start or says they want to start, plan, or kick off a task — to classify the task, recover missing external context (tickets, docs, meeting notes, Slack excerpts, PRs), gather repo context, produce an intermediate checkpoint, and confirm the plan before any code edit, doc write, or external action.",
+      "summary": "작업 시작 시 외부 맥락 회수 → repo 컨텍스트 수집 → 중간 점검 → 컨펌의 conversation-native 플레이북",
+      "routing": {
+        "visibility": "contextual",
+        "risk_level": "medium",
+        "category": "work-start",
+        "scope": "generated_artifact_only",
+        "requires_confirmation": true,
+        "task_types": [
+          "work-start",
+          "task-planning",
+          "context-gathering"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "/work-start",
+              "work-start",
+              "작업 시작",
+              "작업 시작하자",
+              "kick off"
+            ]
+          },
+          {
+            "kind": "intent",
+            "values": [
+              "start_task_with_context",
+              "gather_repo_context_before_work"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "작업 시작",
+            "외부 맥락",
+            "컨텍스트 수집"
+          ],
+          "en": [
+            "work-start",
+            "task start",
+            "context gathering"
+          ]
+        },
+        "use_when": [
+          "새 작업을 시작하기 전에 외부 맥락과 repo 후보를 수집해야 하는 경우",
+          "작업 계획을 세우기 전에 관련 문서·코드·결정·위험 후보를 정리해야 하는 경우"
+        ],
+        "do_not_use_when": [
+          "사용자가 파일 생성 없이 답변 본문만 요청한 경우",
+          "이미 대상 파일과 수정 범위가 명확하고 별도 context recovery가 필요 없는 경우"
+        ],
+        "requires": [
+          "task_description"
+        ],
+        "allowed_outputs": [
+          "context_manifest",
+          "starter_prompt",
+          "source_candidates",
+          "context_gap_report"
+        ],
+        "forbidden_outputs": [
+          "unconfirmed_code_patch",
+          "source_file_write",
+          "file_creation_without_confirmation",
+          "unconfirmed_external_action",
+          "pr_creation"
+        ]
       }
     },
     {

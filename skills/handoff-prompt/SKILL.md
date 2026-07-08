@@ -7,6 +7,9 @@ metadata:
   routing:
     visibility: contextual
     risk_level: medium
+    category: handoff
+    scope: generated_artifact_only
+    requires_confirmation: true
     task_types:
       - handoff
       - session-transfer
@@ -37,6 +40,13 @@ metadata:
       - 장기 보존할 설계 맥락을 docs/context에 축적해야 하는 경우
     requires:
       - current_repo_state
+    allowed_outputs:
+      - handoff_prompt
+      - next_session_summary
+    forbidden_outputs:
+      - raw_log_capture
+      - source_file_write
+      - pr_creation
 ---
 
 # Handoff Prompt — 세션 전환 export 가이드

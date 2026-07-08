@@ -12,6 +12,28 @@ const outputPath = path.join(skillsDir, "skill-index.json");
 const VISIBILITY = new Set(["always", "contextual", "optional", "hidden"]);
 const RISK_LEVEL = new Set(["low", "medium", "high"]);
 const TRIGGER_KIND = new Set(["keyword", "intent", "pattern"]);
+const CATEGORY = new Set([
+  "work-start",
+  "release-note",
+  "handoff",
+  "daily-report",
+  "implementation-review",
+  "ci-fix",
+  "github-pr",
+  "context-capture",
+  "project-context",
+  "project-docs",
+  "safety",
+]);
+const SCOPE = new Set([
+  "read_only",
+  "generated_artifact_only",
+  "docs_only",
+  "repo_patch_candidate",
+  "code_patch_allowed_after_confirmation",
+  "external_action_forbidden",
+  "pr_creation_forbidden",
+]);
 
 const skills = fs.readdirSync(skillsDir, { withFileTypes: true })
   .filter(entry => entry.isDirectory())
@@ -76,12 +98,17 @@ function parseRouting(lines, routingStart, file) {
     assertIndent(lines[i], 4, file, "routing keys");
     const { key, value } = keyValue(lines[i], file);
 
-    if (key === "visibility" || key === "risk_level") {
+    if (key === "visibility" || key === "risk_level" || key === "category" || key === "scope") {
       routing[key] = requireInlineValue(value, file, key);
       continue;
     }
 
-    if (["task_types", "use_when", "do_not_use_when", "requires"].includes(key)) {
+    if (key === "requires_confirmation") {
+      routing[key] = parseBoolean(requireInlineValue(value, file, key), file, key);
+      continue;
+    }
+
+    if (["task_types", "use_when", "do_not_use_when", "requires", "allowed_outputs", "forbidden_outputs"].includes(key)) {
       requireNoInlineValue(value, file, key);
       const parsed = parseScalarList(lines, i, 6, file, key);
       routing[key] = parsed.values;
@@ -203,6 +230,11 @@ function validateSkill(skill, file) {
   optionalArray(routing, "use_when", file);
   optionalArray(routing, "do_not_use_when", file);
   optionalArray(routing, "requires", file);
+  optionalEnum(routing, "category", CATEGORY, file);
+  optionalEnum(routing, "scope", SCOPE, file);
+  optionalBoolean(routing, "requires_confirmation", file);
+  optionalArray(routing, "allowed_outputs", file);
+  optionalArray(routing, "forbidden_outputs", file);
 
   for (const trigger of routing.triggers) {
     if (!TRIGGER_KIND.has(trigger.kind)) {
@@ -234,6 +266,12 @@ function requiredEnum(object, key, allowed, file) {
   }
 }
 
+function optionalEnum(object, key, allowed, file) {
+  if (object[key] !== undefined && !allowed.has(object[key])) {
+    throw new Error(`${relativePath(file)}: routing.${key} must be one of ${[...allowed].join(", ")}`);
+  }
+}
+
 function requiredArray(object, key, file) {
   if (!Array.isArray(object[key]) || object[key].length === 0) {
     throw new Error(`${relativePath(file)}: routing.${key} must be a non-empty array`);
@@ -244,6 +282,18 @@ function optionalArray(object, key, file) {
   if (object[key] !== undefined && (!Array.isArray(object[key]) || object[key].length === 0)) {
     throw new Error(`${relativePath(file)}: routing.${key} must be a non-empty array when present`);
   }
+}
+
+function optionalBoolean(object, key, file) {
+  if (object[key] !== undefined && typeof object[key] !== "boolean") {
+    throw new Error(`${relativePath(file)}: routing.${key} must be true or false`);
+  }
+}
+
+function parseBoolean(value, file, key) {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${relativePath(file)}: routing.${key} must be true or false`);
 }
 
 function scalarValue(lines, indent, key, file, required = false) {

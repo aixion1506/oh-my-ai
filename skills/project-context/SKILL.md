@@ -7,6 +7,9 @@ metadata:
   routing:
     visibility: contextual
     risk_level: low
+    category: context-capture
+    scope: docs_only
+    requires_confirmation: true
     task_types:
       - project-context
       - design-record
@@ -44,6 +47,13 @@ metadata:
       - 일반 설계 상담만 요청했고 파일 저장·문서화 의도가 없는 경우
     requires:
       - human_confirmed_design_context
+    allowed_outputs:
+      - project_context_draft
+      - decision_record_update
+    forbidden_outputs:
+      - unconfirmed_context_promotion
+      - source_file_write_outside_docs_context
+      - pr_creation
 ---
 
 # Project Context — 생성·업데이트·핸드오프

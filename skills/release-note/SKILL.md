@@ -4,6 +4,54 @@ description: Optional workflow skill for Jira/Confluence release operations. Use
 metadata:
   source: born-here
   summary: Optional Jira/Confluence 릴리즈 노트 workflow
+  routing:
+    visibility: contextual
+    risk_level: medium
+    category: release-note
+    scope: generated_artifact_only
+    requires_confirmation: true
+    task_types:
+      - release-note
+      - release-report
+      - user-facing-summary
+    triggers:
+      - kind: keyword
+        values:
+          - 릴리즈 노트
+          - 릴리즈노트
+          - release note
+          - release notes
+          - 배포 노트
+          - changelog
+      - kind: intent
+        values:
+          - write_user_facing_release_notes
+          - summarize_confirmed_changes_for_release
+    keywords:
+      ko:
+        - 릴리즈 노트
+        - 변경사항
+        - 배포 요약
+      en:
+        - release note
+        - release notes
+        - changelog
+    use_when:
+      - Jira fixVersion 또는 확인된 변경 목록을 기준으로 사용자용 릴리즈 노트를 작성해야 하는 경우
+    do_not_use_when:
+      - 구현 완료 여부를 repo 확인 없이 단정하려는 경우
+      - 배포 실행이나 PR 생성을 요청하는 경우
+    requires:
+      - confirmed_change_source
+    allowed_outputs:
+      - release_note_draft
+      - excluded_issue_summary
+    forbidden_outputs:
+      - unverified_completion_claim
+      - source_file_write
+      - deployment_action
+      - unconfirmed_external_action
+      - pr_creation
 ---
 
 # 릴리즈 노트 작성
