@@ -116,6 +116,10 @@ Git remote는 credential을 제거한 `host/owner/repo`로 정규화되어 저�
 
 ## Git / GitHub 작업 원칙
 - 커밋·푸시 전 현재 `remote`, `branch`, `author`, GitHub 인증 계정을 확인한다.
+- master에는 직접 커밋하거나 푸시하지 않는다. 모든 변경은 목적별 브랜치에서 작업하고 PR을 통해 병합한다.
+- 하나의 PR에는 하나의 명확한 목적만 포함한다.
+- 다른 세션의 dirty/untracked/stash 작업을 PR 범위에 섞지 않는다.
+- stacked PR(다른 PR 브랜치를 base로 하는 PR)인 경우 base/head 관계와 선행 PR의 merge 순서를 PR 설명에 명시한다.
 - shared instruction은 특정 GitHub 계정, 계정 전환 스크립트, 개인 push guard를 전제하지 않는다.
 - 개인별 GitHub 계정 정책, 커밋 자동화, push guard는 `profiles/local/` 또는 레포 밖 private script로 분리한다.
 - shared 설치는 보수적 opt-in이다. 기존 `~/.claude/skills`, `~/.agents/skills`, settings, hooks, agents를 자동으로 덮어쓰지 않는다. 먼저 `make doctor`로 충돌 가능성을 확인한다.
