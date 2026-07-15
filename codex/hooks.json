@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.codex/hooks.json)\")\")\"; node \"$REPO/scripts/prompt-routing-hook.mjs\" --format=codex-json || true",
+            "command": "if [ -x \"$HOME/.local/bin/oh-my-ai\" ]; then \"$HOME/.local/bin/oh-my-ai\" hook codex UserPromptSubmit; else cat >/dev/null 2>&1 || :; fi",
             "timeout": 5,
             "statusMessage": "Checking harness routing signals"
           }

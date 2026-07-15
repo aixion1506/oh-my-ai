@@ -4,7 +4,7 @@
 # 통과: exit 0 / 미등록: 목록 출력 + exit 1. 개인 자동화는 OMAI_SKIP_CASCADE=1 로 우회 가능.
 set -uo pipefail
 
-REPO=$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 MINE="$REPO/MINE.md"
 MISSING=()
 reg() { grep -qF "$1" "$MINE"; }   # MINE.md 에 문자열 존재?

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")\")\"; cat \"$REPO/automation-backlog.md\" 2>/dev/null || true",
+            "command": "if [ -x \"$HOME/.local/bin/oh-my-ai\" ]; then \"$HOME/.local/bin/oh-my-ai\" hook claude SessionStart; else cat >/dev/null 2>&1 || :; fi",
             "timeout": 5
           },
           {
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "REPO=\"$(dirname \"$(dirname \"$(readlink -f ~/.claude/settings.json)\")\")\"; node \"$REPO/scripts/prompt-routing-hook.mjs\" --format=claude-json || true",
+            "command": "if [ -x \"$HOME/.local/bin/oh-my-ai\" ]; then \"$HOME/.local/bin/oh-my-ai\" hook claude UserPromptSubmit; else cat >/dev/null 2>&1 || :; fi",
             "timeout": 5
           }
         ]
