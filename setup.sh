@@ -76,6 +76,23 @@ path_state() {
   fi
 }
 
+prompt_hook_state() {
+  path="$1"
+  runtime="$2"
+  if [ ! -f "$path" ]; then
+    say "missing: $runtime UserPromptSubmit hook config ($path)"
+    return 0
+  fi
+  if grep -Fq '$HOME/.local/bin/oh-my-ai' "$path" && grep -Fq "hook $runtime UserPromptSubmit" "$path"; then
+    say "ok: $runtime UserPromptSubmit hook uses oh-my-ai entrypoint"
+  elif grep -Fq "prompt-routing-hook.mjs" "$path"; then
+    say "warn: $runtime UserPromptSubmit hook still calls prompt-routing-hook.mjs directly"
+    say "      run make install-shared if this file is managed, or merge the oh-my-ai command manually"
+  else
+    say "warn: $runtime UserPromptSubmit hook entrypoint not found in $path"
+  fi
+}
+
 show_profile_skills() {
   profile_dir="$1"
   skills_dir="$profile_dir/skills"
@@ -177,7 +194,15 @@ doctor() {
   path_state "$CODEX_DIR/AGENTS.md" "$REPO/AGENTS.md"
   path_state "$CODEX_DIR/hooks.json" "$REPO/codex/hooks.json"
   path_state "$AGENT_DIR/skills" "$REPO/skills"
+  path_state "$LOCAL_BIN/oh-my-ai" "$REPO/scripts/oh-my-ai.mjs"
   path_state "$LOCAL_BIN/harness-event" "$REPO/scripts/harness-event.mjs"
+  if [ -x "$LOCAL_BIN/oh-my-ai" ]; then
+    say "ok: oh-my-ai CLI executable"
+  else
+    say "warn: oh-my-ai CLI missing or not executable; UserPromptSubmit hooks may fail"
+  fi
+  prompt_hook_state "$CLAUDE_DIR/settings.json" "claude"
+  prompt_hook_state "$CODEX_DIR/hooks.json" "codex"
   hook_path="$(git_hook_path 2>/dev/null || true)"
   if [ -n "$hook_path" ]; then
     if [ -L "$hook_path" ] && [ ! -e "$hook_path" ]; then
@@ -217,6 +242,7 @@ install_shared() {
   safe_link "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json" "Claude shared settings"
   safe_link "$REPO/AGENTS.md" "$CODEX_DIR/AGENTS.md" "Codex instruction"
   safe_link "$REPO/codex/hooks.json" "$CODEX_DIR/hooks.json" "Codex shared hooks"
+  safe_link "$REPO/scripts/oh-my-ai.mjs" "$LOCAL_BIN/oh-my-ai" "oh-my-ai"
   safe_link "$REPO/scripts/harness-event.mjs" "$LOCAL_BIN/harness-event" "harness-event"
   safe_link "$REPO/skills" "$CLAUDE_DIR/skills" "Claude shared skills"
   safe_link "$REPO/skills" "$AGENT_DIR/skills" "Codex shared skills"
