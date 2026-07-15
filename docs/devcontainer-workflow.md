@@ -4,7 +4,7 @@
 > oh-my-ai 레포를 만지거나 `~/.claude`/`~/.codex` 연결 구조가 헷갈릴 때 읽는다. (평소 세션엔 불필요 → 항상 로드 안 함.)
 
 ## 심링크 구조 (매번 헤매던 부분)
-- **`~/.claude/`, `~/.codex/`, `~/.agents/` 자체는 진짜 디렉토리다.** shared install은 그 안의 **개별 엔트리**만 non-destructive 방식으로 연결한다. `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.codex/AGENTS.md`, `~/.local/bin/harness-event`는 경로가 없거나 이미 이 레포가 관리하는 symlink일 때만 연결한다. `~/.claude/skills`, `~/.agents/skills`, `~/.claude/agents`도 기존 경로가 있으면 자동 대체하지 않고 skip한다.
+- **`~/.claude/`, `~/.codex/`, `~/.agents/` 자체는 진짜 디렉토리다.** shared install은 그 안의 **개별 엔트리**만 non-destructive 방식으로 연결한다. `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.codex/AGENTS.md`, `~/.local/bin/oh-my-ai`, `~/.local/bin/harness-event`는 경로가 없거나 이미 이 레포가 관리하는 symlink일 때만 연결한다. `~/.claude/skills`, `~/.agents/skills`, `~/.claude/agents`도 기존 경로가 있으면 자동 대체하지 않고 skip한다.
 - 그래서:
   - Claude 스킬/커맨드처럼 심링크된 엔트리를 고치면 레포에 바로 반영됨.
   - 공유 instruction과 인덱스는 생성물을 직접 고치지 말고 `instructions/harness.md`, `instructions/mine.md`, `instructions/adapters/*.md`, 또는 `SKILL.md` 메타데이터를 고친 뒤 `make instructions`를 실행한다.
@@ -16,10 +16,10 @@
 - `make install-profile PROFILE=<name>`은 명시한 profile만 opt-in 설치한다. `profiles/example/`은 템플릿이고, 실제 개인 profile은 커밋하지 않는 `profiles/local/<name>/`에 둔다.
 - Codex CLI 설치와 인증/세션 관리는 instruction 배포와 분리한다.
 
-## Portable 경로 (머신별 절대경로 하드코딩 금지)
-- 머신마다 절대경로가 다르다 (홈이 `/home/vscode`인데 심링크는 `/home/<user>/...`로 적혀 있고 양쪽이 같은 실경로로 resolve됨).
-- 그래서 **레포에 커밋되는 설정(settings.json 등)에 머신별 절대경로를 하드코딩하지 말 것.** 런타임에 풀어 쓴다:
-  `"$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"` → 레포 루트.
+## Portable 경로 (공유 설정 파일 위치 역추적 금지)
+- 머신마다 절대경로가 다르고, `~/.claude/settings.json`·`~/.codex/hooks.json`은 여러 도구가 병합해서 쓰는 공유 설정 파일이 될 수 있다.
+- 그래서 훅은 설정 파일 위치에서 레포 루트를 추측하지 않는다. 설정 파일에는 `oh-my-ai hook ...` 진입점만 두고, `~/.local/bin/oh-my-ai` symlink의 실제 위치로 레포 루트를 찾는다.
+- 레포 위치를 옮기면 `make install-shared`를 다시 실행해 `~/.local/bin/oh-my-ai` 링크를 갱신한다.
 
 ## 커밋/푸시 — shared 기본 원칙
 - 커밋·푸시 전 현재 `remote`, `branch`, `author`, GitHub 인증 계정을 확인한다.

@@ -23,6 +23,7 @@
 - `docs/harness-design.md` — 하네스 설계·결정·현황 기록 (WHY 중심, 상태표)
 - `docs/incidents/2026-06-24-bwrap-retry-loop.md` — 편집 도구 장애의 재시도·토큰 폭주 incident와 방지 규칙
 - `docs/devcontainer-workflow.md` — oh-my-ai/심링크/계정 워크플로 상세 (CLAUDE.md에서 강등)
+- `scripts/oh-my-ai.mjs` — 공유 설정 파일 위치에 의존하지 않는 런타임 훅 진입점
 - `scripts/harness-event.mjs` + XDG state — Claude/Codex SkillStart를 Git 저장소 단위로 기록·집계 (월간 prune용)
 - `scripts/prompt-routing-hook.mjs` — UserPromptSubmit에서 toil·handoff·project-context 신호를 결정적으로 보강
 - `profiles/example/PROFILE.md` — 개인 profile 분리 예시 템플릿
@@ -30,6 +31,7 @@
 - `profiles/example/push-guard.sh.example` — 개인 push guard 예시 템플릿
 - `scripts/cascade-check.sh` — 커스텀 비스킬 산출물 MINE.md 등록 검사
 - `scripts/render-instructions.sh` — 스킬 메타데이터와 공용 원본으로 MINE/Claude/Codex 산출물 생성
+- `scripts/work-start.sh` — 작업 시작 시 외부 맥락과 repo 컨텍스트를 회수하는 진입점
 - `scripts/fix-plugin-install-paths.sh` — devcontainer/host `$HOME` 불일치로 깨진 `~/.claude/plugins/installed_plugins.json`의 installPath를 진단·교정
 
 ## 공유 파일의 커스텀 편집분 (참고)

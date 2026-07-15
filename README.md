@@ -96,6 +96,7 @@ claude/
   agents/                ← 커스텀 에이전트
 scripts/
   render-instructions.sh ← 스킬 메타데이터로 라우팅·MINE·AI별 instruction 생성
+  oh-my-ai.mjs           ← 런타임 훅의 전역 진입점
   harness-event.mjs      ← 런타임 중립 SkillStart 기록·저장소별 집계
   cascade-check.sh       ← 비스킬 산출물 등록 drift 검사
 hooks/
@@ -159,6 +160,7 @@ make update   # git pull + non-destructive shared install
 ## 설치 정책
 
 - shared 설치는 non-destructive다. 기존 스킬·설정·스크립트를 덮어쓰지 않고 `skip`한다.
+- 런타임 훅은 설정 파일 위치를 레포 위치로 추측하지 않고, `~/.local/bin/oh-my-ai` 진입점을 호출한다.
 - `make doctor`는 현재 링크/로컬 파일 상태를 읽기 전용으로 보여준다.
 - 개인 profile은 opt-in이다. 실제 profile/private script는 `profiles/local/<name>/`에 두고 커밋하지 않는다.
 - profile script를 설치하려면 `make install-profile PROFILE=<name>`을 사용한다. profile hook/settings는 자동 활성화하지 않고 직접 병합한다.
