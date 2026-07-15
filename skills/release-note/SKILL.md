@@ -39,7 +39,7 @@ metadata:
 
 릴리즈 노트 작성은 **2단계**로 나뉜다. 섞지 말 것.
 
-- **1단계 (수집·정리):** Jira 조회 → 로컬 파일 저장 → 필터링 → parent 롤업 → 표로 정리
+- **1단계 (수집·정리):** Jira 조회 → raw 원본 로컬 저장 → 정규화 파일 생성 → parent/child source 연결 → 필터링 → parent 롤업 → 표로 정리
 - **2단계 (유저 언어 재작성):** 1단계 결과를 유저가 이해할 수 있는 말로 다시 쓴다. 이슈 제목을 그대로 옮기지 않는다. 개발자 용어(scheme, fallback, gRPC, UUID, CAGG 등) 전면 제거. 버그는 PR까지 열어서 "유저가 실제로 겪은 현상"이 뭔지 확인 후 작성.
 
 ## 1. Jira 조회 및 로컬 캐시
@@ -48,18 +48,46 @@ cloudId 는 `nurilab-jira.atlassian.net` 를 사용한다.
 
 JQL: `fixVersion = <ID> AND assignee in ("<accountId>", ...) ORDER BY issuetype, created`
 
-**조회 후 즉시 로컬 파일로 저장 — 필수:**
-- 조회 결과를 `docs/releases/<versionId>-issues.tsv`에 저장한다. 세션이 끊겨도 재조회 없이 파일에서 작업을 이어갈 수 있다.
-- 저장 형식: `key\ttype\tparent\tsummary` (헤더 포함)
+**저장 위치 — 필수:**
+- 릴리즈 작업 산출물은 **현재 작업 대상 repo/workspace의** `docs/releases/`에 저장한다.
+- 스킬 원본이 들어 있는 harness repo(`oh-my-ai`)에서 작업 중이더라도, 사용자가 분석하려는 서비스 repo가 따로 있으면 그 repo의 `docs/releases/`를 우선한다.
+- 저장 전에 `pwd`, 기존 `docs/releases/` 내용, 관련 git status를 확인해 잘못된 repo에 쓰지 않는다.
+
+**MCP/Jira 조회 후 즉시 raw 원본을 로컬 텍스트로 저장 — 필수:**
+- MCP 응답을 모델 컨텍스트에 오래 들고 있지 않는다. 첫 조회 결과는 가공하기 전에 그대로 `docs/releases/<versionId>-jira-raw.jsonl` 또는 `docs/releases/<versionId>-jira-raw.json`에 저장한다.
+- 페이지네이션이 있으면 각 페이지를 한 줄 JSON으로 append 하는 `jsonl`을 우선한다. page token/cursor가 있으면 raw 안에 보존한다.
+- parent 보강 조회처럼 추가로 가져온 이슈는 `docs/releases/<versionId>-parents-raw.jsonl`에 따로 저장한다.
+- raw 파일 저장 후에는 큰 응답 본문을 다시 프롬프트에 붙이지 않는다. 이후 작업은 로컬 파일에서 `jq`/`awk`/`rg`로 필요한 필드만 뽑아 진행한다.
+- 세션이 끊겨도 재조회 없이 이어갈 수 있어야 한다. 재조회가 필요하면 이유(누락 필드, 권한 오류, 페이지 누락 등)를 먼저 설명한다.
+
+**raw 저장 후 정규화 파일 생성 — 필수:**
+- 조회 결과를 `docs/releases/<versionId>-issues.tsv`에 저장한다.
+- 저장 형식: `key\ttype\tparent\tsummary\tstatus\turl\tsource_file\tsource_locator` (헤더 포함)
+  - `url`: Jira 이슈 URL. 도구 응답에 없으면 `https://nurilab-jira.atlassian.net/browse/<KEY>`로 만든다.
+  - `source_file`: 이 행을 만든 raw 파일 경로.
+  - `source_locator`: raw 파일 안에서 원본을 찾을 수 있는 위치. 예: `page=2,index=17` 또는 `jsonl_line=3,key=AS-123`.
   ```bash
-  jq -r '["key","type","parent","summary"], (.issues.nodes[] | [.key, .fields.issuetype.name, (.fields.parent.key // "-"), .fields.summary]) | @tsv' <결과파일> > docs/releases/<versionId>-issues.tsv
+  jq -r '["key","type","parent","summary","status","url","source_file","source_locator"], (.issues.nodes[] | [.key, .fields.issuetype.name, (.fields.parent.key // "-"), .fields.summary, (.fields.status.name // "-"), ("https://nurilab-jira.atlassian.net/browse/" + .key), "<raw-file>", ("key=" + .key)]) | @tsv' <raw-json> > docs/releases/<versionId>-issues.tsv
   ```
-- 이후 모든 작업은 이 tsv 파일을 기준으로 한다. Jira를 다시 조회하지 않는다.
+- 이후 모든 작업은 raw 파일과 이 tsv 파일을 기준으로 한다. Jira를 다시 조회하지 않는다.
+
+**parent/child source 연결 파일 생성 — 필수:**
+- `docs/releases/<versionId>-issue-sources.tsv`를 만든다. 이 파일은 "릴리즈 노트 한 줄의 근거가 어떤 부모/자식 원본에서 왔는지"를 추적하기 위한 것이다.
+- 저장 형식: `key\trole\tparent\tchildren\tsummary\turl\tsource_file\tsource_locator`
+  - `role`: `parent`, `child`, `standalone`, `fetched-parent` 중 하나.
+  - `children`: 부모 행이면 연결된 자식 key를 comma-separated로 쓴다. 자식/standalone이면 `-`.
+  - `fetched-parent`: 부모가 원래 결과셋 밖이라 추가 조회한 경우.
+- 부모가 결과셋 밖에 있고 자식이 2개 이상이면 parent를 조회해서 `parents-raw.jsonl`에 저장하고, `issue-sources.tsv`에 `role=fetched-parent`로 연결한다.
+- 부모가 결과셋 안에 있으면 parent raw/source와 child raw/source를 모두 연결한다. 부모 summary만 보고 자식 근거를 버리지 않는다.
+- 롤업 판단 결과는 `docs/releases/<versionId>-rollup.tsv`에 별도 저장한다.
+- `rollup.tsv` 저장 형식: `representative_key\trepresentative_type\tchild_keys\treason\tuser_visible\trelease_note_candidate`
+  - `user_visible`: `yes`, `no`, `ask` 중 하나.
+  - `release_note_candidate`: 유저 언어로 재작성하기 전의 내부 후보 문장.
 
 **토큰 절약 — 필수:**
-- Jira 도구가 필드 선택을 지원하면 **`summary`, `issuetype`, `parent`** 를 요청한다. `parent` 는 자식 이슈 롤업 판단에 필수다.
+- Jira 도구가 필드 선택을 지원하면 **`summary`, `issuetype`, `parent`, `status`** 를 요청한다. `parent` 는 자식 이슈 롤업 판단에 필수다.
 - 페이지 크기는 최대 100으로 요청하고, 응답 형식을 선택할 수 있으면 구조화된 결과를 우선한다.
-- 결과가 파일로 저장되면 파일 전체를 본문으로 읽지 말고 `jq`로 필요한 필드만 추출한다.
+- 결과가 파일로 저장되면 파일 전체를 본문으로 읽지 말고 `jq`로 필요한 필드만 추출한다. raw 전체를 요약하겠다고 다시 프롬프트에 붙이지 않는다.
 - 다음 페이지가 있으면 도구가 제공하는 cursor/page token으로 모두 가져온다. 여러 담당자면 assignee 조건을 빼고 한 번에 받아 그룹핑하는 편이 호출 수와 토큰을 줄인다.
 
 ## 2. 유저 체감 필터링 (자동 제외)
@@ -93,11 +121,13 @@ JQL: `fixVersion = <ID> AND assignee in ("<accountId>", ...) ORDER BY issuetype,
 
 판단 절차:
 0. **같은 부모를 공유하는 이슈는 부모 레벨로 롤업 (가장 먼저):**
-   - tsv에서 `parent` 컬럼을 기준으로 그룹핑한다.
+   - `issues.tsv`에서 `parent` 컬럼을 기준으로 그룹핑한다.
+   - 롤업 전 `issue-sources.tsv`로 부모/자식 원본 연결을 먼저 남긴다.
    - **부모 key가 결과셋 안에 있으면** → 자식 제거, 부모가 대표.
-   - **부모 key가 결과셋 밖에 있고 자식이 2개 이상이면** → `getJiraIssue`로 부모를 직접 조회해 summary를 확인하고, 자식 전체를 부모 1줄로 묶어 표현한다. 자식을 줄줄이 나열하지 않는다.
+   - **부모 key가 결과셋 밖에 있고 자식이 2개 이상이면** → `getJiraIssue`로 부모를 직접 조회해 `parents-raw.jsonl`에 저장하고, `issue-sources.tsv`에서 `fetched-parent`와 자식을 연결한 뒤, 자식 전체를 부모 1줄로 묶어 표현한다. 자식을 줄줄이 나열하지 않는다.
    - **부모가 없거나(`-`) 자식이 혼자인데 부모가 결과셋 밖이면** → 해당 이슈 그대로 유지.
    - (부모에 fixVersion 누락은 사람 실수로 발생할 수 있으므로 JQL 필터가 아닌 이 방식으로 판단한다.)
+   - 최종 대표/제외/질문 판단은 `rollup.tsv`에 남긴다. 최종 응답에서 제외 목록을 만들 때 이 파일을 기준으로 한다.
 1. 각 이슈가 어떤 **에픽/스토리에 속하는지** 먼저 묶는다. (제목의 `[stateless-N]`, `Phase N`, `[cutover-N]`, 같은 epic prefix, 같은 패키지/서비스 등이 단서.)
 2. 한 에픽 아래 잘게 쪼개진 Phase/버그/개선이 여러 개면, **개별로 쓰지 말고 그 에픽/스토리의 유저 체감 결과물 1줄(또는 소수)로 합친다.**
 3. 그 에픽 자체가 **백엔드 리팩터라 유저 비체감**이면(예: 서비스 분리, 무상태 cutover, request collapsing) → **노트에서 통째로 생략**하거나, 꼭 알려야 하면 추상화한 1줄만.
@@ -124,6 +154,11 @@ JQL: `fixVersion = <ID> AND assignee in ("<accountId>", ...) ORDER BY issuetype,
 - `Console` — 관리/기업 콘솔(리포트·통계·블랙/화이트리스트)
 - `PrivateAPI` — Private REST API (파트너/내부 연동)
 - `API` — 외부 연동 API(KISA 등) 및 계정/프로필
+
+**별도 릴리즈 템플릿 우선:**
+- 사용자가 특정 릴리즈 노트 양식의 제품명을 제시하면(예: auth 릴리즈의 `asksms`) 위 기본 제품 분류보다 그 양식을 우선한다.
+- 내부 구현 위치가 auth/console/API여도, 해당 릴리즈 노트의 제품 행이 `asksms`라면 `제품=asksms`로 쓴다.
+- 회사 고정 양식이 `버그 수정 / 기능 개선 / 새 기능` 빈 행을 요구하면 업데이트가 없는 행도 유지한다.
 
 **분류**: `새 기능` / `기능 개선` / `버그 수정`
 
