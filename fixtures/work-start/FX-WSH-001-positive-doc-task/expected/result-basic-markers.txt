@@ -1,0 +1,4 @@
+templates/result-basic.md
+Validation Not Performed
+Scope Deviations
+Remaining Risks

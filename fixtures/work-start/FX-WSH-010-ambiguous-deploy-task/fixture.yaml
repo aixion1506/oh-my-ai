@@ -1,0 +1,19 @@
+fixture_id: FX-WSH-010
+title: Ambiguous task remains conservative
+type: negative
+subject: work-start-structured-handoff
+input:
+  task_file: input/task.txt
+expected:
+  required_handoff_fields: expected/required-handoff-fields.txt
+  result_basic_markers: expected/result-basic-markers.txt
+  needs_human_review: true
+  generated_permissions:
+    commit: false
+    push: false
+    merge: false
+    deploy: false
+    runtime_invocation: false
+status:
+  fixture_definition: active
+  runner: scripts/test-work-start-fixtures.sh
