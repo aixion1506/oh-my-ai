@@ -1,6 +1,8 @@
 ---
 name: work-start
 description: "Use when a user invokes /work-start or says they want to start, plan, or kick off a task — to classify the task, recover missing external context (tickets, docs, meeting notes, Slack excerpts, PRs), gather repo context, produce an intermediate checkpoint, and confirm the plan before any code edit, doc write, or external action."
+display-name: Work-start
+disable-model-invocation: true
 metadata:
   source: born-here
   summary: 작업 시작 시 외부 맥락 회수 → repo 컨텍스트 수집 → 중간 점검 → 컨펌의 conversation-native 플레이북
@@ -18,6 +20,32 @@ metadata:
 - 기존 PR/이슈가 있는데 안 봄 → 같은 문제 반복
 
 이 스킬은 repo 검색 전에 **먼저 사용자가 빠뜨린 외부 맥락을 회수**한다. 그 다음에 repo/docs/code를 본다.
+
+## Claude Code Runtime Entry
+
+사용자가 Claude Code에서 `/work-start <task>`를 명시 호출하면 다음으로 처리한다.
+
+```text
+canonical_action_id = work-start
+entry_mode = explicit
+approval = not_required
+```
+
+이 명시 호출은 Work-start 제품 동의가 이미 존재한다는 뜻이다. 단, Claude Code의 File·Shell·Network·Git permission은 그대로 유지한다.
+
+실행 절차:
+
+1. `<task>`를 원래 사용자 Task로 보존한다.
+2. 공통 Engine인 `scripts/work-start.sh`를 `TASK="<task>"`로 한 번 실행한다.
+3. 생성된 Artifact 경로와 생성 파일을 사용자에게 표시한다.
+4. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
+
+금지:
+
+- 모델이 자연어 Intent만으로 이 스킬을 자동 호출하지 않는다.
+- Suggestion 상태에서 `scripts/work-start.sh`를 실행하지 않는다.
+- 승인 전 Artifact를 생성하지 않는다.
+- Runtime Invocation, Worker 자동 실행, Session Linking, Managed Task, 자동 Result 반환을 수행하지 않는다.
 
 ## 트리거 예시
 

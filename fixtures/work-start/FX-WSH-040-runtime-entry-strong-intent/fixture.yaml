@@ -1,0 +1,15 @@
+fixture_id: FX-WSH-040
+title: Strong natural Work-start intent produces suggestion only
+type: runtime_entry
+subject: claude-work-start-runtime-entry
+input:
+  task_file: input/task.txt
+expected:
+  suggestion: present
+  entry_mode: suggested
+  approval: pending
+  artifact_before_consent: none
+  explicit_followup: "/work-start <original task>"
+status:
+  fixture_definition: active
+  runner: scripts/test-work-start-fixtures.sh

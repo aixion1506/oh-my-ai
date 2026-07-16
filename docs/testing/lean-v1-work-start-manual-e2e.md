@@ -6,6 +6,8 @@ Status:
 - Repository-local Steps Verified: via `make test-work-start-fixtures`
 - Cross-session Worker Step: not performed
 - Actual Full Manual E2E: not performed
+- Claude Code Runtime Procedure Defined: yes
+- Claude Code Full Manual E2E: not performed
 
 This document defines the manual end-to-end procedure for the Lean V1 Local Manual Artifact Workflow.
 
@@ -162,3 +164,66 @@ Sample only. Not an actual Worker result.
 Use `templates/result-basic.md` and preserve its required headings. In a dry-run or documentation-only manual test, write `None` for sections with no actual content and explicitly list unperformed checks under `Validation Not Performed`.
 
 Do not record commands, file reads, file changes, validation, or scope deviations that did not happen.
+
+## Claude Code Runtime Entry Manual E2E
+
+Status:
+
+- Procedure Defined: yes
+- Repository-local Fixture: verified by `make test-work-start-fixtures`
+- Claude Code Session: not performed in repository-local fixture
+- Full Handoff to Result: not performed
+
+This procedure verifies the P0 Claude Code Runtime Entry without changing the Lean V1 product boundary.
+
+### Preconditions
+
+- Fresh or clean shared install is available.
+- `make install-shared` has linked shared skills and Claude settings without overwriting local files.
+- Claude Code can discover user skills from `~/.claude/skills`.
+- `skills/work-start/SKILL.md` contains `disable-model-invocation: true`.
+
+### Explicit `/work-start` Path
+
+| Step | Action | Expected Result | Failure Criteria | Evidence |
+| ---: | --- | --- | --- | --- |
+| 1 | Start a new Claude Code session in the repository | Session loads shared settings and skills | Claude starts in safe mode or without skills unintentionally | Session note |
+| 2 | Open slash command or skills discovery and find `/work-start` | Work-start entry is discoverable | `/work-start` is missing | Screenshot or note |
+| 3 | Enter `/work-start <task>` | Work-start is treated as explicit user entry | Product confirmation is requested again before engine entry | Prompt text |
+| 4 | Allow any Runtime-level Shell permission if prompted | `scripts/work-start.sh` runs through normal Runtime approval | Runtime permission is bypassed | Permission prompt note |
+| 5 | Inspect output | Artifact path and generated files are displayed | Output omits artifact path | Output excerpt |
+| 6 | Inspect artifact | `handoff-candidate.md`, `starter-prompt.md`, `context-manifest.yaml`, `sources.md`, `context-gap-report.md` exist | Required artifact missing | Directory listing |
+| 7 | Inspect Human Review section | Direct Handoff, Plan First, Gather Context are visible and unchecked | Next Step is auto-selected | Handoff excerpt |
+
+### Natural Intent Suggestion Path
+
+| Step | Action | Expected Result | Failure Criteria | Evidence |
+| ---: | --- | --- | --- | --- |
+| 1 | Start a separate Claude Code session | No Work-start artifact is created at session start | Artifact created before user request | Directory count |
+| 2 | Enter a strong Work-start intent, such as `구현 전에 관련 코드와 결정 문서, 영향 범위를 먼저 모아서 다른 세션에 넘길 수 있게 정리해줘.` | oh-my-ai suggests Work-start | No suggestion appears | Hook context or session note |
+| 3 | Before accepting, inspect `.oh-my-ai/work-start/` | No new artifact exists | Artifact created during suggestion | Directory count |
+| 4 | Choose to run via explicit fallback `/work-start <original task>` | Work-start Engine runs once | Engine runs before explicit follow-up | Output excerpt |
+| 5 | Inspect output and artifact | Artifact path and Human Review Next Step are present | Missing artifact path or Next Step | Artifact excerpt |
+
+Native approval UI is not assumed by this procedure. If Claude Code provides a native confirmation control in a future version, record accepted and declined paths separately.
+
+### Skip / Decline Path
+
+| Step | Action | Expected Result | Failure Criteria | Evidence |
+| ---: | --- | --- | --- | --- |
+| 1 | Start another Claude Code session | Baseline artifact count recorded | Existing artifacts are confused with new artifacts | Directory count |
+| 2 | Enter the same strong Work-start intent | Suggestion appears once | Engine runs during suggestion | Hook context or session note |
+| 3 | Skip by continuing the original request without `/work-start` | No Work-start Engine invocation | Artifact created after skip | Directory count |
+| 4 | Repeat the same request text | Same request is not suggested again | Re-suggestion appears for identical request | Session note |
+
+### Manual Handoff Completion
+
+After an artifact exists, continue with the common Manual E2E procedure:
+
+1. Review the Handoff Candidate.
+2. Choose Direct Handoff, Plan First, or Gather Context manually.
+3. Manually copy/paste the reviewed Candidate to a Worker Session.
+4. Receive Result Basic using `templates/result-basic.md`.
+5. Review `Validation Not Performed`, `Scope Deviations`, and `Remaining Risks`.
+
+Do not mark Full Manual E2E as passed unless a separate Claude Code Worker Session actually performs the reviewed task and returns a Result Basic.
