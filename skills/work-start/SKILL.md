@@ -1,6 +1,6 @@
 ---
 name: work-start
-description: "Use when a user invokes /work-start or says they want to start, plan, or kick off a task — to classify the task, recover missing external context (tickets, docs, meeting notes, Slack excerpts, PRs), gather repo context, produce an intermediate checkpoint, and confirm the plan before any code edit, doc write, or external action."
+description: "Use only when a user explicitly invokes /work-start — to run the local Work-start Engine once, create a Work-start Candidate artifact, report the generated files, and stop for Human Review before any code edit, doc write, planning branch, worker handoff, or external action."
 display-name: Work-start
 disable-model-invocation: true
 metadata:
@@ -25,6 +25,8 @@ metadata:
 
 사용자가 Claude Code에서 `/work-start <task>`를 명시 호출하면 다음으로 처리한다.
 
+자연어 Intent는 이 스킬의 실행 트리거가 아니다. 자연어로 "시작 전에 정리", "구현 전에 관련 코드와 영향 범위 정리" 같은 요청이 들어오면 prompt hook은 suggestion-only 안내만 할 수 있고, 이 스킬·`make work-start`·`scripts/work-start.sh`는 실행하지 않는다.
+
 ```text
 canonical_action_id = work-start
 entry_mode = explicit
@@ -39,13 +41,35 @@ approval = not_required
 2. 공통 Engine인 `scripts/work-start.sh`를 `TASK="<task>"`로 한 번 실행한다.
 3. 생성된 Artifact 경로와 생성 파일을 사용자에게 표시한다.
 4. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
+5. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
 
 금지:
 
 - 모델이 자연어 Intent만으로 이 스킬을 자동 호출하지 않는다.
 - Suggestion 상태에서 `scripts/work-start.sh`를 실행하지 않는다.
 - 승인 전 Artifact를 생성하지 않는다.
+- Engine 실행 후 원래 Task 분석을 계속하지 않는다.
+- 수정 계획을 제안하지 않는다.
+- 코드 수정 여부를 묻지 않는다.
+- 파일을 수정하지 않는다.
+- Plan First / Gather Context / Direct Handoff 중 하나를 자동 선택하지 않는다.
 - Runtime Invocation, Worker 자동 실행, Session Linking, Managed Task, 자동 Result 반환을 수행하지 않는다.
+
+종료 Contract:
+
+```text
+This command creates a Work-start Candidate only.
+
+After the Engine finishes:
+- report the generated Artifact directory and files
+- display the Human Review choices
+- stop the current response
+
+Do not continue analyzing or executing the original task.
+Do not modify source files.
+Do not ask for implementation confirmation.
+Wait for the user to review and choose the next step.
+```
 
 ## 트리거 예시
 

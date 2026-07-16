@@ -79,6 +79,11 @@ run_claude_prompt_hook() {
   printf '%s' "$task_json" | node scripts/prompt-routing-hook.mjs --format=claude-json
 }
 
+run_work_start_output() {
+  local task_file="$1"
+  TASK="$(cat "$task_file")" make work-start 2>&1
+}
+
 check_common_artifact() {
   local artifact="$1"
   local fixture_dir="$2"
@@ -200,9 +205,19 @@ check_multiline_slug() {
 check_runtime_entry_metadata() {
   require_fixed "display-name: Work-start" "skills/work-start/SKILL.md"
   require_fixed "disable-model-invocation: true" "skills/work-start/SKILL.md"
+  require_fixed "Use only when a user explicitly invokes /work-start" "skills/work-start/SKILL.md"
   require_fixed "Claude Code Runtime Entry" "skills/work-start/SKILL.md"
   require_fixed "entry_mode = explicit" "skills/work-start/SKILL.md"
   require_fixed "approval = not_required" "skills/work-start/SKILL.md"
+  require_fixed "자연어 Intent는 이 스킬의 실행 트리거가 아니다" "skills/work-start/SKILL.md"
+  require_fixed "stop the current response" "skills/work-start/SKILL.md"
+  if [ -f "$HOME/.claude/skills/work-start/SKILL.md" ]; then
+    require_fixed "disable-model-invocation: true" "$HOME/.claude/skills/work-start/SKILL.md"
+    require_fixed "Use only when a user explicitly invokes /work-start" "$HOME/.claude/skills/work-start/SKILL.md"
+  fi
+  if rg -q -F "or says they want to start, plan, or kick off a task" "skills/work-start/SKILL.md"; then
+    fail "work-start skill description still permits natural-language model invocation"
+  fi
 }
 
 check_runtime_entry_suggestion() {
@@ -226,13 +241,22 @@ check_runtime_entry_suggestion() {
   [ "$before_count" = "$after_count" ] || fail "Work-start artifact was created before consent for $(basename "$fixture_dir")"
   printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "missing Work-start suggestion"
   printf '%s\n' "$output" | rg -q -F "state: SUGGESTED" || fail "missing SUGGESTED state"
+  printf '%s\n' "$output" | rg -q -F "Work-start는 로컬 Artifact를 생성합니다" || fail "suggestion does not explain artifact behavior"
+  printf '%s\n' "$output" | rg -q -F "아직 Work-start는 실행되지 않았습니다" || fail "suggestion does not state Work-start has not run"
   printf '%s\n' "$output" | rg -q -F "no Work-start Engine has run" || fail "suggestion does not state no engine ran"
   printf '%s\n' "$output" | rg -q -F "no local Artifact has been created" || fail "suggestion does not state no artifact was created"
-  printf '%s\n' "$output" | rg -q -F "Intent Match is not User Consent" || fail "suggestion does not separate intent and consent"
+  printf '%s\n' "$output" | rg -q -F "Suggestion text is not a tool instruction" || fail "suggestion does not separate text from tool instructions"
+  printf '%s\n' "$output" | rg -q -F "Suggestion text is not a Skill invocation request" || fail "suggestion does not separate text from skill invocation"
+  printf '%s\n' "$output" | rg -q -F "Suggestion text is not Engine consent" || fail "suggestion does not separate text from engine consent"
   printf '%s\n' "$output" | rg -q -F "/work-start" || fail "suggestion does not provide explicit follow-up entry"
-  printf '%s\n' "$output" | rg -q -F "To skip Work-start" || fail "suggestion does not provide skip path"
+  printf '%s\n' "$output" | rg -q -F "사용하지 않으려면 현재 요청을 그대로 계속하세요" || fail "suggestion does not provide skip path"
+  printf '%s\n' "$output" | rg -q -F 'Do not run `/work-start`, `make work-start`, `scripts/work-start.sh`, or the Work-start Skill from this suggestion.' \
+    || fail "suggestion does not explicitly block execution from suggestion"
   if printf '%s\n' "$output" | rg -q 'work-start artifact created:|oh-my-ai Work-start artifacts created:'; then
     fail "suggestion output looks like engine execution"
+  fi
+  if printf '%s\n' "$output" | rg -qi 'ask the user to invoke|execute /work-start|run /work-start'; then
+    fail "suggestion contains imperative execution wording"
   fi
 
   repeated_output="$(run_claude_prompt_hook "$task_file")"
@@ -263,6 +287,46 @@ check_runtime_entry_no_suggestion() {
   fi
 
   echo "passed: $(basename "$fixture_dir") no-suggestion"
+}
+
+check_runtime_entry_explicit() {
+  local fixture_dir="$1"
+  local task_file="$fixture_dir/input/task.txt"
+  local before_count
+  local after_count
+  local output
+  local artifact
+
+  require_file "$fixture_dir/fixture.yaml"
+  require_file "$task_file"
+
+  before_count="$(work_start_artifact_count)"
+  output="$(run_work_start_output "$task_file")"
+  after_count="$(work_start_artifact_count)"
+  [ "$after_count" = "$((before_count + 1))" ] || fail "explicit entry did not create exactly one artifact"
+
+  artifact="$(printf '%s\n' "$output" | sed -n 's/^work-start artifact created: //p' | tail -1)"
+  [ -n "$artifact" ] || fail "could not parse explicit entry artifact path"
+  cleanup_paths+=("$artifact")
+
+  check_common_artifact "$artifact" "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
+  printf '%s\n' "$output" | rg -q -F "oh-my-ai Work-start completed." || fail "explicit output missing completion marker"
+  printf '%s\n' "$output" | rg -q -F "Artifact directory:" || fail "explicit output missing artifact directory label"
+  printf '%s\n' "$output" | rg -q -F "$artifact" || fail "explicit output missing actual artifact path"
+  printf '%s\n' "$output" | rg -q -F "Status:" || fail "explicit output missing status label"
+  printf '%s\n' "$output" | rg -q -F "Needs human review" || fail "explicit output missing review status"
+  printf '%s\n' "$output" | rg -q -F "Choose the next step:" || fail "explicit output missing next step label"
+  printf '%s\n' "$output" | rg -q -F -- "- Direct Handoff" || fail "explicit output missing Direct Handoff"
+  printf '%s\n' "$output" | rg -q -F -- "- Plan First" || fail "explicit output missing Plan First"
+  printf '%s\n' "$output" | rg -q -F -- "- Gather Context" || fail "explicit output missing Gather Context"
+  printf '%s\n' "$output" | rg -q -F "Work-start has not modified the requested product code." || fail "explicit output missing no-product-code-change marker"
+  printf '%s\n' "$output" | rg -q -F "Review the Candidate before continuing." || fail "explicit output missing stop/review marker"
+
+  if printf '%s\n' "$output" | rg -qi '수정할까요|구현하겠습니다|관련 코드를 분석하겠습니다|Worker로 진행|Plan First 자동 실행'; then
+    fail "explicit output contains continuation wording"
+  fi
+
+  echo "passed: $(basename "$fixture_dir") explicit-entry"
 }
 
 run_fixture() {
@@ -312,5 +376,6 @@ run_fixture "$FIXTURE_ROOT/FX-WSH-060-multiline-task-slug"
 check_runtime_entry_metadata
 check_runtime_entry_suggestion "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent"
 check_runtime_entry_no_suggestion "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
+check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-070-explicit-work-start-entry"
 
 echo "work-start fixtures passed"
