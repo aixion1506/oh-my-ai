@@ -535,6 +535,9 @@ v2 backlog:
 - org-level remote disable policy
 - raw source retention/no-training policy
 - Premium Artifact provenance와 versioning
+- Knowledge Artifact Lifecycle Stage Separation
+- Runtime Activation State 표현 (runtime_loadable 등)
+- Fixture/Regression Coverage Gate
 
 모든 항목은 현재 기준 `proposed` 또는 `deferred`다.
 
