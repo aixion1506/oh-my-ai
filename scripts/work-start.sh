@@ -283,7 +283,7 @@ write_project_context_refs_md() {
   if [ -s "$DOCS_TMP" ] && grep -q '^docs/context/' "$DOCS_TMP"; then
     awk -F '\t' '$1 ~ /^docs\/context\// { printf "- `%s` - candidate via `%s`; %s\n", $1, $2, $3 }' "$DOCS_TMP"
   else
-    echo "- Needs human review: no `docs/context/*` candidate was found by Work-start."
+    echo "- Needs human review: no \`docs/context/*\` candidate was found by Work-start."
   fi
   echo ""
 }
