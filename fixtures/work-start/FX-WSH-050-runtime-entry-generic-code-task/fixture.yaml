@@ -1,0 +1,13 @@
+fixture_id: FX-WSH-050
+title: Generic code task does not produce Work-start suggestion
+type: runtime_entry
+subject: claude-work-start-runtime-entry
+input:
+  task_file: input/task.txt
+expected:
+  suggestion: absent
+  engine_invocation: false
+  artifact_created: false
+status:
+  fixture_definition: active
+  runner: scripts/test-work-start-fixtures.sh

@@ -6,6 +6,7 @@ cd "$REPO"
 
 FIXTURE_ROOT="fixtures/work-start"
 cleanup_paths=()
+cleanup_files=()
 
 cleanup() {
   if [ "${KEEP_WORK_START_FIXTURE_ARTIFACTS:-}" = "1" ]; then
@@ -14,6 +15,11 @@ cleanup() {
   for path in "${cleanup_paths[@]}"; do
     case "$path" in
       .oh-my-ai/work-start/*) [ -d "$path" ] && rm -rf -- "$path" ;;
+    esac
+  done
+  for path in "${cleanup_files[@]}"; do
+    case "$path" in
+      .oh-my-ai/state/*) [ -f "$path" ] && rm -f -- "$path" ;;
     esac
   done
 }
@@ -56,6 +62,21 @@ run_work_start() {
   local output
   output="$(TASK="$(cat "$task_file")" make work-start 2>&1)"
   printf '%s\n' "$output" | sed -n 's/^work-start artifact created: //p' | tail -1
+}
+
+work_start_artifact_count() {
+  if [ ! -d ".oh-my-ai/work-start" ]; then
+    echo 0
+    return 0
+  fi
+  find .oh-my-ai/work-start -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '
+}
+
+run_claude_prompt_hook() {
+  local task_file="$1"
+  local task_json
+  task_json="$(node -e 'const fs=require("fs"); const text=fs.readFileSync(process.argv[1],"utf8"); process.stdout.write(JSON.stringify({prompt:text}));' "$task_file")"
+  printf '%s' "$task_json" | node scripts/prompt-routing-hook.mjs --format=claude-json
 }
 
 check_common_artifact() {
@@ -157,6 +178,74 @@ check_negative() {
   fi
 }
 
+check_runtime_entry_metadata() {
+  require_fixed "display-name: Work-start" "skills/work-start/SKILL.md"
+  require_fixed "disable-model-invocation: true" "skills/work-start/SKILL.md"
+  require_fixed "Claude Code Runtime Entry" "skills/work-start/SKILL.md"
+  require_fixed "entry_mode = explicit" "skills/work-start/SKILL.md"
+  require_fixed "approval = not_required" "skills/work-start/SKILL.md"
+}
+
+check_runtime_entry_suggestion() {
+  local fixture_dir="$1"
+  local task_file="$fixture_dir/input/task.txt"
+  local state_file=".oh-my-ai/state/work-start-suggestions.json"
+  local before_count
+  local after_count
+  local output
+  local repeated_output
+
+  require_file "$fixture_dir/fixture.yaml"
+  require_file "$task_file"
+  cleanup_files+=("$state_file")
+  rm -f -- "$state_file"
+
+  before_count="$(work_start_artifact_count)"
+  output="$(run_claude_prompt_hook "$task_file")"
+  after_count="$(work_start_artifact_count)"
+
+  [ "$before_count" = "$after_count" ] || fail "Work-start artifact was created before consent for $(basename "$fixture_dir")"
+  printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "missing Work-start suggestion"
+  printf '%s\n' "$output" | rg -q -F "state: SUGGESTED" || fail "missing SUGGESTED state"
+  printf '%s\n' "$output" | rg -q -F "no Work-start Engine has run" || fail "suggestion does not state no engine ran"
+  printf '%s\n' "$output" | rg -q -F "no local Artifact has been created" || fail "suggestion does not state no artifact was created"
+  printf '%s\n' "$output" | rg -q -F "Intent Match is not User Consent" || fail "suggestion does not separate intent and consent"
+  printf '%s\n' "$output" | rg -q -F "/work-start" || fail "suggestion does not provide explicit follow-up entry"
+  printf '%s\n' "$output" | rg -q -F "To skip Work-start" || fail "suggestion does not provide skip path"
+  if printf '%s\n' "$output" | rg -q 'work-start artifact created:|oh-my-ai Work-start artifacts created:'; then
+    fail "suggestion output looks like engine execution"
+  fi
+
+  repeated_output="$(run_claude_prompt_hook "$task_file")"
+  if printf '%s\n' "$repeated_output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+    fail "same request was re-suggested after suppression"
+  fi
+
+  echo "passed: $(basename "$fixture_dir") suggestion-only"
+}
+
+check_runtime_entry_no_suggestion() {
+  local fixture_dir="$1"
+  local task_file="$fixture_dir/input/task.txt"
+  local before_count
+  local after_count
+  local output
+
+  require_file "$fixture_dir/fixture.yaml"
+  require_file "$task_file"
+
+  before_count="$(work_start_artifact_count)"
+  output="$(run_claude_prompt_hook "$task_file")"
+  after_count="$(work_start_artifact_count)"
+
+  [ "$before_count" = "$after_count" ] || fail "Work-start artifact was created for generic task before consent"
+  if printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+    fail "generic code task produced Work-start suggestion"
+  fi
+
+  echo "passed: $(basename "$fixture_dir") no-suggestion"
+}
+
 run_fixture() {
   local fixture_dir="$1"
   local fixture_id
@@ -190,12 +279,17 @@ run_fixture() {
 
 require_file "scripts/work-start.sh"
 require_file "scripts/work-start-skill-match.mjs"
+require_file "scripts/prompt-routing-hook.mjs"
 require_file "templates/result-basic.md"
 require_file "skills/handoff-prompt/SKILL.md"
+require_file "skills/work-start/SKILL.md"
 
 run_fixture "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-010-ambiguous-deploy-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-020-multi-scope-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-030-external-context-task"
+check_runtime_entry_metadata
+check_runtime_entry_suggestion "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent"
+check_runtime_entry_no_suggestion "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
 
 echo "work-start fixtures passed"
