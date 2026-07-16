@@ -178,6 +178,25 @@ check_negative() {
   fi
 }
 
+check_multiline_slug() {
+  local fixture_dir="$1"
+  local artifact="$2"
+  local dir_name
+
+  case "$artifact" in
+    *$'\n'*|*$'\r'*|*$'\t'*)
+      fail "artifact directory name contains a control/whitespace character: $artifact"
+      ;;
+  esac
+
+  dir_name="$(basename "$artifact")"
+  printf '%s' "$dir_name" | grep -Eq '^[0-9]{8}T[0-9]{6}Z-[a-z0-9]+(-[a-z0-9]+)*$' \
+    || fail "artifact directory name does not match expected slug shape: $dir_name"
+
+  [ "$(find ".oh-my-ai/work-start" -mindepth 1 -maxdepth 1 -type d -name "$dir_name" | wc -l | tr -d ' ')" = "1" ] \
+    || fail "expected exactly one artifact directory named $dir_name"
+}
+
 check_runtime_entry_metadata() {
   require_fixed "display-name: Work-start" "skills/work-start/SKILL.md"
   require_fixed "disable-model-invocation: true" "skills/work-start/SKILL.md"
@@ -271,6 +290,7 @@ run_fixture() {
     FX-WSH-001-*) check_positive "$fixture_dir" "$artifact" ;;
     FX-WSH-010-*) check_negative "$fixture_dir" "$artifact" ;;
     FX-WSH-020-*|FX-WSH-030-*) ;;
+    FX-WSH-060-*) check_multiline_slug "$fixture_dir" "$artifact" ;;
     *) fail "unknown fixture id: $fixture_id" ;;
   esac
 
@@ -288,6 +308,7 @@ run_fixture "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-010-ambiguous-deploy-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-020-multi-scope-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-030-external-context-task"
+run_fixture "$FIXTURE_ROOT/FX-WSH-060-multiline-task-slug"
 check_runtime_entry_metadata
 check_runtime_entry_suggestion "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent"
 check_runtime_entry_no_suggestion "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
