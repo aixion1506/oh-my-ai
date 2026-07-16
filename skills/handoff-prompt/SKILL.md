@@ -39,20 +39,26 @@ metadata:
       - current_repo_state
 ---
 
-# Handoff Prompt — 세션 전환 export 가이드
+# Handoff Prompt — Structured Handoff Candidate
 
 ## 이 스킬의 범위
 
-이 스킬은 세션이 끝날 때 **다음 AI 세션에 붙여넣을 handoff prompt를 사람이 직접 작성**하도록 안내한다.
+이 스킬은 세션이 끝나거나 Worker Session에 작업을 넘길 때 **provider-neutral Structured Handoff Candidate**를 사람이 직접 작성하도록 안내한다.
+
+Structured Handoff Candidate는 Worker에게 전달할 작업 계약 후보이며, Human Review 전에는 승인된 작업이나 실행 허가가 아니다.
 
 - raw log 읽기 금지
 - transcript_path 읽기 금지
 - 자동 summary 생성 금지
 - hook, script, make target 없음
 - 자동 `docs/context` 승격 없음
+- Runtime 자동 실행 없음
+- Worker 자동 생성 없음
+- Session Linking 없음
+- 자동 Result 반환 없음
 
-**입력**: 현재 repo 상태, 사람이 확인한 결정·제약·다음 액션  
-**출력**: 복붙용 handoff prompt 텍스트
+**입력**: Work-start 후보, Project Context, 현재 repo 상태, 사람이 확인한 결정·제약·검증 요구
+**출력**: Worker Session에 수동 Copy/Paste 가능한 Structured Handoff Candidate Markdown
 
 ---
 
@@ -60,13 +66,14 @@ metadata:
 
 | 항목 | `handoff-prompt` | `project-context` |
 |------|-----------------|-------------------|
-| 목적 | 다음 세션의 즉시 실행을 위한 단기 export | 장기 설계·결정 맥락 축적 |
+| 목적 | 특정 작업을 Worker에게 전달하는 단기 Candidate | 장기 설계·결정 맥락 축적 |
 | 저장 위치 | 기본 미저장. 필요 시 local-only 임시 파일 | `docs/context/*` (Git tracking 가능) |
-| 입력 | 현재 repo 상태 + 사람이 확인한 제약/결정 | human-confirmed 설계 배경, 장기 보존 맥락 |
+| 입력 | Work-start 후보 + 현재 repo 상태 + 사람이 확인한 제약/결정 | human-confirmed 설계 배경, 장기 보존 맥락 |
 | Git tracking | 금지 | curated 내용만 가능 |
-| 수명 | 다음 세션 시작 후 폐기 | 장기 유지 |
+| 수명 | 해당 Worker 작업 종료 후 폐기 | 장기 유지 |
 
 `handoff-prompt`는 `project-context`를 반드시 거칠 필요 없다. 현재 repo 상태만으로도 생성 가능하다.
+다만 관련 `docs/context/*`가 있으면 `repository_context`에 참조하고, 확인된 사실과 가정을 분리한다.
 
 ## conversation-capture와의 차이
 
@@ -85,6 +92,9 @@ metadata:
 - 자동 summary를 사실로 단정하지 않는다
 - 민감 정보가 포함된 prompt를 다른 AI 세션에 전달하지 않는다
 - next session에 raw log를 자동 주입하지 않는다
+- Structured Handoff Candidate를 승인 완료 상태로 쓰지 않는다
+- Handoff 생성과 Runtime 실행을 분리한다
+- 검증하지 못한 항목을 충족한 것으로 쓰지 않는다
 
 ---
 
@@ -104,73 +114,109 @@ gh pr list            # 열린 PR 목록
 
 아래를 CLI 결과나 직접 판단으로 채운다. **자동 summary가 아니라 사람이 인지하고 있는 사실만 써야 한다.**
 
-- 완료된 변경의 목적
+- Worker가 달성해야 할 단일 Goal
+- Scope와 Scope 밖 대상
+- allowed_actions / prohibited_actions / do_not_touch
 - 중요한 결정과 이유
-- 다음 액션 (1~3개, 구체적으로)
-- 건드리면 안 되는 브랜치·파일·stash
-- 검증 결과 (pass/fail/blocked)
+- confirmed_facts / confirmed_decisions / assumptions / open_issues
+- 필요한 validation_required와 실행할 수 없는 검증의 보고 방식
+- expected_output과 completion_criteria
+- Result Basic 반환 형식
 
 ### 3. 템플릿 채우기
 
 아래 템플릿을 복사해서 채운다. 빈 항목은 `(없음)` 또는 `N/A`로 표시한다.
+사용자가 검토·수정한 뒤 Worker Session에 수동 Copy/Paste한다.
 
 ---
 
-## Handoff Prompt 템플릿
+## Structured Handoff Candidate 템플릿
 
 ```markdown
-# Agent Handoff Prompt
+# Structured Handoff Candidate
+
+## Candidate Boundary
+- This is a provider-neutral Markdown Candidate.
+- Human Review is required before copy/paste to a Worker Session.
+- This is not an approved task, Action Approval, Runtime command, Runtime Invocation, Worker auto-creation, Session Linking, Managed Task, or automatic Result return.
+
+## Contract Metadata
+- schema_version: "1.0"
+- artifact_version: 1
+- handoff_ref: <handoff-YYYYMMDD-HHMMSS-short-slug>
+- lifecycle_status: draft
+- review_state: not_reviewed
+- created_at: <YYYY-MM-DDTHH:MM:SSZ>
 
 ## Goal
-- <작업 목표와 완료 기준>
+- <Worker가 달성해야 할 단일 목적. 기능 목록보다 작업 결과 중심으로 작성>
 
-## Current Repo State
-- Repository: <owner/repo 또는 local path>
-- Current branch: <branch>
-- Base branch: <base>
-- Worktree status: <clean / dirty + 파일 목록>
-- Last commit: <sha 제목>
-- Remote: <credential 제거한 remote URL>
+## Scope
+- repository: <owner/repo 또는 local path>
+- branch: <branch>
+- in_scope:
+  - <수정하거나 분석할 디렉터리/파일/기능>
+- out_of_scope:
+  - <이번 작업에서 다루지 않을 디렉터리/파일/기능>
 
-## Related Work
-- Primary PR: <번호/URL/상태>
-- Related PRs: <건드리면 안 되는 PR 포함>
-- Tags / release baselines: <있으면>
+## Allowed Actions
+- <허용된 읽기/수정/검증/보고 행동>
+- <예: inspect files, edit files in scope, run listed validation commands>
+
+## Prohibited Actions
+- <금지 행동>
+- <예: edit generated files directly, run deployment, create commits, push, merge>
 
 ## Do Not Touch
-- master 직접 push 금지
-- reset / rebase / force push 금지
-- <다른 PR 브랜치 이름> 브랜치 금지
-- stash@{n} 건드리지 않음
-- <generated file 목록> 직접 수정 금지 (make instructions로 재생성)
+- <수정 금지 파일/브랜치/stash/profile/private path>
+- <범위 밖 Repository나 기능>
 
-## Local State / Stash
-- Stashes: <관련 항목만>
-- Must not apply/drop: <주의 stash>
-- Local-only files/profiles: <profiles/local 등 git tracking 안 되는 파일>
+## Confirmed Facts
+- <확인된 사실과 source>
+- <없으면 N/A>
 
-## Completed Work
-- <완료된 변경 요약 — raw log 아니라 사람이 판단한 사실>
-- <중요 결정과 이유>
+## Confirmed Decisions
+- <이미 결정된 내용과 이유>
+- <없으면 N/A>
 
-## Verification
-- `make instructions`: <pass / fail / skip>
-- `git diff --check`: <pass / fail / skip>
-- `make doctor`: <pass / fail / skip>
-- Known environment issues: <bwrap 등 환경 제약이 있으면>
-- Generated file drift: <make instructions 후 clean 여부>
+## Assumptions
+- <확인되지 않은 전제>
+- <없으면 N/A>
 
-## Next Action
-1. <정확한 다음 액션>
-2. <그 다음 액션>
-3. <있으면>
+## Open Issues
+- <미해결 질문/차단점>
+- <없으면 N/A>
 
-## Expected Final Report
-- Branch:
-- Changed files:
-- Verification:
-- Risks:
-- Whether push/merge/tag was done:
+## Constraints
+- <보안, 개인정보, 생성물, 문서 추적, execution policy 등 제약>
+- <없으면 N/A>
+
+## Expected Output
+- <작업 완료 시 기대하는 산출물>
+- <사용자가 확인해야 할 결과>
+
+## Completion Criteria
+- <완료 판정 기준>
+
+## Validation Required
+- <수행해야 할 검증 명령 또는 수동 검수>
+- If validation cannot be performed, report it under `Validation Not Performed` in Result Basic. Do not mark unperformed validation as passed.
+
+## Repository Context
+- work_start_candidates:
+  - <Work-start candidate artifact/path, if available>
+- project_context:
+  - <docs/context path or decision reference, if available>
+- related_files:
+  - <reference file/path>
+
+## Return Contract
+- Return results using `templates/result-basic.md`.
+- Preserve all required Result Basic headings.
+- Separate `Validation Performed` and `Validation Not Performed`.
+- Report `Scope Deviations` explicitly.
+- Do not hide `Remaining Risks`.
+- Result Basic is an Evidence Candidate until Human Review; it is not automatic completion proof, Apply permission, Merge permission, or Context Promotion permission.
 ```
 
 ---
@@ -180,8 +226,14 @@ gh pr list            # 열린 PR 목록
 - [ ] raw log 원문이 들어가 있지 않은가
 - [ ] secret / token / 개인 경로가 포함돼 있지 않은가
 - [ ] 자동 summary가 아니라 사람이 확인한 사실만 담겨 있는가
-- [ ] Do Not Touch 항목이 명시돼 있는가
-- [ ] Next Action이 구체적으로 1~3개 써져 있는가
+- [ ] Goal / Scope / Do Not Touch가 명시돼 있는가
+- [ ] allowed_actions와 prohibited_actions가 분리돼 있는가
+- [ ] confirmed_facts와 assumptions가 분리돼 있는가
+- [ ] validation_required가 있고, 미수행 검증 보고 방식이 명시돼 있는가
+- [ ] expected_output과 completion_criteria가 명시돼 있는가
+- [ ] repository_context에 Work-start 후보나 Project Context 참조가 필요한 만큼 들어가 있는가
+- [ ] Return Contract가 `templates/result-basic.md`를 참조하는가
+- [ ] Candidate가 승인 완료, Runtime 실행, Managed Task로 표현되지 않았는가
 
 ---
 
