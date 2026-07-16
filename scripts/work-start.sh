@@ -77,6 +77,7 @@ if [ -z "$slug_source" ]; then
   slug_source="$(basename "$TASK_FILE_INPUT")"
 fi
 slug="$(printf '%s' "$slug_source" \
+  | tr '\n\r\t' '   ' \
   | tr '[:upper:]' '[:lower:]' \
   | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
   | cut -c1-48)"

@@ -1,0 +1,3 @@
+Add a small documentation-only example that references the oh-my-ai V1 V2 product boundary audit.
+Do not modify runtime code in this pass.
+Validate the output with the Work-start fixture checks only.
