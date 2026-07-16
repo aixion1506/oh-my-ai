@@ -58,6 +58,15 @@ metadata:
 | intermediate checkpoint에 추천 스킬 후보 섹션 추가 | |
 | 컨펌 전 스킬 실행 금지 | |
 
+### v1.2 추가
+
+| v1.2 IN | v1.2 OUT |
+|---------|---------|
+| Work-start Artifact 안에 `handoff-candidate.md` 초안 생성 | Worker Runtime 자동 실행 |
+| Skill Candidate와 Project Context reference를 Handoff Candidate에서 참조 | Runtime Invocation |
+| `templates/result-basic.md` 반환 Contract 연결 | Managed Task / Session Linking |
+| Human Review 후 수동 Copy/Paste 안내 | 자동 Result 반환 |
+
 ---
 
 ## 핵심 규칙
@@ -159,6 +168,18 @@ metadata:
 
 `scripts/work-start.sh` (`make work-start`)는 repo candidate 수집 보조 도구다.  
 이 스킬의 핵심 UX는 conversation 내 AI가 직접 담당한다. script는 선택적 보조 수단이다.
+
+helper는 `.oh-my-ai/work-start/<timestamp>-<slug>/` 아래에 Local Artifact를 만든다.
+
+기본 산출물:
+
+- `context-manifest.yaml`
+- `sources.md`
+- `context-gap-report.md`
+- `starter-prompt.md`
+- `handoff-candidate.md`
+
+`handoff-candidate.md`는 Structured Handoff Candidate 초안이다. Human Review 전에는 승인된 작업, Runtime 실행 명령, Managed Task가 아니다. 사용자가 검토·수정한 뒤 Worker Session에 수동 Copy/Paste하고, Worker 결과는 `templates/result-basic.md` 형식으로 반환받는다.
 
 ---
 

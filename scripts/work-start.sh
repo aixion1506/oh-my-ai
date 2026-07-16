@@ -277,6 +277,40 @@ write_text_candidates_md() {
   echo ""
 }
 
+write_project_context_refs_md() {
+  echo "## Project Context References"
+  echo ""
+  if [ -s "$DOCS_TMP" ] && grep -q '^docs/context/' "$DOCS_TMP"; then
+    awk -F '\t' '$1 ~ /^docs\/context\// { printf "- `%s` - candidate via `%s`; %s\n", $1, $2, $3 }' "$DOCS_TMP"
+  else
+    echo "- Needs human review: no \`docs/context/*\` candidate was found by Work-start."
+  fi
+  echo ""
+}
+
+write_related_files_md() {
+  echo "## Related File References"
+  echo ""
+  if [ -s "$DOCS_TMP" ] || [ -s "$CODE_TMP" ]; then
+    awk -F '\t' '{ printf "- `%s` - candidate via `%s`; %s\n", $1, $2, $3 }' "$DOCS_TMP" "$CODE_TMP" | head -20
+  else
+    echo "- Needs human review: no related file candidate was found by Work-start."
+  fi
+  echo ""
+}
+
+skill_match_script="$REPO/scripts/work-start-skill-match.mjs"
+skill_gap_md=$'## Skill candidates\n\n- skill gap: no routed skill matched this task; proceed without skill assist.\n'
+skill_gap_yaml=$'skill_candidates:\n  status: skill_gap\n  primary: []\n  secondary: []\n'
+skill_md="$skill_gap_md"
+skill_yaml="$skill_gap_yaml"
+if command -v node >/dev/null 2>&1 && [ -f "$skill_match_script" ]; then
+  skill_md_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=markdown 2>/dev/null || true)"
+  skill_yaml_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=yaml 2>/dev/null || true)"
+  [ -n "$skill_md_out" ] && skill_md="$skill_md_out"
+  [ -n "$skill_yaml_out" ] && skill_yaml="$skill_yaml_out"
+fi
+
 {
   echo "# Sources"
   echo ""
@@ -388,6 +422,7 @@ write_text_candidates_md() {
   fi
   echo "prompts:"
   echo "  starter: 'starter-prompt.md'"
+  echo "  handoff_candidate: 'handoff-candidate.md'"
   echo "context_gaps:"
   echo "  report: 'context-gap-report.md'"
   echo "  bootstrap_questions:"
@@ -408,6 +443,8 @@ write_text_candidates_md() {
   echo "  path: '$OUT_DIR'"
   echo "  local_only: true"
 } > "$OUT_DIR/context-manifest.yaml"
+
+printf '\n%s\n' "$skill_yaml" >> "$OUT_DIR/context-manifest.yaml"
 
 {
   echo "# Starter Prompt"
@@ -436,25 +473,107 @@ write_text_candidates_md() {
   cat "$OUT_DIR/context-gap-report.md"
 } > "$OUT_DIR/starter-prompt.md"
 
-rm -f "$SOURCES_TMP" "$DOCS_TMP" "$CODE_TMP" "$DECISIONS_TMP" "$RISKS_TMP" "$KEYWORDS_TMP"
-
-skill_match_script="$REPO/scripts/work-start-skill-match.mjs"
-skill_gap_md=$'## Skill candidates\n\n- skill gap: no routed skill matched this task; proceed without skill assist.\n'
-skill_gap_yaml=$'skill_candidates:\n  status: skill_gap\n  primary: []\n  secondary: []\n'
-skill_md="$skill_gap_md"
-skill_yaml="$skill_gap_yaml"
-if command -v node >/dev/null 2>&1 && [ -f "$skill_match_script" ]; then
-  skill_md_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=markdown 2>/dev/null || true)"
-  skill_yaml_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=yaml 2>/dev/null || true)"
-  [ -n "$skill_md_out" ] && skill_md="$skill_md_out"
-  [ -n "$skill_yaml_out" ] && skill_yaml="$skill_yaml_out"
-fi
-
 printf '\n%s\n' "$skill_md" >> "$OUT_DIR/starter-prompt.md"
-printf '\n%s\n' "$skill_yaml" >> "$OUT_DIR/context-manifest.yaml"
+
+{
+  echo "# Structured Handoff Candidate"
+  echo ""
+  echo "## Candidate Boundary"
+  echo "- This is a provider-neutral Markdown Candidate generated from Work-start output."
+  echo "- Human Review is required before copy/paste to a Worker Session."
+  echo "- This is not an approved task, Action Approval, Runtime command, Runtime Invocation, Worker auto-creation, Session Linking, Managed Task, automatic Result return, automatic Apply, or automatic Merge."
+  echo ""
+  echo "## Contract Metadata"
+  echo "- schema_version: \"1.0\""
+  echo "- artifact_version: 1"
+  echo "- handoff_ref: handoff-${timestamp}-${slug}"
+  echo "- lifecycle_status: draft"
+  echo "- review_state: not_reviewed"
+  echo "- created_at: $timestamp"
+  echo ""
+  echo "## Goal"
+  if [ -n "$TASK_INPUT" ]; then
+    printf '%s\n' "$TASK_INPUT" | sed 's/^/- /'
+  else
+    echo "- See TASK_FILE: \`$TASK_FILE_INPUT\`"
+  fi
+  echo ""
+  echo "## Scope"
+  echo "- repository: \`$REPO\`"
+  echo "- branch: \`$branch\`"
+  echo "- in_scope:"
+  echo "  - Needs human review: use \`sources.md\` and \`context-manifest.yaml\` to confirm exact files, directories, and features."
+  echo "- out_of_scope:"
+  echo "  - Needs human review: no explicit out-of-scope boundary was confirmed by Work-start."
+  echo ""
+  echo "## Allowed Actions"
+  echo "- Needs human review: no Worker action is approved by this Candidate alone."
+  echo "- Candidate-only reference: inspect files listed in \`sources.md\` and propose a minimal plan after review."
+  echo ""
+  echo "## Prohibited Actions"
+  echo "- Do not treat this Candidate as Runtime Invocation, Worker auto-creation, Session Linking, Managed Task, automatic Result return, automatic Apply, or automatic Merge."
+  echo "- Do not mark validation as passed unless it was actually performed."
+  echo ""
+  echo "## Do Not Touch"
+  echo "- Needs human review: no task-specific do-not-touch path was confirmed by Work-start."
+  echo "- Preserve denied/private paths excluded by Work-start search policy."
+  echo ""
+  echo "## Confirmed Facts"
+  echo "- Observed repository root: \`$REPO\`"
+  echo "- Observed branch: \`$branch\`"
+  echo "- Work-start artifact: \`$OUT_DIR\`"
+  echo ""
+  echo "## Confirmed Decisions"
+  echo "- Needs human review: Work-start does not promote decision candidates to confirmed decisions."
+  echo ""
+  echo "## Assumptions"
+  echo "- Needs human review: missing scope, validation, and do-not-touch details must remain assumptions until reviewed."
+  echo ""
+  echo "## Open Issues"
+  echo "- Review \`context-gap-report.md\` before handing this Candidate to a Worker."
+  echo "- Confirm exact scope, allowed actions, prohibited actions, validation, and completion criteria."
+  echo ""
+  echo "## Constraints"
+  echo "- Work-start search results are candidates, not canonical facts."
+  echo "- Human Review is required before manual copy/paste."
+  echo "- Keep Project Context references as references; do not auto-import or promote context."
+  echo ""
+  echo "## Expected Output"
+  echo "- Needs human review: define the final artifact or code/document change expected from the Worker."
+  echo ""
+  echo "## Completion Criteria"
+  echo "- Needs human review: define task-specific criteria before Worker execution."
+  echo "- Do not use this Candidate as automatic completion detection."
+  echo ""
+  echo "## Validation Required"
+  echo "- Needs human review: identify required validation commands or manual checks before Worker execution."
+  echo "- If validation cannot be performed, the Worker must report it under \`Validation Not Performed\` in Result Basic."
+  echo "- Do not mark unperformed validation as passed."
+  echo ""
+  echo "## Repository Context"
+  echo "- work_start_artifact: \`$OUT_DIR\`"
+  echo "- sources: \`sources.md\`"
+  echo "- context_gap_report: \`context-gap-report.md\`"
+  echo "- context_manifest: \`context-manifest.yaml\`"
+  echo "- starter_prompt: \`starter-prompt.md\`"
+  echo ""
+  printf '%s\n' "$skill_md"
+  write_project_context_refs_md
+  write_related_files_md
+  echo "## Return Contract"
+  echo "- Return results using \`templates/result-basic.md\`."
+  echo "- Preserve all required Result Basic headings."
+  echo "- Separate \`Validation Performed\` and \`Validation Not Performed\`."
+  echo "- Report \`Scope Deviations\` explicitly."
+  echo "- Do not hide \`Remaining Risks\`."
+  echo "- Result Basic is an Evidence Candidate until Human Review; it is not automatic completion proof, Apply permission, Merge permission, or Context Promotion permission."
+} > "$OUT_DIR/handoff-candidate.md"
+
+rm -f "$SOURCES_TMP" "$DOCS_TMP" "$CODE_TMP" "$DECISIONS_TMP" "$RISKS_TMP" "$KEYWORDS_TMP"
 
 echo "work-start artifact created: $OUT_DIR"
 echo "  - context-manifest.yaml"
+echo "  - handoff-candidate.md"
 echo "  - starter-prompt.md"
 echo "  - sources.md"
 echo "  - context-gap-report.md"
