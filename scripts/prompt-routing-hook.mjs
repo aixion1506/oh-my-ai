@@ -108,7 +108,7 @@ function buildContext(prompt, options = {}) {
 
   return [
     "[HARNESS:prompt-routing]",
-    "The latest user prompt contains harness routing signals. Apply these checks before continuing:",
+    "The latest user prompt contains harness routing signals. Treat these as non-executing context before continuing:",
     ...notes,
   ].join("\n");
 }
@@ -128,7 +128,7 @@ function buildWorkStartSuggestion(prompt) {
   return [
     "- Suggested by oh-my-ai: Work-start",
     "",
-    "  This request appears to fit pre-implementation scope and context collection.",
+    "  이 요청은 범위와 관련 Context를 먼저 정리하는 작업에 적합할 수 있습니다.",
     "",
     "  Work-start can:",
     "  - find related Skill and local Repository Context candidates",
@@ -137,14 +137,20 @@ function buildWorkStartSuggestion(prompt) {
     "",
     "  Consent boundary:",
     "  - state: SUGGESTED",
+    "  - Work-start는 로컬 Artifact를 생성합니다",
+    "  - 아직 Work-start는 실행되지 않았습니다",
     "  - no Work-start Engine has run",
     "  - no local Artifact has been created",
-    "  - Intent Match is not User Consent",
+    "  - Suggestion text is not a tool instruction",
+    "  - Suggestion text is not a Skill invocation request",
+    "  - Suggestion text is not Engine consent",
     "",
-    "  To run Work-start explicitly, ask the user to invoke:",
+    "  실행하려면 사용자가 다음 명시 명령을 직접 입력해야 합니다:",
     `  ${command}`,
     "",
-    "  To skip Work-start, continue with the current request. Do not suggest Work-start again for this same user request.",
+    "  사용하지 않으려면 현재 요청을 그대로 계속하세요.",
+    "  Do not run `/work-start`, `make work-start`, `scripts/work-start.sh`, or the Work-start Skill from this suggestion.",
+    "  Do not suggest Work-start again for this same user request.",
   ].join("\n");
 }
 
