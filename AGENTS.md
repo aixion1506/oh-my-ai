@@ -140,6 +140,7 @@ Git remote는 credential을 제거한 `host/owner/repo`로 정규화되어 저�
 - scratch / working note: 임시 조사, 회의 준비, 로컬 초안은 ignore 상태로 두고 커밋하지 않는다.
 - review candidate: 검토 후보도 ignore 상태를 유지한다. 임시 리뷰를 위해 `.gitignore`를 풀지 말고 `git diff --no-index`, `diff -u`, 원본 파일 비교 등으로 확인한다.
 - final artifact: 팀 공유용 decision record, 설계 문서, 재사용 reference가 되면 그때만 추적한다. 정확한 파일만 `.gitignore` 예외 처리하거나 `git add -f <file>`로 강제 staging한다.
+- 예외: oh-my-ai 자신의 아키텍처/제품 경계 audit 은 이 repo 의 공개 대상이다. 단, 대외 비공개 roadmap 과 pricing/business 판단은 계속 제외한다.
 - 확인 명령:
   - 왜 ignore되는지: `git check-ignore -v <file>`
   - ignored 신규 문서 diff: `git diff --no-index /dev/null <file>`

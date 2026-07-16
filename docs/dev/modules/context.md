@@ -9,7 +9,7 @@
 - 문서 산출물의 추적 기준은 `instructions/harness.md`의 Document artifact tracking policy를 따른다.
 
 ## 이 모듈 고유 제약
-- `docs/context/`는 ignore하지 않는다. 파일 단위로 추적 여부를 판단한다.
+- `docs/context/` 전체를 ignore 하지는 않지만, 추적은 파일 단위로 결정한다.
 - 커밋 대상은 하네스 설계/결정 contract, 제품 경계, 재사용 가능한 architecture decision이다.
 - 제외 대상은 세션 scratch, 회사/domain-specific 원문, 특정 외부 repo나 내부 서비스에 종속된 결정 문서다.
 - domain-specific 결정문은 Core Harness에 두지 않고 해당 domain repo 또는 private 보관 위치로 분리한다.
