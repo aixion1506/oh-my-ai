@@ -17,7 +17,9 @@ Task input
 → Skill Candidate
 → Project Context reference
 → Structured Handoff Candidate
-→ Human Review
+→ Human Review: choose Direct Handoff / Plan First / Gather Context
+→ Manual supplement if needed
+→ Handoff Candidate review
 → Manual Copy/Paste
 → Worker execution
 → Result Basic manual return
@@ -45,14 +47,71 @@ This procedure verifies the manual artifact contract. It does not invoke a Worke
 | 4 | Inspect `starter-prompt.md` | Skill Candidate section exists | Candidate is treated as a suggestion, not execution | Skill is described as auto-executed | File excerpt |
 | 5 | Inspect `handoff-candidate.md` Project Context References | Project Context references or `Needs human review` are present | References are candidates, not confirmed facts | Context is auto-imported or promoted | File excerpt |
 | 6 | Inspect `handoff-candidate.md` fields | `handoff_ref`, Goal, Scope, Allowed Actions, Prohibited Actions, Do Not Touch, Validation Required, Expected Output, Completion Criteria, Project Context References, Return Contract exist | Missing information remains marked for Human Review | Required field missing or unknown information is asserted as fact | Field checklist |
-| 7 | Human Review edits the Candidate if needed | Candidate is ready to copy | Reviewer confirms scope, allowed actions, prohibited actions, validation, and completion criteria | Candidate implies approval before review | Reviewed candidate |
-| 8 | Manually copy/paste the Candidate to a Worker Session | Worker receives the reviewed Markdown | No automatic Runtime Invocation or Session Linking is used | Worker is auto-created or auto-invoked | Manual checkpoint note |
-| 9 | Worker performs only the reviewed task | Work stays within scope | Worker does not invent extra permissions | Worker commits, pushes, merges, deploys, or changes out-of-scope files without approval | Worker notes |
-| 10 | Worker returns using `templates/result-basic.md` | Result Basic headings are preserved | Files read/changed, commands, validation, assumptions, scope deviations, and risks are explicit | Result is not in Result Basic shape | Result Basic Markdown |
-| 11 | Review `Validation Not Performed` | Unperformed validation is listed with reasons | No unperformed validation is marked passed | Missing validation is hidden | Result Basic section |
-| 12 | Review `Scope Deviations` | Scope deviations are listed or `None` | Out-of-scope work is not hidden | Deviation exists but is omitted | Result Basic section |
-| 13 | Review `Remaining Risks` | Remaining risks are listed or `None` | Risks are not hidden | Risk is known but omitted | Result Basic section |
-| 14 | Human final review | Result is accepted, edited, rejected, or changes are requested | Result Basic remains evidence until human decision | Result is treated as automatic truth, apply permission, or merge permission | Review note |
+| 7 | Inspect `Human Review: Choose the Next Step` | Direct Handoff, Plan First, and Gather Context are all visible and unchecked | User is the selector; no default or system-selected next step exists | A next step is preselected or recommended by the system | Next Step excerpt |
+| 8 | Choose one manual path | Reviewer chooses Direct Handoff, Plan First, or Gather Context | Choice is recorded manually with Selected by, Reason, and Unresolved context if useful | Choice triggers automatic planning, connector calls, runtime invocation, or approval | Review note |
+| 9 | Human Review edits the Candidate if needed | Candidate remains a reviewed Candidate | Reviewer confirms scope, allowed actions, prohibited actions, validation, and completion criteria | Candidate implies approval before review | Reviewed candidate |
+| 10 | Manually copy/paste the Candidate to a Worker Session | Worker receives the reviewed Markdown | No automatic Runtime Invocation or Session Linking is used | Worker is auto-created or auto-invoked | Manual checkpoint note |
+| 11 | Worker performs only the reviewed task | Work stays within scope | Worker does not invent extra permissions | Worker commits, pushes, merges, deploys, or changes out-of-scope files without approval | Worker notes |
+| 12 | Worker returns using `templates/result-basic.md` | Result Basic headings are preserved | Files read/changed, commands, validation, assumptions, scope deviations, and risks are explicit | Result is not in Result Basic shape | Result Basic Markdown |
+| 13 | Review `Validation Not Performed` | Unperformed validation is listed with reasons | No unperformed validation is marked passed | Missing validation is hidden | Result Basic section |
+| 14 | Review `Scope Deviations` | Scope deviations are listed or `None` | Out-of-scope work is not hidden | Deviation exists but is omitted | Result Basic section |
+| 15 | Review `Remaining Risks` | Remaining risks are listed or `None` | Risks are not hidden | Risk is known but omitted | Result Basic section |
+| 16 | Human final review | Result is accepted, edited, rejected, or changes are requested | Result Basic remains evidence until human decision | Result is treated as automatic truth, apply permission, or merge permission | Review note |
+
+## Human Review Next Step Paths
+
+### Direct Handoff Path
+
+Use when the reviewer decides Goal, Scope, allowed actions, prohibited actions, validation, and completion criteria are clear enough.
+
+Steps:
+
+1. Review the Handoff Candidate.
+2. Confirm no next step is preselected by the system.
+3. Record the reviewer and reason if useful.
+4. Manually copy/paste the reviewed Candidate to the Worker Session.
+
+Failure criteria:
+
+- The system selects Direct Handoff automatically.
+- The Candidate is treated as approved without Human Review.
+- Runtime Invocation, Worker creation, Session Linking, commit, push, merge, or deploy happens automatically.
+
+### Plan First Path
+
+Use when the reviewer decides impact, order, or decomposition should be planned before Worker handoff.
+
+Steps:
+
+1. Create a manual plan or use a Planning Skill.
+2. Review the plan.
+3. Record a reviewed plan reference in the Handoff Candidate if useful.
+4. Update the Candidate manually.
+5. Re-run Human Review before copy/paste.
+
+Failure criteria:
+
+- Planning is executed automatically.
+- A planning tool is required as the canonical path.
+- A plan reference is treated as automatic approval.
+
+### Gather Context Path
+
+Use when the reviewer decides repository-local information is insufficient.
+
+Steps:
+
+1. Review possible external context candidates manually.
+2. Check only the sources the user has access to and decides are relevant.
+3. Record any reviewed external context manually.
+4. Update Task, Project Context reference, or Handoff Candidate manually.
+5. Re-run Work-start or re-review the Handoff Candidate as needed.
+
+Failure criteria:
+
+- External context candidates are presented as confirmed facts.
+- A connector, external search, or import runs automatically.
+- Gather Context is selected automatically.
 
 ## Repository-local Verification
 
@@ -66,8 +125,13 @@ This verifies:
 
 - Positive Work-start fixture
 - Negative Work-start fixture
+- Multi-scope Next Step fixture
+- External Context Candidate fixture
 - Required Structured Handoff fields
 - Human Review boundary
+- Direct Handoff / Plan First / Gather Context display
+- No default or system-selected next step
+- External Context candidates are manual review candidates, not facts
 - Manual Copy/Paste wording
 - `templates/result-basic.md` Return Contract
 - Conservative handling of ambiguous scope and unsafe permissions

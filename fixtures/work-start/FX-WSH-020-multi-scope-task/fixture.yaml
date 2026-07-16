@@ -1,0 +1,18 @@
+fixture_id: FX-WSH-020
+title: Multi-scope task keeps Human Review Next Step user-selected
+type: next_step
+subject: work-start-human-review-next-step
+input:
+  task_file: input/task.txt
+expected:
+  required_handoff_fields: expected/required-handoff-fields.txt
+  result_basic_markers: expected/result-basic-markers.txt
+  next_step_choices:
+    direct_handoff: present_unselected
+    plan_first: present_unselected
+    gather_context: present_unselected
+  automatic_selection: false
+  automatic_workflow: false
+status:
+  fixture_definition: active
+  runner: scripts/test-work-start-fixtures.sh
