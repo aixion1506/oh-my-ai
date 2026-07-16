@@ -1,0 +1,1 @@
+Prepare a handoff for a documentation update that may need a recent Slack or Confluence decision; do not search external systems automatically; keep any external context as a manual review candidate.

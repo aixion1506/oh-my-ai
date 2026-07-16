@@ -32,13 +32,13 @@ require_file() {
 require_pattern() {
   local pattern="$1"
   local file="$2"
-  rg -q "$pattern" "$file" || fail "missing pattern '$pattern' in $file"
+  rg -q -- "$pattern" "$file" || fail "missing pattern '$pattern' in $file"
 }
 
 require_fixed() {
   local text="$1"
   local file="$2"
-  rg -q -F "$text" "$file" || fail "missing text '$text' in $file"
+  rg -q -F -- "$text" "$file" || fail "missing text '$text' in $file"
 }
 
 section_body() {
@@ -62,6 +62,7 @@ check_common_artifact() {
   local artifact="$1"
   local fixture_dir="$2"
   local handoff="$artifact/handoff-candidate.md"
+  local next_step_section
 
   [ -d "$artifact" ] || fail "artifact directory not created: $artifact"
   require_file "$artifact/starter-prompt.md"
@@ -88,6 +89,39 @@ check_common_artifact() {
   require_fixed "Human Review is required" "$handoff"
   require_fixed "manual copy/paste" "$handoff"
   require_fixed "handoff_candidate: 'handoff-candidate.md'" "$artifact/context-manifest.yaml"
+
+  require_pattern "^## Human Review: Choose the Next Step$" "$handoff"
+  require_fixed "- [ ] Direct Handoff" "$handoff"
+  require_fixed "- [ ] Plan First" "$handoff"
+  require_fixed "- [ ] Gather Context" "$handoff"
+  require_fixed "Selected by:" "$handoff"
+  require_fixed "Reason:" "$handoff"
+  require_fixed "Unresolved context:" "$handoff"
+  require_fixed "Needs human review" "$handoff"
+  require_fixed "No next step is selected by default" "$handoff"
+  require_fixed "does not choose, recommend, or run any next step automatically" "$handoff"
+
+  next_step_section="$(section_body "## Human Review: Choose the Next Step" "$handoff")"
+  if printf '%s\n' "$next_step_section" | rg -q -- '- \[[xX]\]'; then
+    fail "next step is preselected in $handoff"
+  fi
+  if rg -qi 'Recommended action|Complexity detected|System selected|External context required|Superpowers required|Automatically run Superpowers' "$handoff"; then
+    fail "automatic recommendation or external dependency wording found in $handoff"
+  fi
+
+  require_pattern "^## External Context Checkpoint$" "$handoff"
+  require_fixed "Possible external context to review manually:" "$handoff"
+  require_fixed "Internal Wiki or Confluence" "$handoff"
+  require_fixed "Issue Tracker" "$handoff"
+  require_fixed "Drive or Notion" "$handoff"
+  require_fixed "Design files" "$handoff"
+  require_fixed "Other repositories" "$handoff"
+  require_fixed "Recent decisions from Slack or email" "$handoff"
+  require_fixed "Production-only configuration" "$handoff"
+  require_fixed "not a confirmed fact list" "$handoff"
+  require_fixed "not connector output" "$handoff"
+  require_fixed "does not assert that any listed external source exists" "$handoff"
+  require_fixed "Possible external context to review manually:" "$artifact/context-gap-report.md"
 
   if rg -q 'Permission denied|command not found|No such file or directory' "$handoff"; then
     fail "shell error marker found in $handoff"
@@ -147,6 +181,7 @@ run_fixture() {
   case "$fixture_id" in
     FX-WSH-001-*) check_positive "$fixture_dir" "$artifact" ;;
     FX-WSH-010-*) check_negative "$fixture_dir" "$artifact" ;;
+    FX-WSH-020-*|FX-WSH-030-*) ;;
     *) fail "unknown fixture id: $fixture_id" ;;
   esac
 
@@ -160,5 +195,7 @@ require_file "skills/handoff-prompt/SKILL.md"
 
 run_fixture "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-010-ambiguous-deploy-task"
+run_fixture "$FIXTURE_ROOT/FX-WSH-020-multi-scope-task"
+run_fixture "$FIXTURE_ROOT/FX-WSH-030-external-context-task"
 
 echo "work-start fixtures passed"

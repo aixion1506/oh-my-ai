@@ -67,6 +67,18 @@ metadata:
 | `templates/result-basic.md` 반환 Contract 연결 | Managed Task / Session Linking |
 | Human Review 후 수동 Copy/Paste 안내 | 자동 Result 반환 |
 
+### v1.3 추가
+
+| v1.3 IN | v1.3 OUT |
+|---------|---------|
+| Human Review에서 Direct Handoff / Plan First / Gather Context 선택지 표시 | 시스템의 Next Step 자동 선택 |
+| 선택 전 `Needs human review` 상태 유지 | 기본 선택값 지정 |
+| External Context Checkpoint를 수동 확인 후보로 표시 | 작업 복잡도 자동 판정 |
+| 사용자가 계획·외부 Context를 수동 보완한 뒤 Candidate 재검토 | Planning Skill 자동 호출 |
+| Handoff Candidate 상태 유지 | Connector 호출 / 외부 자료 자동 검색 |
+
+Next Step 선택지는 사용자 검토를 돕는 중립 표시다. Work-start는 어떤 선택지도 추천하거나 실행하지 않는다.
+
 ---
 
 ## 핵심 규칙
@@ -180,6 +192,16 @@ helper는 `.oh-my-ai/work-start/<timestamp>-<slug>/` 아래에 Local Artifact를
 - `handoff-candidate.md`
 
 `handoff-candidate.md`는 Structured Handoff Candidate 초안이다. Human Review 전에는 승인된 작업, Runtime 실행 명령, Managed Task가 아니다. 사용자가 검토·수정한 뒤 Worker Session에 수동 Copy/Paste하고, Worker 결과는 `templates/result-basic.md` 형식으로 반환받는다.
+
+`handoff-candidate.md`의 Human Review는 다음 세 가지 수동 선택지를 표시한다.
+
+- Direct Handoff: 사용자가 범위와 수행 방법이 충분히 명확하다고 판단한 경우, Candidate를 검토한 뒤 Worker에게 수동 전달한다.
+- Plan First: 사용자가 영향 범위나 수행 순서를 먼저 정리해야 한다고 판단한 경우, Planning Skill 또는 수동 Planning Process를 수행하고 검토된 계획을 Candidate에 수동 반영한다.
+- Gather Context: 사용자가 현재 정보가 충분하지 않다고 판단한 경우, 외부 자료 또는 추가 입력을 수동 확인한 뒤 Work-start 또는 Handoff를 다시 검토한다.
+
+선택 전 상태는 `Needs human review`다. 기본 선택, 시스템 자동 선택, 자동 Planning, 자동 Workflow 분기, Connector 호출, Handoff 자동 승인은 v1.3 범위가 아니다.
+
+`context-gap-report.md`와 `handoff-candidate.md`는 External Context Checkpoint를 수동 확인 후보로 표시할 수 있다. 이는 확인된 Fact나 검색 결과가 아니며, 외부 자료가 실제 존재한다고 단정하지 않는다.
 
 ---
 

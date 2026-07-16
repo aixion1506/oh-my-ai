@@ -1,0 +1,1 @@
+Update the Work-start documentation and fixture notes for a small multi-file documentation cleanup; do not modify runtime code; keep validation limited to repository-local fixture checks.

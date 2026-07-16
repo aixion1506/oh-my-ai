@@ -1,0 +1,11 @@
+handoff_ref
+## Goal
+## Scope
+## Allowed Actions
+## Prohibited Actions
+## Do Not Touch
+## Validation Required
+## Expected Output
+## Completion Criteria
+## Project Context References
+## Return Contract
