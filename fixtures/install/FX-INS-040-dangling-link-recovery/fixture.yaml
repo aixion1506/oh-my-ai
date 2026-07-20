@@ -1,0 +1,11 @@
+fixture_id: FX-INS-040
+title: Doctor gives executable recovery guidance for dangling links in both source states
+type: doctor
+subject: shared-install
+expected:
+  source_present_guidance: make install-shared
+  source_missing_guidance: rm dangling link
+  strict_doctor_exit_after_following_guidance: 0
+status:
+  fixture_definition: active
+  runner: scripts/test-install-fixtures.sh

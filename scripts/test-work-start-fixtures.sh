@@ -7,6 +7,7 @@ cd "$REPO"
 FIXTURE_ROOT="fixtures/work-start"
 cleanup_paths=()
 cleanup_files=()
+cleanup_dirs=()
 
 cleanup() {
   if [ "${KEEP_WORK_START_FIXTURE_ARTIFACTS:-}" = "1" ]; then
@@ -20,6 +21,12 @@ cleanup() {
   for path in "${cleanup_files[@]}"; do
     case "$path" in
       .oh-my-ai/state/*) [ -f "$path" ] && rm -f -- "$path" ;;
+    esac
+  done
+  # Isolated-PATH sandboxes live under the system temp dir, not the repo.
+  for path in "${cleanup_dirs[@]:-}"; do
+    case "$path" in
+      */oh-my-ai-work-start-backend.*) [ -d "$path" ] && rm -rf -- "$path" ;;
     esac
   done
   return 0
@@ -39,13 +46,13 @@ require_file() {
 require_pattern() {
   local pattern="$1"
   local file="$2"
-  rg -q -- "$pattern" "$file" || fail "missing pattern '$pattern' in $file"
+  grep -q -E -- "$pattern" "$file" || fail "missing pattern '$pattern' in $file"
 }
 
 require_fixed() {
   local text="$1"
   local file="$2"
-  rg -q -F -- "$text" "$file" || fail "missing text '$text' in $file"
+  grep -q -F -- "$text" "$file" || fail "missing text '$text' in $file"
 }
 
 section_body() {
@@ -154,10 +161,10 @@ check_common_artifact() {
   require_fixed "does not choose, recommend, or run any next step automatically" "$handoff"
 
   next_step_section="$(section_body "## Human Review: Choose the Next Step" "$handoff")"
-  if printf '%s\n' "$next_step_section" | rg -q -- '- \[[xX]\]'; then
+  if printf '%s\n' "$next_step_section" | grep -q -E -- '- \[[xX]\]'; then
     fail "next step is preselected in $handoff"
   fi
-  if rg -qi 'Recommended action|Complexity detected|System selected|External context required|Superpowers required|Automatically run Superpowers' "$handoff"; then
+  if grep -q -i -E 'Recommended action|Complexity detected|System selected|External context required|Superpowers required|Automatically run Superpowers' "$handoff"; then
     fail "automatic recommendation or external dependency wording found in $handoff"
   fi
 
@@ -175,7 +182,7 @@ check_common_artifact() {
   require_fixed "does not assert that any listed external source exists" "$handoff"
   require_fixed "Possible external context to review manually:" "$artifact/context-gap-report.md"
 
-  if rg -q 'Permission denied|command not found|No such file or directory' "$handoff"; then
+  if grep -q -E 'Permission denied|command not found|No such file or directory' "$handoff"; then
     fail "shell error marker found in $handoff"
   fi
 
@@ -188,7 +195,7 @@ check_positive() {
   local handoff="$artifact/handoff-candidate.md"
 
   require_fixed "Add a small documentation-only example" "$handoff"
-  if ! section_body "## Project Context References" "$handoff" | rg -q '^- `docs/context/|Needs human review'; then
+  if ! section_body "## Project Context References" "$handoff" | grep -q -E '^- `docs/context/|Needs human review'; then
     fail "Project Context References lacks a candidate or conservative review marker in $handoff"
   fi
 }
@@ -204,7 +211,7 @@ check_negative() {
   require_fixed "Do not treat this Candidate as Runtime Invocation" "$handoff"
 
   allowed="$(section_body "## Allowed Actions" "$handoff")"
-  if printf '%s\n' "$allowed" | rg -qi 'commit|push|merge|deploy|배포|runtime'; then
+  if printf '%s\n' "$allowed" | grep -q -i -E 'commit|push|merge|deploy|배포|runtime'; then
     fail "Allowed Actions grants an unsafe action in $handoff"
   fi
 }
@@ -241,7 +248,7 @@ check_runtime_entry_metadata() {
     require_fixed "disable-model-invocation: true" "$HOME/.claude/skills/work-start/SKILL.md"
     require_fixed 'Use only when a user explicitly invokes Claude /work-start or Codex $work-start' "$HOME/.claude/skills/work-start/SKILL.md"
   fi
-  if rg -q -F "or says they want to start, plan, or kick off a task" "skills/work-start/SKILL.md"; then
+  if grep -q -F -- "or says they want to start, plan, or kick off a task" "skills/work-start/SKILL.md"; then
     fail "work-start skill description still permits natural-language model invocation"
   fi
 }
@@ -328,34 +335,34 @@ check_runtime_entry_suggestion() {
   [ -n "$visible_output" ] || fail "missing user-visible Work-start suggestion payload"
   [ -n "$internal_context" ] || fail "missing internal Work-start consent context"
 
-  printf '%s\n' "$visible_output" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "visible payload missing Work-start suggestion"
-  printf '%s\n' "$visible_output" | rg -q -F "oh-my-ai" || fail "visible payload missing oh-my-ai brand"
-  printf '%s\n' "$visible_output" | rg -q -F "Work-start" || fail "visible payload missing Work-start name"
-  printf '%s\n' "$visible_output" | rg -q -F "Work-start는 로컬 Artifact를 생성합니다" || fail "visible payload does not explain artifact behavior"
-  printf '%s\n' "$visible_output" | rg -q -F "아직 Work-start는 실행되지 않았습니다" || fail "visible payload does not state Work-start has not run"
-  printf '%s\n' "$visible_output" | rg -q -F "$explicit_entry" || fail "visible payload does not provide explicit follow-up entry"
-  printf '%s\n' "$visible_output" | rg -q -F "사용하지 않으려면 현재 요청을 그대로 계속하세요" || fail "visible payload does not provide skip path"
+  printf '%s\n' "$visible_output" | grep -q -F -- "Suggested by oh-my-ai: Work-start" || fail "visible payload missing Work-start suggestion"
+  printf '%s\n' "$visible_output" | grep -q -F -- "oh-my-ai" || fail "visible payload missing oh-my-ai brand"
+  printf '%s\n' "$visible_output" | grep -q -F -- "Work-start" || fail "visible payload missing Work-start name"
+  printf '%s\n' "$visible_output" | grep -q -F -- "Work-start는 로컬 Artifact를 생성합니다" || fail "visible payload does not explain artifact behavior"
+  printf '%s\n' "$visible_output" | grep -q -F -- "아직 Work-start는 실행되지 않았습니다" || fail "visible payload does not state Work-start has not run"
+  printf '%s\n' "$visible_output" | grep -q -F -- "$explicit_entry" || fail "visible payload does not provide explicit follow-up entry"
+  printf '%s\n' "$visible_output" | grep -q -F -- "사용하지 않으려면 현재 요청을 그대로 계속하세요" || fail "visible payload does not provide skip path"
 
-  printf '%s\n' "$internal_context" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "internal context missing Work-start suggestion"
-  printf '%s\n' "$internal_context" | rg -q -F "state: SUGGESTED" || fail "internal context missing SUGGESTED state"
-  printf '%s\n' "$internal_context" | rg -q -F "no Work-start Engine has run" || fail "internal context does not state no engine ran"
-  printf '%s\n' "$internal_context" | rg -q -F "no local Artifact has been created" || fail "internal context does not state no artifact was created"
-  printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not a tool instruction" || fail "internal context does not separate text from tool instructions"
-  printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not a Skill invocation request" || fail "internal context does not separate text from skill invocation"
-  printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not Engine consent" || fail "internal context does not separate text from engine consent"
-  printf '%s\n' "$internal_context" | rg -q -F "  $explicit_entry" || fail "internal context does not provide runtime explicit entry"
-  printf '%s\n' "$internal_context" | rg -q -F "Do not run \`$explicit_command_name\`, \`make work-start\`, \`scripts/work-start.sh\`, or the Work-start Skill from this suggestion." \
+  printf '%s\n' "$internal_context" | grep -q -F -- "Suggested by oh-my-ai: Work-start" || fail "internal context missing Work-start suggestion"
+  printf '%s\n' "$internal_context" | grep -q -F -- "state: SUGGESTED" || fail "internal context missing SUGGESTED state"
+  printf '%s\n' "$internal_context" | grep -q -F -- "no Work-start Engine has run" || fail "internal context does not state no engine ran"
+  printf '%s\n' "$internal_context" | grep -q -F -- "no local Artifact has been created" || fail "internal context does not state no artifact was created"
+  printf '%s\n' "$internal_context" | grep -q -F -- "Suggestion text is not a tool instruction" || fail "internal context does not separate text from tool instructions"
+  printf '%s\n' "$internal_context" | grep -q -F -- "Suggestion text is not a Skill invocation request" || fail "internal context does not separate text from skill invocation"
+  printf '%s\n' "$internal_context" | grep -q -F -- "Suggestion text is not Engine consent" || fail "internal context does not separate text from engine consent"
+  printf '%s\n' "$internal_context" | grep -q -F -- "  $explicit_entry" || fail "internal context does not provide runtime explicit entry"
+  printf '%s\n' "$internal_context" | grep -q -F -- "Do not run \`$explicit_command_name\`, \`make work-start\`, \`scripts/work-start.sh\`, or the Work-start Skill from this suggestion." \
     || fail "internal context does not explicitly block execution from suggestion"
-  if printf '%s\n' "$visible_output"$'\n'"$internal_context" | rg -q 'work-start artifact created:|oh-my-ai Work-start artifacts created:'; then
+  if printf '%s\n' "$visible_output"$'\n'"$internal_context" | grep -q -E 'work-start artifact created:|oh-my-ai Work-start artifacts created:'; then
     fail "suggestion output looks like engine execution"
   fi
-  if printf '%s\n' "$visible_output"$'\n'"$internal_context" | rg -qi 'ask the user to invoke|execute /work-start|run /work-start'; then
+  if printf '%s\n' "$visible_output"$'\n'"$internal_context" | grep -q -i -E 'ask the user to invoke|execute /work-start|run /work-start'; then
     fail "suggestion contains imperative execution wording"
   fi
 
   repeated_output="$(run_prompt_hook_for_runtime "$runtime" "$task_file")"
   repeated_visible_output="$(printf '%s\n' "$repeated_output" | json_string_field systemMessage)"
-  if printf '%s\n' "$repeated_output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+  if printf '%s\n' "$repeated_output" | grep -q -F -- "Suggested by oh-my-ai: Work-start"; then
     fail "same request was re-suggested after suppression"
   fi
   if [ -n "$repeated_visible_output" ]; then
@@ -384,10 +391,10 @@ check_runtime_entry_no_suggestion() {
   if [ -n "$(printf '%s\n' "$output" | json_string_field systemMessage)" ]; then
     fail "generic code task produced user-visible Work-start suggestion"
   fi
-  if printf '%s\n' "$(printf '%s\n' "$output" | json_string_field hookSpecificOutput.additionalContext)" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+  if printf '%s\n' "$(printf '%s\n' "$output" | json_string_field hookSpecificOutput.additionalContext)" | grep -q -F -- "Suggested by oh-my-ai: Work-start"; then
     fail "generic code task produced internal Work-start suggestion"
   fi
-  if printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+  if printf '%s\n' "$output" | grep -q -F -- "Suggested by oh-my-ai: Work-start"; then
     fail "generic code task produced Work-start suggestion"
   fi
 
@@ -414,7 +421,7 @@ check_runtime_entry_synthetic_task_notification() {
   rm -f -- "$state_file"
 
   natural_output="$(run_prompt_hook_for_runtime "$runtime" "$natural_task_file")"
-  printf '%s\n' "$natural_output" | rg -q -F "Suggested by oh-my-ai: Work-start" \
+  printf '%s\n' "$natural_output" | grep -q -F -- "Suggested by oh-my-ai: Work-start" \
     || fail "real user prompt did not establish suggestion state before synthetic notification"
   [ -f "$state_file" ] || fail "real user prompt did not create suggestion state"
   before_state_hash="$(sha256sum "$state_file")"
@@ -454,7 +461,7 @@ check_runtime_entry_explicit_prompt_no_suggestion() {
   if [ -n "$(printf '%s\n' "$output" | json_string_field systemMessage)" ]; then
     fail "explicit $runtime Work-start prompt produced a suggestion systemMessage"
   fi
-  if printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+  if printf '%s\n' "$output" | grep -q -F -- "Suggested by oh-my-ai: Work-start"; then
     fail "explicit $runtime Work-start prompt produced a suggestion payload"
   fi
 
@@ -482,19 +489,19 @@ check_runtime_entry_explicit() {
   cleanup_paths+=("$artifact")
 
   check_common_artifact "$artifact" "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
-  printf '%s\n' "$output" | rg -q -F "oh-my-ai Work-start completed." || fail "explicit output missing completion marker"
-  printf '%s\n' "$output" | rg -q -F "Artifact directory:" || fail "explicit output missing artifact directory label"
-  printf '%s\n' "$output" | rg -q -F "$artifact" || fail "explicit output missing actual artifact path"
-  printf '%s\n' "$output" | rg -q -F "Status:" || fail "explicit output missing status label"
-  printf '%s\n' "$output" | rg -q -F "Needs human review" || fail "explicit output missing review status"
-  printf '%s\n' "$output" | rg -q -F "Choose the next step:" || fail "explicit output missing next step label"
-  printf '%s\n' "$output" | rg -q -F -- "- Direct Handoff" || fail "explicit output missing Direct Handoff"
-  printf '%s\n' "$output" | rg -q -F -- "- Plan First" || fail "explicit output missing Plan First"
-  printf '%s\n' "$output" | rg -q -F -- "- Gather Context" || fail "explicit output missing Gather Context"
-  printf '%s\n' "$output" | rg -q -F "Work-start has not modified the requested product code." || fail "explicit output missing no-product-code-change marker"
-  printf '%s\n' "$output" | rg -q -F "Review the Candidate before continuing." || fail "explicit output missing stop/review marker"
+  printf '%s\n' "$output" | grep -q -F -- "oh-my-ai Work-start completed." || fail "explicit output missing completion marker"
+  printf '%s\n' "$output" | grep -q -F -- "Artifact directory:" || fail "explicit output missing artifact directory label"
+  printf '%s\n' "$output" | grep -q -F -- "$artifact" || fail "explicit output missing actual artifact path"
+  printf '%s\n' "$output" | grep -q -F -- "Status:" || fail "explicit output missing status label"
+  printf '%s\n' "$output" | grep -q -F -- "Needs human review" || fail "explicit output missing review status"
+  printf '%s\n' "$output" | grep -q -F -- "Choose the next step:" || fail "explicit output missing next step label"
+  printf '%s\n' "$output" | grep -q -F -- "- Direct Handoff" || fail "explicit output missing Direct Handoff"
+  printf '%s\n' "$output" | grep -q -F -- "- Plan First" || fail "explicit output missing Plan First"
+  printf '%s\n' "$output" | grep -q -F -- "- Gather Context" || fail "explicit output missing Gather Context"
+  printf '%s\n' "$output" | grep -q -F -- "Work-start has not modified the requested product code." || fail "explicit output missing no-product-code-change marker"
+  printf '%s\n' "$output" | grep -q -F -- "Review the Candidate before continuing." || fail "explicit output missing stop/review marker"
 
-  if printf '%s\n' "$output" | rg -qi '수정할까요|구현하겠습니다|관련 코드를 분석하겠습니다|Worker로 진행|Plan First 자동 실행'; then
+  if printf '%s\n' "$output" | grep -q -i -E '수정할까요|구현하겠습니다|관련 코드를 분석하겠습니다|Worker로 진행|Plan First 자동 실행'; then
     fail "explicit output contains continuation wording"
   fi
 
@@ -529,19 +536,19 @@ check_codex_runtime_entry_argument_normalization() {
   dir_name="$(basename "$artifact")"
 
   check_common_artifact "$artifact" "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
-  printf '%s\n' "$output" | rg -q -F "Needs human review" || fail "Codex normalized explicit output missing review status"
-  printf '%s\n' "$output" | rg -q -F -- "- Direct Handoff" || fail "Codex normalized explicit output missing Direct Handoff"
-  printf '%s\n' "$output" | rg -q -F -- "- Plan First" || fail "Codex normalized explicit output missing Plan First"
-  printf '%s\n' "$output" | rg -q -F -- "- Gather Context" || fail "Codex normalized explicit output missing Gather Context"
-  printf '%s\n' "$output" | rg -q -F "Review the Candidate before continuing." || fail "Codex normalized explicit output missing stop/review marker"
+  printf '%s\n' "$output" | grep -q -F -- "Needs human review" || fail "Codex normalized explicit output missing review status"
+  printf '%s\n' "$output" | grep -q -F -- "- Direct Handoff" || fail "Codex normalized explicit output missing Direct Handoff"
+  printf '%s\n' "$output" | grep -q -F -- "- Plan First" || fail "Codex normalized explicit output missing Plan First"
+  printf '%s\n' "$output" | grep -q -F -- "- Gather Context" || fail "Codex normalized explicit output missing Gather Context"
+  printf '%s\n' "$output" | grep -q -F -- "Review the Candidate before continuing." || fail "Codex normalized explicit output missing stop/review marker"
 
-  if printf '%s\n' "$dir_name" | rg -q '(^|-)work-start($|-)'; then
+  if printf '%s\n' "$dir_name" | grep -q -E '(^|-)work-start($|-)'; then
     fail "Codex command token leaked into artifact slug: $dir_name"
   fi
-  if rg -q -F '$work-start 멀티라인' "$artifact"; then
+  if grep -r -q -F -- '$work-start 멀티라인' "$artifact"; then
     fail "Codex command token leaked into artifact body: $artifact"
   fi
-  rg -q -F "$normalized_task" "$artifact" || fail "normalized Codex task not found in artifact body"
+  grep -r -q -F -- "$normalized_task" "$artifact" || fail "normalized Codex task not found in artifact body"
 
   echo "passed: $(basename "$fixture_dir") codex-prefix-removal"
 }
@@ -570,11 +577,11 @@ check_codex_runtime_entry_task_preservation() {
   dir_name="$(basename "$artifact")"
 
   check_common_artifact "$artifact" "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
-  if rg -q -F '$work-start work-start' "$artifact"; then
+  if grep -r -q -F -- '$work-start work-start' "$artifact"; then
     fail "Codex command token leaked into preserved-task artifact body: $artifact"
   fi
-  rg -q -F "$preserved_task" "$artifact" || fail "Codex task body work-start mention was not preserved"
-  printf '%s\n' "$dir_name" | rg -q -F "work-start" || fail "Codex task body work-start mention was not preserved in slug: $dir_name"
+  grep -r -q -F -- "$preserved_task" "$artifact" || fail "Codex task body work-start mention was not preserved"
+  printf '%s\n' "$dir_name" | grep -q -F -- "work-start" || fail "Codex task body work-start mention was not preserved in slug: $dir_name"
 
   echo "passed: $(basename "$fixture_dir") codex-task-preservation"
 }
@@ -617,6 +624,114 @@ require_file "scripts/work-start-skill-match.mjs"
 require_file "scripts/prompt-routing-hook.mjs"
 require_file "templates/result-basic.md"
 require_file "skills/handoff-prompt/SKILL.md"
+# Build an isolated PATH containing only the named commands, so the suite can drive
+# Work-start's search-backend detection instead of inheriting whatever the host has.
+make_isolated_bin() {
+  local bin_dir="$1"
+  shift
+  local cmd resolved
+  mkdir -p "$bin_dir"
+  for cmd in "$@"; do
+    resolved="$(command -v "$cmd" 2>/dev/null)" || continue
+    ln -sf "$resolved" "$bin_dir/$cmd"
+  done
+}
+
+WORK_START_BASE_TOOLS=(bash date sed awk find cut sort head wc tr mkdir mv rm cat basename dirname readlink git xargs uname)
+
+manifest_field() {
+  local field="$1"
+  local file="$2"
+  sed -n "s/^[[:space:]]*${field}: //p" "$file" | head -1 | tr -d "'"
+}
+
+candidate_block_count() {
+  local start="$1"
+  local file="$2"
+  sed -n "/^${start}:/,/^${start}_status:/p" "$file" | grep -c '  - text:' || true
+}
+
+# Truthfulness contract: a scan that could not run must never be reported as a scan
+# that found nothing. Exercises rg / grep / no-backend against a probe document that
+# really does contain decision and risk lines.
+check_search_backend_degradation() {
+  local fixture_dir="$FIXTURE_ROOT/FX-WSH-100-search-backend-degradation"
+  local task_file="$fixture_dir/input/task.txt"
+  local probe="$fixture_dir/input/decision-source.md"
+  local sandbox artifact manifest output rg_bin
+
+  require_file "$fixture_dir/fixture.yaml"
+  require_file "$fixture_dir/README.md"
+  require_file "$task_file"
+  require_file "$probe"
+
+  sandbox="$(mktemp -d "${TMPDIR:-/tmp}/oh-my-ai-work-start-backend.XXXXXX")"
+  cleanup_dirs+=("$sandbox")
+
+  # --- grep fallback: rg deliberately excluded, grep available.
+  make_isolated_bin "$sandbox/grep-only" "${WORK_START_BASE_TOOLS[@]}" grep
+  output="$(env -i PATH="$sandbox/grep-only" HOME="$HOME" TASK="$(cat "$task_file")" \
+    bash scripts/work-start.sh 2>&1)" || fail "grep-backend Work-start exited non-zero"
+  artifact="$(printf '%s\n' "$output" | parse_artifact_from_output)"
+  [ -n "$artifact" ] || fail "could not parse grep-backend artifact path"
+  cleanup_paths+=("$artifact")
+  manifest="$artifact/context-manifest.yaml"
+  require_file "$manifest"
+
+  [ "$(manifest_field backend "$manifest")" = "grep" ] || fail "expected grep backend without rg on PATH"
+  [ "$(manifest_field degraded "$manifest")" = "true" ] || fail "grep backend was not marked degraded"
+  [ "$(manifest_field content_scan "$manifest")" = "scanned" ] || fail "grep backend did not record a performed scan"
+  [ "$(candidate_block_count decision_candidates "$manifest")" -gt 0 ] \
+    || fail "grep fallback found no decision candidates although the probe document has them"
+  [ "$(candidate_block_count risk_candidates "$manifest")" -gt 0 ] \
+    || fail "grep fallback found no risk candidates although the probe document has them"
+  require_fixed "grep" "$artifact/context-gap-report.md"
+
+  # --- no backend at all: absence must not be asserted.
+  make_isolated_bin "$sandbox/no-backend" "${WORK_START_BASE_TOOLS[@]}"
+  output="$(env -i PATH="$sandbox/no-backend" HOME="$HOME" TASK="$(cat "$task_file")" \
+    bash scripts/work-start.sh 2>&1)" || fail "no-backend Work-start exited non-zero"
+  artifact="$(printf '%s\n' "$output" | parse_artifact_from_output)"
+  [ -n "$artifact" ] || fail "could not parse no-backend artifact path"
+  cleanup_paths+=("$artifact")
+  manifest="$artifact/context-manifest.yaml"
+  require_file "$manifest"
+
+  [ "$(manifest_field backend "$manifest")" = "none" ] || fail "expected 'none' backend with no search tool on PATH"
+  [ "$(manifest_field content_scan "$manifest")" = "scan_unavailable" ] || fail "no-backend run did not record scan_unavailable"
+  [ "$(manifest_field decision_candidates_status "$manifest")" = "scan_unavailable" ] \
+    || fail "decision candidates status did not record scan_unavailable"
+  [ "$(manifest_field risk_candidates_status "$manifest")" = "scan_unavailable" ] \
+    || fail "risk candidates status did not record scan_unavailable"
+  if grep -r -q -E 'No (decision|risk) candidates were found' "$artifact"; then
+    fail "unavailable scan asserted absence of decision/risk candidates"
+  fi
+  require_fixed "scan unavailable" "$artifact/context-gap-report.md"
+
+  # --- rg present: only assert when the host actually has ripgrep.
+  rg_bin="$(command -v rg 2>/dev/null || true)"
+  if [ -n "$rg_bin" ]; then
+    make_isolated_bin "$sandbox/with-rg" "${WORK_START_BASE_TOOLS[@]}" grep rg
+    output="$(env -i PATH="$sandbox/with-rg" HOME="$HOME" TASK="$(cat "$task_file")" \
+      bash scripts/work-start.sh 2>&1)" || fail "rg-backend Work-start exited non-zero"
+    artifact="$(printf '%s\n' "$output" | parse_artifact_from_output)"
+    [ -n "$artifact" ] || fail "could not parse rg-backend artifact path"
+    cleanup_paths+=("$artifact")
+    manifest="$artifact/context-manifest.yaml"
+    require_file "$manifest"
+
+    [ "$(manifest_field backend "$manifest")" = "rg" ] || fail "expected rg backend with rg on PATH"
+    [ "$(manifest_field degraded "$manifest")" = "false" ] || fail "rg backend should not be degraded"
+    [ "$(candidate_block_count decision_candidates "$manifest")" -gt 0 ] \
+      || fail "rg backend found no decision candidates although the probe document has them"
+    echo "passed: FX-WSH-100-search-backend-degradation rg-present"
+  else
+    echo "skipped: FX-WSH-100-search-backend-degradation rg-present (no ripgrep on PATH)"
+  fi
+
+  echo "passed: FX-WSH-100-search-backend-degradation backend-degradation"
+}
+
 require_file "skills/work-start/SKILL.md"
 
 run_fixture "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
@@ -639,5 +754,6 @@ check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-070-explicit-work-start-entry
 check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-080-codex-explicit-work-start-entry"
 check_codex_runtime_entry_argument_normalization "$FIXTURE_ROOT/FX-WSH-080-codex-explicit-work-start-entry"
 check_codex_runtime_entry_task_preservation "$FIXTURE_ROOT/FX-WSH-080-codex-explicit-work-start-entry"
+check_search_backend_degradation
 
 echo "work-start fixtures passed"
