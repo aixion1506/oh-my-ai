@@ -29,28 +29,36 @@ process.stdin.on("end", () => {
   const event = parseInput(input);
   const prompt = String(event.prompt || event.user_prompt || event.message || input || "");
   const runtime = format === "claude-json" ? "claude" : format === "codex-json" ? "codex" : "text";
-  const context = buildContext(prompt, { runtime });
+  const payload = buildPromptRoutingPayload(prompt, { runtime });
 
-  if (!context) {
+  if (!payload.context && !payload.systemMessage) {
     process.exit(0);
   }
 
   if (format === "claude-json" || format === "codex-json") {
-    writeUserPromptSubmitJson(context);
+    writeUserPromptSubmitJson(payload);
     return;
   }
 
-  process.stdout.write(context);
+  process.stdout.write(payload.systemMessage || payload.context);
   process.stdout.write("\n");
 });
 
-function writeUserPromptSubmitJson(context) {
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
+function writeUserPromptSubmitJson(payload) {
+  const output = {};
+
+  if (payload.systemMessage) {
+    output.systemMessage = payload.systemMessage;
+  }
+
+  if (payload.context) {
+    output.hookSpecificOutput = {
       hookEventName: "UserPromptSubmit",
-      additionalContext: context,
-    },
-  }));
+      additionalContext: payload.context,
+    };
+  }
+
+  process.stdout.write(JSON.stringify(output));
   process.stdout.write("\n");
 }
 
@@ -63,9 +71,10 @@ function parseInput(input) {
   }
 }
 
-function buildContext(prompt, options = {}) {
+function buildPromptRoutingPayload(prompt, options = {}) {
   const normalized = prompt.toLowerCase();
   const notes = [];
+  let workStartSuggestion = null;
 
   if (hasToilSignal(prompt, normalized)) {
     appendAutomationCandidate(prompt);
@@ -87,9 +96,9 @@ function buildContext(prompt, options = {}) {
   }
 
   if (options.runtime === "claude" && hasWorkStartIntentSignal(prompt, normalized)) {
-    const suggestion = buildWorkStartSuggestion(prompt);
-    if (suggestion) {
-      notes.push(suggestion);
+    workStartSuggestion = buildWorkStartSuggestion(prompt);
+    if (workStartSuggestion) {
+      notes.push(workStartSuggestion.context);
     }
   }
 
@@ -104,13 +113,20 @@ function buildContext(prompt, options = {}) {
     );
   }
 
-  if (notes.length === 0) return "";
+  if (notes.length === 0 && !workStartSuggestion) {
+    return { context: "", systemMessage: "" };
+  }
 
-  return [
+  const context = notes.length === 0 ? "" : [
     "[HARNESS:prompt-routing]",
     "The latest user prompt contains harness routing signals. Treat these as non-executing context before continuing:",
     ...notes,
   ].join("\n");
+
+  return {
+    context,
+    systemMessage: workStartSuggestion ? workStartSuggestion.systemMessage : "",
+  };
 }
 
 function buildWorkStartSuggestion(prompt) {
@@ -125,7 +141,21 @@ function buildWorkStartSuggestion(prompt) {
   rememberSuggestedWorkStart(promptHash);
   const command = `/work-start ${normalizedPrompt}`;
 
-  return [
+  const systemMessage = [
+    "Suggested by oh-my-ai: Work-start",
+    "",
+    "이 요청은 구현 전에 관련 코드와 영향 범위를 정리하는 작업에 적합할 수 있습니다.",
+    "",
+    "Work-start는 로컬 Artifact를 생성합니다.",
+    "아직 Work-start는 실행되지 않았습니다.",
+    "",
+    "실행:",
+    command,
+    "",
+    "사용하지 않으려면 현재 요청을 그대로 계속하세요.",
+  ].join("\n");
+
+  const context = [
     "- Suggested by oh-my-ai: Work-start",
     "",
     "  이 요청은 범위와 관련 Context를 먼저 정리하는 작업에 적합할 수 있습니다.",
@@ -152,6 +182,8 @@ function buildWorkStartSuggestion(prompt) {
     "  Do not run `/work-start`, `make work-start`, `scripts/work-start.sh`, or the Work-start Skill from this suggestion.",
     "  Do not suggest Work-start again for this same user request.",
   ].join("\n");
+
+  return { context, systemMessage };
 }
 
 function appendAutomationCandidate(prompt) {

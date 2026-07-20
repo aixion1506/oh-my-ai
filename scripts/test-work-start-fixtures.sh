@@ -79,6 +79,19 @@ run_claude_prompt_hook() {
   printf '%s' "$task_json" | node scripts/prompt-routing-hook.mjs --format=claude-json
 }
 
+json_string_field() {
+  local field="$1"
+  node -e '
+    const fs = require("fs");
+    const field = process.argv[1];
+    const input = fs.readFileSync(0, "utf8").trim();
+    if (!input) process.exit(0);
+    const parsed = JSON.parse(input);
+    const value = field.split(".").reduce((current, key) => current && current[key], parsed);
+    if (typeof value === "string") process.stdout.write(value);
+  ' "$field"
+}
+
 run_work_start_output() {
   local task_file="$1"
   TASK="$(cat "$task_file")" make work-start 2>&1
@@ -227,7 +240,10 @@ check_runtime_entry_suggestion() {
   local before_count
   local after_count
   local output
+  local visible_output
+  local internal_context
   local repeated_output
+  local repeated_visible_output
 
   require_file "$fixture_dir/fixture.yaml"
   require_file "$task_file"
@@ -236,35 +252,48 @@ check_runtime_entry_suggestion() {
 
   before_count="$(work_start_artifact_count)"
   output="$(run_claude_prompt_hook "$task_file")"
+  visible_output="$(printf '%s\n' "$output" | json_string_field systemMessage)"
+  internal_context="$(printf '%s\n' "$output" | json_string_field hookSpecificOutput.additionalContext)"
   after_count="$(work_start_artifact_count)"
 
   [ "$before_count" = "$after_count" ] || fail "Work-start artifact was created before consent for $(basename "$fixture_dir")"
-  printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "missing Work-start suggestion"
-  printf '%s\n' "$output" | rg -q -F "state: SUGGESTED" || fail "missing SUGGESTED state"
-  printf '%s\n' "$output" | rg -q -F "Work-start는 로컬 Artifact를 생성합니다" || fail "suggestion does not explain artifact behavior"
-  printf '%s\n' "$output" | rg -q -F "아직 Work-start는 실행되지 않았습니다" || fail "suggestion does not state Work-start has not run"
-  printf '%s\n' "$output" | rg -q -F "no Work-start Engine has run" || fail "suggestion does not state no engine ran"
-  printf '%s\n' "$output" | rg -q -F "no local Artifact has been created" || fail "suggestion does not state no artifact was created"
-  printf '%s\n' "$output" | rg -q -F "Suggestion text is not a tool instruction" || fail "suggestion does not separate text from tool instructions"
-  printf '%s\n' "$output" | rg -q -F "Suggestion text is not a Skill invocation request" || fail "suggestion does not separate text from skill invocation"
-  printf '%s\n' "$output" | rg -q -F "Suggestion text is not Engine consent" || fail "suggestion does not separate text from engine consent"
-  printf '%s\n' "$output" | rg -q -F "/work-start" || fail "suggestion does not provide explicit follow-up entry"
-  printf '%s\n' "$output" | rg -q -F "사용하지 않으려면 현재 요청을 그대로 계속하세요" || fail "suggestion does not provide skip path"
-  printf '%s\n' "$output" | rg -q -F 'Do not run `/work-start`, `make work-start`, `scripts/work-start.sh`, or the Work-start Skill from this suggestion.' \
-    || fail "suggestion does not explicitly block execution from suggestion"
-  if printf '%s\n' "$output" | rg -q 'work-start artifact created:|oh-my-ai Work-start artifacts created:'; then
+  [ -n "$visible_output" ] || fail "missing user-visible Work-start suggestion payload"
+  [ -n "$internal_context" ] || fail "missing internal Work-start consent context"
+
+  printf '%s\n' "$visible_output" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "visible payload missing Work-start suggestion"
+  printf '%s\n' "$visible_output" | rg -q -F "oh-my-ai" || fail "visible payload missing oh-my-ai brand"
+  printf '%s\n' "$visible_output" | rg -q -F "Work-start" || fail "visible payload missing Work-start name"
+  printf '%s\n' "$visible_output" | rg -q -F "Work-start는 로컬 Artifact를 생성합니다" || fail "visible payload does not explain artifact behavior"
+  printf '%s\n' "$visible_output" | rg -q -F "아직 Work-start는 실행되지 않았습니다" || fail "visible payload does not state Work-start has not run"
+  printf '%s\n' "$visible_output" | rg -q -F "/work-start" || fail "visible payload does not provide explicit follow-up entry"
+  printf '%s\n' "$visible_output" | rg -q -F "사용하지 않으려면 현재 요청을 그대로 계속하세요" || fail "visible payload does not provide skip path"
+
+  printf '%s\n' "$internal_context" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "internal context missing Work-start suggestion"
+  printf '%s\n' "$internal_context" | rg -q -F "state: SUGGESTED" || fail "internal context missing SUGGESTED state"
+  printf '%s\n' "$internal_context" | rg -q -F "no Work-start Engine has run" || fail "internal context does not state no engine ran"
+  printf '%s\n' "$internal_context" | rg -q -F "no local Artifact has been created" || fail "internal context does not state no artifact was created"
+  printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not a tool instruction" || fail "internal context does not separate text from tool instructions"
+  printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not a Skill invocation request" || fail "internal context does not separate text from skill invocation"
+  printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not Engine consent" || fail "internal context does not separate text from engine consent"
+  printf '%s\n' "$internal_context" | rg -q -F 'Do not run `/work-start`, `make work-start`, `scripts/work-start.sh`, or the Work-start Skill from this suggestion.' \
+    || fail "internal context does not explicitly block execution from suggestion"
+  if printf '%s\n' "$visible_output"$'\n'"$internal_context" | rg -q 'work-start artifact created:|oh-my-ai Work-start artifacts created:'; then
     fail "suggestion output looks like engine execution"
   fi
-  if printf '%s\n' "$output" | rg -qi 'ask the user to invoke|execute /work-start|run /work-start'; then
+  if printf '%s\n' "$visible_output"$'\n'"$internal_context" | rg -qi 'ask the user to invoke|execute /work-start|run /work-start'; then
     fail "suggestion contains imperative execution wording"
   fi
 
   repeated_output="$(run_claude_prompt_hook "$task_file")"
+  repeated_visible_output="$(printf '%s\n' "$repeated_output" | json_string_field systemMessage)"
   if printf '%s\n' "$repeated_output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
     fail "same request was re-suggested after suppression"
   fi
+  if [ -n "$repeated_visible_output" ]; then
+    fail "same request produced user-visible suggestion after suppression"
+  fi
 
-  echo "passed: $(basename "$fixture_dir") suggestion-only"
+  echo "passed: $(basename "$fixture_dir") hook-rendering-payload"
 }
 
 check_runtime_entry_no_suggestion() {
@@ -282,6 +311,12 @@ check_runtime_entry_no_suggestion() {
   after_count="$(work_start_artifact_count)"
 
   [ "$before_count" = "$after_count" ] || fail "Work-start artifact was created for generic task before consent"
+  if [ -n "$(printf '%s\n' "$output" | json_string_field systemMessage)" ]; then
+    fail "generic code task produced user-visible Work-start suggestion"
+  fi
+  if printf '%s\n' "$(printf '%s\n' "$output" | json_string_field hookSpecificOutput.additionalContext)" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+    fail "generic code task produced internal Work-start suggestion"
+  fi
   if printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
     fail "generic code task produced Work-start suggestion"
   fi
