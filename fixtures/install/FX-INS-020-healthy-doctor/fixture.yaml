@@ -1,0 +1,10 @@
+fixture_id: FX-INS-020
+title: Strict Doctor accepts a healthy shared install
+type: doctor
+subject: shared-install
+expected:
+  dangling_symlinks: false
+  strict_doctor_exit: 0
+status:
+  fixture_definition: active
+  runner: scripts/test-install-fixtures.sh
