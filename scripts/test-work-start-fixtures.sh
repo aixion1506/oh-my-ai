@@ -266,6 +266,27 @@ check_codex_runtime_entry_metadata() {
   require_fixed "allow_implicit_invocation: false" ".agents/skills/work-start/agents/openai.yaml"
 }
 
+check_continuation_skill_contract() {
+  local skill="skills/work-start/SKILL.md"
+
+  require_fixed "## Human Review 이후 Continuation Boundary" "$skill"
+  require_fixed "사용자가 Human Review에서 Plan First를 명시적으로 선택한다" "$skill"
+  require_fixed "검토된 계획을 Handoff Candidate에 반영할지 사용자에게 확인한다" "$skill"
+  require_fixed "사용자가 Human Review에서 Gather Context를 명시적으로 선택한다" "$skill"
+  require_fixed "Candidate 반영 또는 재검토 여부를 사용자에게 확인한다" "$skill"
+  require_fixed 'Candidate 상태는 `Needs human review`로 유지한다' "$skill"
+  require_fixed "Candidate 반영은 Direct Handoff 승인이 아니다" "$skill"
+  require_fixed "Main Session은 구현·Commit·Push·PR·Merge를 시작하지 않는다" "$skill"
+  require_fixed "Worker Session은 아직 생성되거나 실행되지 않았습니다" "$skill"
+  require_fixed "Direct Handoff를 별도로 명시적으로 선택" "$skill"
+  require_fixed "새 Worker Session에 승인된 Candidate 또는 Handoff 내용을 수동으로 전달하세요" "$skill"
+  require_fixed "이 안내 후 Main Session은 구현을 시작하지 않고 정지한다" "$skill"
+
+  require_fixed "Ready for Handoff 상태" "$skill"
+
+  echo "passed: continuation-skill-contract"
+}
+
 run_prompt_hook_for_runtime() {
   local runtime="$1"
   local task_file="$2"
@@ -371,6 +392,43 @@ check_runtime_entry_no_suggestion() {
   fi
 
   echo "passed: $(basename "$fixture_dir") $runtime-no-suggestion"
+}
+
+check_runtime_entry_synthetic_task_notification() {
+  local runtime="$1"
+  local fixture_dir="$2"
+  local task_file="$fixture_dir/input/task.txt"
+  local natural_task_file="$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent/input/task.txt"
+  local state_file=".oh-my-ai/state/work-start-suggestions.json"
+  local before_count
+  local after_count
+  local natural_output
+  local synthetic_output
+  local before_state_hash
+  local after_state_hash
+
+  require_file "$fixture_dir/fixture.yaml"
+  require_file "$task_file"
+  require_file "$natural_task_file"
+  cleanup_files+=("$state_file")
+  rm -f -- "$state_file"
+
+  natural_output="$(run_prompt_hook_for_runtime "$runtime" "$natural_task_file")"
+  printf '%s\n' "$natural_output" | rg -q -F "Suggested by oh-my-ai: Work-start" \
+    || fail "real user prompt did not establish suggestion state before synthetic notification"
+  [ -f "$state_file" ] || fail "real user prompt did not create suggestion state"
+  before_state_hash="$(sha256sum "$state_file")"
+
+  before_count="$(work_start_artifact_count)"
+  synthetic_output="$(run_prompt_hook_for_runtime "$runtime" "$task_file")"
+  after_count="$(work_start_artifact_count)"
+  after_state_hash="$(sha256sum "$state_file")"
+
+  [ "$before_count" = "$after_count" ] || fail "synthetic task notification created a Work-start artifact"
+  [ -z "$synthetic_output" ] || fail "synthetic task notification produced routing output"
+  [ "$before_state_hash" = "$after_state_hash" ] || fail "synthetic task notification changed suggestion state"
+
+  echo "passed: $(basename "$fixture_dir") $runtime-synthetic-task-notification"
 }
 
 check_runtime_entry_explicit_prompt_no_suggestion() {
@@ -568,10 +626,13 @@ run_fixture "$FIXTURE_ROOT/FX-WSH-030-external-context-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-060-multiline-task-slug"
 check_runtime_entry_metadata
 check_codex_runtime_entry_metadata
+check_continuation_skill_contract
 check_runtime_entry_suggestion claude "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent" "/work-start"
 check_runtime_entry_suggestion codex "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent" '$work-start'
 check_runtime_entry_no_suggestion claude "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
 check_runtime_entry_no_suggestion codex "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
+check_runtime_entry_synthetic_task_notification claude "$FIXTURE_ROOT/FX-WSH-090-synthetic-task-notification"
+check_runtime_entry_synthetic_task_notification codex "$FIXTURE_ROOT/FX-WSH-090-synthetic-task-notification"
 check_runtime_entry_explicit_prompt_no_suggestion claude "/work-start 이 문제를 고치기 전에 관련 코드와 영향 범위를 먼저 정리해줘."
 check_runtime_entry_explicit_prompt_no_suggestion codex '$work-start 이 문제를 고치기 전에 관련 코드와 영향 범위를 먼저 정리해줘.'
 check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-070-explicit-work-start-entry"
