@@ -1,0 +1,23 @@
+fixture_id: FX-WSH-100
+title: Work-start distinguishes a degraded or unavailable scan from a genuine absence of candidates
+type: search-backend
+subject: work-start
+expected:
+  rg_present:
+    backend: rg
+    degraded: false
+    content_scan: scanned
+    decision_candidates: non-empty
+  rg_absent:
+    backend: grep
+    degraded: true
+    content_scan: scanned
+    decision_candidates: non-empty
+  no_backend:
+    backend: none
+    content_scan: scan_unavailable
+    false_absence_assertion: forbidden
+    exit_code: 0
+status:
+  fixture_definition: active
+  runner: scripts/test-work-start-fixtures.sh

@@ -85,7 +85,18 @@ if [ -z "$slug" ]; then
   slug="task"
 fi
 
+# The timestamp is second-granular and non-ASCII tasks all reduce to the "task"
+# slug, so two runs in the same second can resolve to the same directory. Left
+# unguarded the second run silently overwrites the first run's artifact, so pick
+# the next free suffix instead of clobbering an existing Candidate.
 OUT_DIR=".oh-my-ai/work-start/${timestamp}-${slug}"
+if [ -e "$OUT_DIR" ]; then
+  collision_index=2
+  while [ -e "${OUT_DIR}-${collision_index}" ]; do
+    collision_index=$((collision_index + 1))
+  done
+  OUT_DIR="${OUT_DIR}-${collision_index}"
+fi
 mkdir -p "$OUT_DIR"
 
 SOURCES_TMP="$OUT_DIR/.sources.tmp"
@@ -184,6 +195,76 @@ rg_common_args=(
   --glob '!**/*SECRET*'
 )
 
+# Search backend detection.
+# Truthfulness contract: a scan that could not run is NOT the same as a scan
+# that ran and found nothing. SEARCH_BACKEND records which of the two applies.
+#   rg    - full precision scan (globs + hidden files honoured)
+#   grep  - degraded fallback; still a real content scan, coarser exclusions
+#   none  - no content scan was possible; callers must not assert absence
+if command -v rg >/dev/null 2>&1; then
+  SEARCH_BACKEND="rg"
+elif command -v grep >/dev/null 2>&1; then
+  SEARCH_BACKEND="grep"
+else
+  SEARCH_BACKEND="none"
+fi
+
+if [ "$SEARCH_BACKEND" = "rg" ]; then
+  SEARCH_DEGRADED="false"
+else
+  SEARCH_DEGRADED="true"
+fi
+
+if [ "$SEARCH_BACKEND" = "none" ]; then
+  CONTENT_SCAN_STATUS="scan_unavailable"
+else
+  CONTENT_SCAN_STATUS="scanned"
+fi
+
+# Enumerate scannable files with the same prune set the find backend uses.
+# Used to give the grep fallback bounded, deny-aware input.
+list_scannable_files() {
+  find . \
+    \( -path './.git' -o -path './.oh-my-ai' -o -path './.jikji' -o -path './profiles/local' -o -path './docs/strategy' -o -path './docs/internal' -o -path './docs/roadmap-private' -o -path './node_modules' -o -path './vendor' -o -path './build' -o -path './dist' -o -path './target' -o -path './coverage' -o -path './.cache' -o -path './cache' \) -prune \
+    -o -type f -print 2>/dev/null
+}
+
+# List files containing a fixed keyword. Prints nothing when no backend exists;
+# callers gate on CONTENT_SCAN_STATUS rather than treating empty as absence.
+search_files_by_keyword() {
+  local keyword="$1"
+  case "$SEARCH_BACKEND" in
+    rg)
+      rg -l -i -F "${rg_common_args[@]}" -- "$keyword" . 2>/dev/null | head -20 || true
+      ;;
+    grep)
+      list_scannable_files \
+        | head -2000 \
+        | tr '\n' '\0' \
+        | xargs -0 -r grep -l -i -F -- "$keyword" 2>/dev/null \
+        | head -20 || true
+      ;;
+    *)
+      : ;;
+  esac
+}
+
+# Scan one already-selected file for a regex, emitting `line:text` matches.
+scan_file_for_pattern() {
+  local path="$1"
+  local pattern="$2"
+  case "$SEARCH_BACKEND" in
+    rg)
+      rg -n -i "${rg_common_args[@]}" "$pattern" -- "$path" 2>/dev/null | head -3 || true
+      ;;
+    grep)
+      grep -n -i -E -- "$pattern" "$path" 2>/dev/null | head -3 || true
+      ;;
+    *)
+      : ;;
+  esac
+}
+
 candidate_kind() {
   case "$1" in
     *.md|*.markdown|*.txt|docs/*|*/docs/*) printf '%s' "docs" ;;
@@ -211,8 +292,8 @@ add_candidate() {
 while IFS= read -r keyword; do
   [ -n "$keyword" ] || continue
   while IFS= read -r path; do
-    add_candidate "$path" "rg" "matched keyword: $keyword"
-  done < <(rg -l -i -F "${rg_common_args[@]}" -- "$keyword" . 2>/dev/null | head -20 || true)
+    add_candidate "$path" "$SEARCH_BACKEND" "matched keyword: $keyword"
+  done < <(search_files_by_keyword "$keyword")
 
   while IFS= read -r path; do
     add_candidate "$path" "find" "path/name matched keyword: $keyword"
@@ -234,11 +315,9 @@ candidate_paths() {
 
 while IFS= read -r path; do
   [ -f "$path" ] || continue
-  rg -n -i "${rg_common_args[@]}" 'decision|decided|rationale|trade[- ]?off|constraint|assumption|non-goal|scope' -- "$path" 2>/dev/null \
-    | head -3 \
+  scan_file_for_pattern "$path" 'decision|decided|rationale|trade[- ]?off|constraint|assumption|non-goal|scope' \
     | sed -E "s#^#${path}:#" >> "$DECISIONS_TMP" || true
-  rg -n -i "${rg_common_args[@]}" 'risk|caution|warning|danger|rollback|security|secret|privacy|migration|compat|breaking|failure' -- "$path" 2>/dev/null \
-    | head -3 \
+  scan_file_for_pattern "$path" 'risk|caution|warning|danger|rollback|security|secret|privacy|migration|compat|breaking|failure' \
     | sed -E "s#^#${path}:#" >> "$RISKS_TMP" || true
 done < <(candidate_paths)
 
@@ -259,6 +338,8 @@ write_candidate_md() {
   echo ""
   if [ -s "$file" ]; then
     awk -F '\t' '{ printf "- `%s` - candidate via `%s`; %s\n", $1, $2, $3 }' "$file"
+  elif [ "$CONTENT_SCAN_STATUS" = "scan_unavailable" ]; then
+    echo "- scan unavailable: no content search backend (\`rg\` or \`grep\`) is available, so absence is not asserted"
   else
     echo "- none found"
   fi
@@ -272,6 +353,8 @@ write_text_candidates_md() {
   echo ""
   if [ -s "$file" ]; then
     awk '{ printf "- candidate: %s\n", $0 }' "$file"
+  elif [ "$CONTENT_SCAN_STATUS" = "scan_unavailable" ]; then
+    echo "- scan unavailable: no content search backend (\`rg\` or \`grep\`) is available, so absence is not asserted"
   else
     echo "- none found"
   fi
@@ -349,20 +432,48 @@ fi
 {
   echo "# Context Gap Report"
   echo ""
-  if [ "$docs_count" -eq 0 ]; then
-    echo "- No document candidates were found for this task."
-  fi
-  if [ "$code_count" -eq 0 ]; then
-    echo "- No code candidates were found for this task."
-  fi
-  if [ "$decision_count" -eq 0 ]; then
-    echo "- No decision candidates were found. Add a TASK_FILE with ticket, meeting note, chat excerpt, or local notes if available."
-  fi
-  if [ "$risk_count" -eq 0 ]; then
-    echo "- No risk candidates were found. Review security, data, migration, and rollback risks manually before editing."
-  fi
-  if [ "$docs_count" -ne 0 ] && [ "$code_count" -ne 0 ] && [ "$decision_count" -ne 0 ] && [ "$risk_count" -ne 0 ]; then
-    echo "- No major context gaps detected by the MVP heuristics."
+  echo "## Search Backend Status"
+  echo ""
+  case "$SEARCH_BACKEND" in
+    rg)
+      echo "- Content search backend: \`rg\` (full precision)."
+      ;;
+    grep)
+      echo "- Content search backend: \`grep\` (degraded fallback; \`rg\` is not installed)."
+      echo "- Degraded scan: exclusions are coarser and the scanned file set is capped, so some candidates may be missed."
+      ;;
+    *)
+      echo "- Content search backend: none. Neither \`rg\` nor \`grep\` is available."
+      echo "- Scan unavailable: Work-start could not read file contents, so it does not assert that decisions or risks are absent."
+      ;;
+  esac
+  echo ""
+  echo "## Gaps"
+  echo ""
+  if [ "$CONTENT_SCAN_STATUS" = "scan_unavailable" ]; then
+    # No content scan ran. Counts are 0 because nothing was inspected, not
+    # because the repository lacks decisions or risks — never assert absence.
+    echo "- Document, code, decision, and risk scans did not run (scan unavailable)."
+    echo "- This is not a finding of absence. Install \`ripgrep\` or \`grep\` and re-run Work-start, or review context manually."
+  else
+    if [ "$docs_count" -eq 0 ]; then
+      echo "- No document candidates were found for this task."
+    fi
+    if [ "$code_count" -eq 0 ]; then
+      echo "- No code candidates were found for this task."
+    fi
+    if [ "$decision_count" -eq 0 ]; then
+      echo "- No decision candidates were found. Add a TASK_FILE with ticket, meeting note, chat excerpt, or local notes if available."
+    fi
+    if [ "$risk_count" -eq 0 ]; then
+      echo "- No risk candidates were found. Review security, data, migration, and rollback risks manually before editing."
+    fi
+    if [ "$docs_count" -ne 0 ] && [ "$code_count" -ne 0 ] && [ "$decision_count" -ne 0 ] && [ "$risk_count" -ne 0 ]; then
+      echo "- No major context gaps detected by the MVP heuristics."
+    fi
+    if [ "$SEARCH_DEGRADED" = "true" ]; then
+      echo "- Degraded scan: results came from the \`grep\` fallback, so \"none found\" means \"none found by a coarser scan\"."
+    fi
   fi
   echo ""
   echo "## Bootstrap Questions"
@@ -411,6 +522,10 @@ fi
   else
     echo "  dirty_worktree_reference_only: []"
   fi
+  echo "search:"
+  echo "  backend: '$SEARCH_BACKEND'"
+  echo "  degraded: $SEARCH_DEGRADED"
+  echo "  content_scan: '$CONTENT_SCAN_STATUS'"
   echo "sources:"
   echo "  task_source_type: $([ -n "$TASK_FILE_INPUT" ] && echo "external_doc" || echo "manual_task")"
   if [ -s "$DOCS_TMP" ]; then
@@ -431,12 +546,15 @@ fi
   else
     echo "decision_candidates: []"
   fi
+  # Empty list alone is ambiguous; status says whether a scan actually ran.
+  echo "decision_candidates_status: '$CONTENT_SCAN_STATUS'"
   if [ -s "$RISKS_TMP" ]; then
     echo "risk_candidates:"
     awk '{ gsub(/\047/, "\047\047", $0); printf "  - text: '\''%s'\''\n    confidence: candidate\n", $0 }' "$RISKS_TMP"
   else
     echo "risk_candidates: []"
   fi
+  echo "risk_candidates_status: '$CONTENT_SCAN_STATUS'"
   echo "prompts:"
   echo "  starter: 'starter-prompt.md'"
   echo "  handoff_candidate: 'handoff-candidate.md'"

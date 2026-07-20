@@ -68,7 +68,18 @@ path_state() {
   if [ -L "$path" ]; then
     link="$(readlink "$path")"
     if [ ! -e "$path" ]; then
-      say "dangling: $path -> $link (missing) — run: make install-shared to relink"
+      # install-shared can only relink when the managed source still exists.
+      # If the source is gone it skips, so recommending it would leave the user
+      # stuck in strict failure with no way out. Branch on source existence.
+      if [ -n "$target" ] && [ -e "$target" ]; then
+        say "dangling: $path -> $link (missing) — source exists; run: make install-shared to relink"
+      elif [ -n "$target" ]; then
+        say "dangling: $path -> $link (missing) — source $target is also missing; install-shared will skip this path"
+        say "      to clear it: rm '$path'   (then restore $target and run make install-shared to re-create the link)"
+      else
+        say "dangling: $path -> $link (missing) — unmanaged link with no known source"
+        say "      to clear it: rm '$path'"
+      fi
       DOCTOR_FAIL_COUNT=$((DOCTOR_FAIL_COUNT + 1))
     elif [ -n "$target" ] && [ "$link" = "$target" ]; then
       say "managed: $path -> $link"

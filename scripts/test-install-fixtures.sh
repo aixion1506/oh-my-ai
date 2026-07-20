@@ -24,7 +24,7 @@ require_file() {
 require_fixed() {
   local text="$1"
   local value="$2"
-  printf '%s\n' "$value" | rg -q -F -- "$text" || fail "missing text '$text'"
+  printf '%s\n' "$value" | grep -q -F -- "$text" || fail "missing text '$text'"
 }
 
 clone_fixture_repo() {
@@ -108,7 +108,7 @@ check_fresh_install() {
   run_setup "$clone" "$home_dir" --install-shared >/dev/null
   assert_shared_links "$clone" "$home_dir"
   doctor_output="$(run_setup "$clone" "$home_dir" --doctor --strict)"
-  if printf '%s\n' "$doctor_output" | rg -q '^dangling:'; then
+  if printf '%s\n' "$doctor_output" | grep -q -E '^dangling:'; then
     fail "healthy fresh install reported a dangling symlink"
   fi
 
@@ -145,7 +145,7 @@ check_healthy_doctor() {
   output="$(run_setup "$clone" "$home_dir" --doctor --strict)"
 
   require_fixed "=== oh-my-ai doctor (read-only) ===" "$output"
-  if printf '%s\n' "$output" | rg -q '^dangling:'; then
+  if printf '%s\n' "$output" | grep -q -E '^dangling:'; then
     fail "healthy doctor reported a dangling symlink"
   fi
 
@@ -179,6 +179,73 @@ check_broken_install() {
   echo "passed: FX-INS-030 broken-install"
 }
 
+doctor_strict_status() {
+  local clone="$1"
+  local home_dir="$2"
+  local status
+  set +e
+  run_setup "$clone" "$home_dir" --doctor --strict >/dev/null 2>&1
+  status=$?
+  set -e
+  printf '%s' "$status"
+}
+
+# Doctor guidance is only useful if following it literally clears strict failure.
+# Case A: managed source still exists -> install-shared can relink.
+# Case B: managed source is gone      -> install-shared skips, so it must tell the
+#         user to remove the dangling link instead.
+check_dangling_link_recovery() {
+  local fixture="$FIXTURE_ROOT/FX-INS-040-dangling-link-recovery"
+  local clone home_dir output link_path
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo dangling-link-recovery)"
+  home_dir="$TEMP_ROOT/dangling-link-recovery/home"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+
+  # --- Case A: source present, link broken by repointing it at a missing path.
+  link_path="$home_dir/.claude/CLAUDE.md"
+  rm -f -- "$link_path"
+  ln -s "$clone/claude/CLAUDE.md.missing" "$link_path"
+
+  output="$(run_setup "$clone" "$home_dir" --doctor)"
+  require_fixed "dangling: $link_path" "$output"
+  require_fixed "source exists; run: make install-shared to relink" "$output"
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "case A: strict doctor did not fail on dangling link"
+
+  # Follow the printed guidance.
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "0" ] \
+    || fail "case A: strict doctor still fails after following install-shared guidance"
+
+  # --- Case B: source itself removed, so install-shared cannot help.
+  # Use a static managed source: install-shared re-renders generated instruction
+  # files and needs skills/ to build its index, so neither can express "source gone".
+  link_path="$home_dir/.codex/hooks.json"
+  rm -f -- "$clone/codex/hooks.json"
+
+  output="$(run_setup "$clone" "$home_dir" --doctor)"
+  require_fixed "dangling: $link_path" "$output"
+  require_fixed "source $clone/codex/hooks.json is also missing" "$output"
+  require_fixed "to clear it: rm '$link_path'" "$output"
+  if printf '%s\n' "$output" | grep -q -E "source exists; run: make install-shared to relink"; then
+    fail "case B: doctor recommended install-shared although the source is missing"
+  fi
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "case B: strict doctor did not fail on dangling link"
+
+  # Following install-shared must NOT be enough here; the link is still dangling.
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] \
+    || fail "case B: expected install-shared to be insufficient while the source is missing"
+
+  # Follow the printed guidance instead.
+  rm -- "$link_path"
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "0" ] \
+    || fail "case B: strict doctor still fails after removing the dangling link as instructed"
+
+  echo "passed: FX-INS-040 dangling-link-recovery"
+}
+
 require_file "setup.sh"
 require_file "Makefile"
 for fixture in "$FIXTURE_ROOT"/FX-INS-*; do
@@ -190,5 +257,6 @@ check_fresh_install
 check_reinstall_idempotency
 check_healthy_doctor
 check_broken_install
+check_dangling_link_recovery
 
 echo "all install fixtures passed"

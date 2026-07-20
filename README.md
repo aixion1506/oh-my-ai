@@ -157,6 +157,20 @@ make install-profile PROFILE=<name>
 make update   # git pull + non-destructive shared install
 ```
 
+### 검색 backend (ripgrep은 optional)
+
+`ripgrep`(`rg`)은 **필수가 아니다.** Work-start의 문서·코드·Decision·Risk 검색은 backend를 감지해 단계적으로 degrade하고, 감지 결과를 artifact에 그대로 기록한다.
+
+| PATH 상태 | backend | artifact 기록 | 동작 |
+|-----------|---------|---------------|------|
+| `rg` 있음 | `rg` | `degraded: false`, `content_scan: scanned` | 전체 정밀 검색 |
+| `rg` 없고 `grep` 있음 | `grep` | `degraded: true`, `content_scan: scanned` | fallback 검색. 제외 규칙이 거칠고 스캔 파일 수에 상한이 있어 일부 후보를 놓칠 수 있다 |
+| 둘 다 없음 | `none` | `content_scan: scan_unavailable` | 내용 검색을 수행하지 않는다 |
+
+**Truthfulness 계약**: 검색을 수행하지 못한 상태는 후보가 없는 상태와 다르다. backend가 `none`이면 Work-start는 "No decision candidates were found" 같은 부재 단언을 출력하지 않고 `scan unavailable`로 기록한다. 세 경우 모두 exit 0으로 완료된다.
+
+`rg` 유무는 `context-manifest.yaml`의 `search:` 블록과 `context-gap-report.md`의 `## Search Backend Status`에서 확인한다. 정밀 검색이 필요하면 `ripgrep`을 직접 설치한다. 이 레포는 `rg` 바이너리를 번들하지 않는다.
+
 ## 설치 정책
 
 - shared 설치는 non-destructive다. 기존 스킬·설정·스크립트를 덮어쓰지 않고 `skip`한다.
