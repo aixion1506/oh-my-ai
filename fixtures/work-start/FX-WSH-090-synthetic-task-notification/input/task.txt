@@ -1,0 +1,3 @@
+<task-notification>
+Background agent completed while handling this user request: 구현 전에 관련 코드와 결정 문서, 영향 범위를 먼저 모아서 다른 세션에 넘길 수 있게 정리해줘.
+</task-notification>

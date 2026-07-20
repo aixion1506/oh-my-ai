@@ -28,6 +28,9 @@ process.stdin.on("data", chunk => {
 process.stdin.on("end", () => {
   const event = parseInput(input);
   const prompt = String(event.prompt || event.user_prompt || event.message || input || "");
+  if (isSyntheticPromptEvent(event, prompt)) {
+    process.exit(0);
+  }
   const runtime = format === "claude-json" ? "claude" : format === "codex-json" ? "codex" : "text";
   const payload = buildPromptRoutingPayload(prompt, { runtime });
 
@@ -69,6 +72,18 @@ function parseInput(input) {
   } catch {
     return {};
   }
+}
+
+function isSyntheticPromptEvent(event, prompt) {
+  if (!event || typeof event !== "object") return false;
+
+  // Both adapters pass the UserPromptSubmit JSON payload through unchanged.
+  // A task notification is provider-inserted only when it occupies that prompt field.
+  const hasPromptField = ["prompt", "user_prompt", "message"]
+    .some(field => typeof event[field] === "string");
+  if (!hasPromptField) return false;
+
+  return /^\s*<task-notification(?:\s[^>]*)?>[\s\S]*<\/task-notification>\s*$/i.test(prompt);
 }
 
 function buildPromptRoutingPayload(prompt, options = {}) {

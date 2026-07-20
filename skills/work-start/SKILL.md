@@ -144,6 +144,51 @@ $work-start 이번 sprint 배포 전 체크리스트 정리
 
 ---
 
+## Human Review 이후 Continuation Boundary
+
+Main Session은 Human Review, 계획·Context 검토, 결과 통합과 다음 단계 선택을 수행한다. Native Subagent는 Provider Runtime 기능이며, 사용자가 승인한 Handoff를 받아 구현·검증하는 별도 Worker Session과 동일하지 않다.
+
+### Plan First
+
+1. 사용자가 Human Review에서 Plan First를 명시적으로 선택한다.
+2. Planning Skill 또는 수동 Planning Process를 수행한다.
+3. 계획 결과를 Main Session에서 검토·통합한다.
+4. 검토된 계획을 Handoff Candidate에 반영할지 사용자에게 확인한다.
+5. 사용자가 승인한 경우에만 Candidate에 계획을 반영한다.
+6. Candidate 상태는 `Needs human review`로 유지한다. Candidate 반영은 Direct Handoff 승인이 아니다.
+7. Main Session은 구현·Commit·Push·PR·Merge를 시작하지 않는다.
+8. 아래 종료 안내를 표시하고 현재 응답을 종료한다.
+
+### Gather Context
+
+1. 사용자가 Human Review에서 Gather Context를 명시적으로 선택한다.
+2. 필요한 Context를 수집·확인한다.
+3. 결과를 Main Session에서 검토·통합한다.
+4. Candidate 반영 또는 재검토 여부를 사용자에게 확인한다.
+5. 사용자가 승인한 경우에만 Candidate에 검토된 Context를 반영한다.
+6. Candidate 상태는 `Needs human review`로 유지한다. Candidate 반영은 Direct Handoff 승인이 아니다.
+7. Main Session은 구현·Commit·Push·PR·Merge를 시작하지 않는다.
+8. 아래 종료 안내를 표시하고 현재 응답을 종료한다.
+
+### 종료 안내와 Stop Boundary
+
+Plan First 또는 Gather Context가 끝난 뒤에는 다음 의미를 사용자에게 전달한다. 문구는 상황에 맞게 바꿀 수 있지만 정보는 생략하지 않는다.
+
+```text
+<Plan First 또는 Gather Context>가 완료되었습니다.
+Handoff Candidate 반영: <반영됨 | 아직 반영하지 않음>
+
+현재 상태: Needs human review
+Worker Session은 아직 생성되거나 실행되지 않았습니다.
+
+구현을 진행하려면 Candidate를 최종 검토한 뒤 Direct Handoff를 별도로 명시적으로 선택하고,
+새 Worker Session에 승인된 Candidate 또는 Handoff 내용을 수동으로 전달하세요.
+```
+
+이 안내 후 Main Session은 구현을 시작하지 않고 정지한다. Plan 완료 자동 감지, Candidate 자동 반영·완성, starter-prompt 자동 갱신, Ready for Handoff 상태, Direct Handoff 자동 선택, Worker Session 자동 생성·실행, Prompt 자동 주입, Session Linking, Result 자동 회수는 수행하지 않는다.
+
+---
+
 ## v1 범위
 
 | v1 IN | v1 OUT |

@@ -1,0 +1,16 @@
+fixture_id: FX-WSH-090
+title: Synthetic task notification does not re-suggest Work-start
+type: runtime_entry
+subject: claude-and-codex-prompt-routing
+input:
+  task_file: input/task.txt
+  marker: task-notification
+expected:
+  suggestion: absent
+  engine_invocation: false
+  artifact_created: false
+  suggestion_state_mutated: false
+  duplicate_suggestion_for_same_user_turn: false
+status:
+  fixture_definition: active
+  runner: scripts/test-work-start-fixtures.sh

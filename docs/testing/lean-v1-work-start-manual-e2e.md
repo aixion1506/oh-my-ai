@@ -115,6 +115,61 @@ Failure criteria:
 - A connector, external search, or import runs automatically.
 - Gather Context is selected automatically.
 
+## V1 Continuation Boundary Scenarios
+
+These scenarios are manual checks. They do not create or run a Worker Session.
+
+### Scenario A — Synthetic Event Suppression
+
+1. Prepare a real User Turn for which Work-start was suggested or explicitly run.
+2. Cause the provider to submit a `<task-notification>...</task-notification>` event, such as a background-agent completion notice.
+3. Inspect the `UserPromptSubmit` hook result and `.oh-my-ai/work-start/` artifact count.
+
+Expected:
+
+- Work-start Suggestion is not shown again.
+- Work-start Runtime is not run again.
+- No new Artifact is created.
+
+The repository fixture covers the confirmed `task-notification` marker. The current adapters expose no separate, verified background-completion or tool-result payload marker; do not treat an unverified marker as covered.
+
+### Scenario B — Plan First Continuation
+
+1. Run Work-start and choose Plan First in Human Review.
+2. Perform Planning Skill or manual planning.
+3. Review and integrate the plan in the Main Session.
+4. Confirm with the user before reflecting the plan in the Candidate.
+
+Expected:
+
+- Candidate remains `Needs human review` after reflection.
+- Main Session does not implement, commit, push, create a PR, or merge.
+- The user is told no Worker Session has been created or run.
+- Direct Handoff is presented as a separate explicit choice.
+- The approved Candidate must be manually passed to a new Worker Session.
+
+### Scenario C — Gather Context Continuation
+
+1. Choose Gather Context in Human Review.
+2. Collect, review, and integrate the required Context in the Main Session.
+3. Ask whether to reflect the Context in the Candidate or re-review it.
+
+Expected:
+
+- No automatic Direct Handoff or Worker execution occurs.
+- Main Session does not implement.
+- Candidate remains `Needs human review` if updated.
+- The next manual Direct Handoff and Worker Session transfer steps are explained, then the Main Session stops.
+
+### Scenario D — Regression
+
+Verify in both the Claude Code and Codex CLI adapters:
+
+- Explicit Work-start entry remains normal.
+- Natural Work-start Suggestion remains normal for a real User Prompt.
+- Declined suppression remains normal for the same real request.
+- Consent Boundary remains suggestion-only until explicit entry.
+
 ## Repository-local Verification
 
 Run:
@@ -138,6 +193,8 @@ This verifies:
 - `templates/result-basic.md` Return Contract
 - Conservative handling of ambiguous scope and unsafe permissions
 - `.oh-my-ai/` artifact ignore behavior
+- Synthetic `task-notification` suppression without Artifact creation or suggestion-state mutation
+- Plan First and Gather Context Main Session stop boundary in the Work-start Skill
 
 ## Cross-session Worker Step
 
