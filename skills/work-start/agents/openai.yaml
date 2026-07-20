@@ -1,0 +1,7 @@
+interface:
+  display_name: "Work-start"
+  short_description: "Create a reviewed Work-start Candidate before implementation"
+  default_prompt: "Use $work-start <task> to create a Work-start Candidate and stop for Human Review."
+
+policy:
+  allow_implicit_invocation: false

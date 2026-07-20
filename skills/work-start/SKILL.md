@@ -1,6 +1,6 @@
 ---
 name: work-start
-description: "Use only when a user explicitly invokes /work-start — to run the local Work-start Engine once, create a Work-start Candidate artifact, report the generated files, and stop for Human Review before any code edit, doc write, planning branch, worker handoff, or external action."
+description: "Use only when a user explicitly invokes Claude /work-start or Codex $work-start — to run the local Work-start Engine once, create a Work-start Candidate artifact, report the generated files, and stop for Human Review before any code edit, doc write, planning branch, worker handoff, or external action."
 display-name: Work-start
 disable-model-invocation: true
 metadata:
@@ -78,6 +78,67 @@ Wait for the user to review and choose the next step.
 /work-start 하네스 만든거 노션에 정리하고 싶어
 /work-start auth middleware 새 compliance 요구사항에 맞게 수정
 /work-start 이번 sprint 배포 전 체크리스트 정리
+```
+
+## Codex Runtime Entry
+
+사용자가 Codex CLI에서 `$work-start <task>`를 명시 호출하거나 `/skills` 또는 `$` mention picker로 `work-start`를 직접 선택하면 다음으로 처리한다.
+
+자연어 Intent는 이 스킬의 실행 트리거가 아니다. 자연어로 "시작 전에 정리", "구현 전에 관련 코드와 영향 범위 정리" 같은 요청이 들어오면 Codex `UserPromptSubmit` hook은 suggestion-only 안내만 할 수 있고, 이 스킬·`make work-start`·`scripts/work-start.sh`는 실행하지 않는다.
+
+```text
+canonical_action_id = work-start
+runtime = codex-cli
+entry_mode = explicit
+approval = not_required
+official_explicit_invocation = $work-start <task>
+```
+
+이 명시 호출은 Work-start 제품 동의가 이미 존재한다는 뜻이다. 단, Codex의 sandbox·approval·filesystem·network permission은 그대로 유지한다.
+
+실행 절차:
+
+1. `<task>`를 원래 사용자 Task로 보존한다.
+2. 공통 Engine인 `scripts/work-start.sh`를 `TASK="<task>"`로 한 번 실행한다.
+3. 생성된 Artifact 경로와 생성 파일을 사용자에게 표시한다.
+4. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
+5. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
+
+금지:
+
+- 모델이 자연어 Intent만으로 이 스킬을 자동 호출하지 않는다.
+- Suggestion 상태에서 `scripts/work-start.sh`를 실행하지 않는다.
+- 승인 전 Artifact를 생성하지 않는다.
+- Engine 실행 후 원래 Task 분석을 계속하지 않는다.
+- 수정 계획을 제안하지 않는다.
+- 코드 수정 여부를 묻지 않는다.
+- 파일을 수정하지 않는다.
+- Plan First / Gather Context / Direct Handoff 중 하나를 자동 선택하지 않는다.
+- Runtime Invocation, Worker 자동 실행, Session Linking, Managed Task, 자동 Result 반환을 수행하지 않는다.
+
+종료 Contract:
+
+```text
+This skill creates a Work-start Candidate only.
+
+After the Engine finishes:
+- report the generated Artifact directory and files
+- display the Human Review choices
+- stop the current response
+
+Do not continue analyzing or executing the original task.
+Do not modify source files.
+Do not ask for implementation confirmation.
+Wait for the user to review and choose the next step.
+```
+
+트리거 예시:
+
+```
+$work-start dual write 고민중인데 네카라 시니어 실무표준 어케 설계해야할까
+$work-start 하네스 만든거 노션에 정리하고 싶어
+$work-start auth middleware 새 compliance 요구사항에 맞게 수정
+$work-start 이번 sprint 배포 전 체크리스트 정리
 ```
 
 ---
