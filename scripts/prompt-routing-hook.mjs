@@ -95,8 +95,12 @@ function buildPromptRoutingPayload(prompt, options = {}) {
     notes.push("- Project context signal: consider `project-context` CREATE/UPDATE before proceeding; handoff must include decision background, not only a task list.");
   }
 
-  if (options.runtime === "claude" && hasWorkStartIntentSignal(prompt, normalized)) {
-    workStartSuggestion = buildWorkStartSuggestion(prompt);
+  if (
+    (options.runtime === "claude" || options.runtime === "codex")
+    && !hasExplicitWorkStartInvocation(prompt, options.runtime)
+    && hasWorkStartIntentSignal(prompt, normalized)
+  ) {
+    workStartSuggestion = buildWorkStartSuggestion(prompt, options.runtime);
     if (workStartSuggestion) {
       notes.push(workStartSuggestion.context);
     }
@@ -129,17 +133,21 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   };
 }
 
-function buildWorkStartSuggestion(prompt) {
+function buildWorkStartSuggestion(prompt, runtime) {
   const normalizedPrompt = prompt.replace(/\s+/g, " ").trim();
   if (!normalizedPrompt) return "";
 
   const promptHash = crypto.createHash("sha256").update(normalizedPrompt).digest("hex");
-  if (hasSuggestedWorkStart(promptHash)) {
+  const promptKeys = workStartSuggestionKeys(runtime, promptHash);
+  if (hasSuggestedWorkStart(promptKeys)) {
     return "";
   }
 
-  rememberSuggestedWorkStart(promptHash);
-  const command = `/work-start ${normalizedPrompt}`;
+  rememberSuggestedWorkStart(promptKeys[0]);
+  const command = runtime === "codex"
+    ? `$work-start ${normalizedPrompt}`
+    : `/work-start ${normalizedPrompt}`;
+  const commandName = runtime === "codex" ? "$work-start" : "/work-start";
 
   const systemMessage = [
     "Suggested by oh-my-ai: Work-start",
@@ -179,7 +187,7 @@ function buildWorkStartSuggestion(prompt) {
     `  ${command}`,
     "",
     "  사용하지 않으려면 현재 요청을 그대로 계속하세요.",
-    "  Do not run `/work-start`, `make work-start`, `scripts/work-start.sh`, or the Work-start Skill from this suggestion.",
+    `  Do not run \`${commandName}\`, \`make work-start\`, \`scripts/work-start.sh\`, or the Work-start Skill from this suggestion.`,
     "  Do not suggest Work-start again for this same user request.",
   ].join("\n");
 
@@ -207,7 +215,7 @@ function hasSuggestedWorkStart(promptHash) {
   try {
     const parsed = JSON.parse(fs.readFileSync(workStartSuggestionStatePath, "utf8"));
     return Array.isArray(parsed.suggested_prompt_hashes)
-      && parsed.suggested_prompt_hashes.includes(promptHash);
+      && [].concat(promptHash).some(hash => parsed.suggested_prompt_hashes.includes(hash));
   } catch {
     return false;
   }
@@ -231,6 +239,27 @@ function rememberSuggestedWorkStart(promptHash) {
   } catch {
     // Suggestion suppression is helpful but must never block prompt submission.
   }
+}
+
+function workStartSuggestionKeys(runtime, promptHash) {
+  if (runtime === "claude") {
+    return [`claude:${promptHash}`, promptHash];
+  }
+  if (runtime === "codex") {
+    return [`codex:${promptHash}`];
+  }
+  return [promptHash];
+}
+
+function hasExplicitWorkStartInvocation(prompt, runtime) {
+  const trimmed = prompt.trim();
+  if (runtime === "claude") {
+    return /^\/work-start(?:\s|$)/.test(trimmed);
+  }
+  if (runtime === "codex") {
+    return /^\$work-start(?:\s|$)/.test(trimmed);
+  }
+  return false;
 }
 
 function hasToilSignal(prompt, normalized) {

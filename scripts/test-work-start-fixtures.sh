@@ -22,6 +22,7 @@ cleanup() {
       .oh-my-ai/state/*) [ -f "$path" ] && rm -f -- "$path" ;;
     esac
   done
+  return 0
 }
 trap cleanup EXIT
 
@@ -77,6 +78,13 @@ run_claude_prompt_hook() {
   local task_json
   task_json="$(node -e 'const fs=require("fs"); const text=fs.readFileSync(process.argv[1],"utf8"); process.stdout.write(JSON.stringify({prompt:text}));' "$task_file")"
   printf '%s' "$task_json" | node scripts/prompt-routing-hook.mjs --format=claude-json
+}
+
+run_codex_prompt_hook() {
+  local task_file="$1"
+  local task_json
+  task_json="$(node -e 'const fs=require("fs"); const text=fs.readFileSync(process.argv[1],"utf8"); process.stdout.write(JSON.stringify({prompt:text}));' "$task_file")"
+  printf '%s' "$task_json" | node scripts/prompt-routing-hook.mjs --format=codex-json
 }
 
 json_string_field() {
@@ -218,7 +226,7 @@ check_multiline_slug() {
 check_runtime_entry_metadata() {
   require_fixed "display-name: Work-start" "skills/work-start/SKILL.md"
   require_fixed "disable-model-invocation: true" "skills/work-start/SKILL.md"
-  require_fixed "Use only when a user explicitly invokes /work-start" "skills/work-start/SKILL.md"
+  require_fixed 'Use only when a user explicitly invokes Claude /work-start or Codex $work-start' "skills/work-start/SKILL.md"
   require_fixed "Claude Code Runtime Entry" "skills/work-start/SKILL.md"
   require_fixed "entry_mode = explicit" "skills/work-start/SKILL.md"
   require_fixed "approval = not_required" "skills/work-start/SKILL.md"
@@ -226,15 +234,45 @@ check_runtime_entry_metadata() {
   require_fixed "stop the current response" "skills/work-start/SKILL.md"
   if [ -f "$HOME/.claude/skills/work-start/SKILL.md" ]; then
     require_fixed "disable-model-invocation: true" "$HOME/.claude/skills/work-start/SKILL.md"
-    require_fixed "Use only when a user explicitly invokes /work-start" "$HOME/.claude/skills/work-start/SKILL.md"
+    require_fixed 'Use only when a user explicitly invokes Claude /work-start or Codex $work-start' "$HOME/.claude/skills/work-start/SKILL.md"
   fi
   if rg -q -F "or says they want to start, plan, or kick off a task" "skills/work-start/SKILL.md"; then
     fail "work-start skill description still permits natural-language model invocation"
   fi
 }
 
+check_codex_runtime_entry_metadata() {
+  require_file "skills/work-start/agents/openai.yaml"
+  require_fixed "Codex Runtime Entry" "skills/work-start/SKILL.md"
+  require_fixed 'official_explicit_invocation = $work-start <task>' "skills/work-start/SKILL.md"
+  require_fixed "runtime = codex-cli" "skills/work-start/SKILL.md"
+  require_fixed "Codex의 sandbox·approval·filesystem·network permission은 그대로 유지한다" "skills/work-start/SKILL.md"
+  require_fixed "allow_implicit_invocation: false" "skills/work-start/agents/openai.yaml"
+  require_fixed 'Use $work-start <task> to create a Work-start Candidate and stop for Human Review.' "skills/work-start/agents/openai.yaml"
+
+  [ -L ".agents/skills/work-start" ] || fail "missing repo-local Codex skill symlink: .agents/skills/work-start"
+  [ "$(readlink ".agents/skills/work-start")" = "../../skills/work-start" ] \
+    || fail "Codex work-start skill symlink points at unexpected target"
+  [ -f ".agents/skills/work-start/SKILL.md" ] || fail "Codex work-start skill symlink is not readable"
+  require_fixed "allow_implicit_invocation: false" ".agents/skills/work-start/agents/openai.yaml"
+}
+
+run_prompt_hook_for_runtime() {
+  local runtime="$1"
+  local task_file="$2"
+
+  case "$runtime" in
+    claude) run_claude_prompt_hook "$task_file" ;;
+    codex) run_codex_prompt_hook "$task_file" ;;
+    *) fail "unknown runtime: $runtime" ;;
+  esac
+}
+
 check_runtime_entry_suggestion() {
-  local fixture_dir="$1"
+  local runtime="$1"
+  local fixture_dir="$2"
+  local explicit_entry="$3"
+  local explicit_command_name="${explicit_entry%% *}"
   local task_file="$fixture_dir/input/task.txt"
   local state_file=".oh-my-ai/state/work-start-suggestions.json"
   local before_count
@@ -251,7 +289,7 @@ check_runtime_entry_suggestion() {
   rm -f -- "$state_file"
 
   before_count="$(work_start_artifact_count)"
-  output="$(run_claude_prompt_hook "$task_file")"
+  output="$(run_prompt_hook_for_runtime "$runtime" "$task_file")"
   visible_output="$(printf '%s\n' "$output" | json_string_field systemMessage)"
   internal_context="$(printf '%s\n' "$output" | json_string_field hookSpecificOutput.additionalContext)"
   after_count="$(work_start_artifact_count)"
@@ -265,7 +303,7 @@ check_runtime_entry_suggestion() {
   printf '%s\n' "$visible_output" | rg -q -F "Work-start" || fail "visible payload missing Work-start name"
   printf '%s\n' "$visible_output" | rg -q -F "Work-start는 로컬 Artifact를 생성합니다" || fail "visible payload does not explain artifact behavior"
   printf '%s\n' "$visible_output" | rg -q -F "아직 Work-start는 실행되지 않았습니다" || fail "visible payload does not state Work-start has not run"
-  printf '%s\n' "$visible_output" | rg -q -F "/work-start" || fail "visible payload does not provide explicit follow-up entry"
+  printf '%s\n' "$visible_output" | rg -q -F "$explicit_entry" || fail "visible payload does not provide explicit follow-up entry"
   printf '%s\n' "$visible_output" | rg -q -F "사용하지 않으려면 현재 요청을 그대로 계속하세요" || fail "visible payload does not provide skip path"
 
   printf '%s\n' "$internal_context" | rg -q -F "Suggested by oh-my-ai: Work-start" || fail "internal context missing Work-start suggestion"
@@ -275,7 +313,8 @@ check_runtime_entry_suggestion() {
   printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not a tool instruction" || fail "internal context does not separate text from tool instructions"
   printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not a Skill invocation request" || fail "internal context does not separate text from skill invocation"
   printf '%s\n' "$internal_context" | rg -q -F "Suggestion text is not Engine consent" || fail "internal context does not separate text from engine consent"
-  printf '%s\n' "$internal_context" | rg -q -F 'Do not run `/work-start`, `make work-start`, `scripts/work-start.sh`, or the Work-start Skill from this suggestion.' \
+  printf '%s\n' "$internal_context" | rg -q -F "  $explicit_entry" || fail "internal context does not provide runtime explicit entry"
+  printf '%s\n' "$internal_context" | rg -q -F "Do not run \`$explicit_command_name\`, \`make work-start\`, \`scripts/work-start.sh\`, or the Work-start Skill from this suggestion." \
     || fail "internal context does not explicitly block execution from suggestion"
   if printf '%s\n' "$visible_output"$'\n'"$internal_context" | rg -q 'work-start artifact created:|oh-my-ai Work-start artifacts created:'; then
     fail "suggestion output looks like engine execution"
@@ -284,7 +323,7 @@ check_runtime_entry_suggestion() {
     fail "suggestion contains imperative execution wording"
   fi
 
-  repeated_output="$(run_claude_prompt_hook "$task_file")"
+  repeated_output="$(run_prompt_hook_for_runtime "$runtime" "$task_file")"
   repeated_visible_output="$(printf '%s\n' "$repeated_output" | json_string_field systemMessage)"
   if printf '%s\n' "$repeated_output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
     fail "same request was re-suggested after suppression"
@@ -293,11 +332,12 @@ check_runtime_entry_suggestion() {
     fail "same request produced user-visible suggestion after suppression"
   fi
 
-  echo "passed: $(basename "$fixture_dir") hook-rendering-payload"
+  echo "passed: $(basename "$fixture_dir") $runtime-hook-rendering-payload"
 }
 
 check_runtime_entry_no_suggestion() {
-  local fixture_dir="$1"
+  local runtime="$1"
+  local fixture_dir="$2"
   local task_file="$fixture_dir/input/task.txt"
   local before_count
   local after_count
@@ -307,7 +347,7 @@ check_runtime_entry_no_suggestion() {
   require_file "$task_file"
 
   before_count="$(work_start_artifact_count)"
-  output="$(run_claude_prompt_hook "$task_file")"
+  output="$(run_prompt_hook_for_runtime "$runtime" "$task_file")"
   after_count="$(work_start_artifact_count)"
 
   [ "$before_count" = "$after_count" ] || fail "Work-start artifact was created for generic task before consent"
@@ -321,7 +361,37 @@ check_runtime_entry_no_suggestion() {
     fail "generic code task produced Work-start suggestion"
   fi
 
-  echo "passed: $(basename "$fixture_dir") no-suggestion"
+  echo "passed: $(basename "$fixture_dir") $runtime-no-suggestion"
+}
+
+check_runtime_entry_explicit_prompt_no_suggestion() {
+  local runtime="$1"
+  local explicit_prompt="$2"
+  local state_file=".oh-my-ai/state/work-start-suggestions.json"
+  local task_file
+  local before_count
+  local after_count
+  local output
+
+  task_file="$(mktemp)"
+  cleanup_files+=("$state_file")
+  rm -f -- "$state_file"
+  printf '%s\n' "$explicit_prompt" > "$task_file"
+
+  before_count="$(work_start_artifact_count)"
+  output="$(run_prompt_hook_for_runtime "$runtime" "$task_file")"
+  after_count="$(work_start_artifact_count)"
+  rm -f -- "$task_file"
+
+  [ "$before_count" = "$after_count" ] || fail "explicit prompt hook created an artifact for $runtime"
+  if [ -n "$(printf '%s\n' "$output" | json_string_field systemMessage)" ]; then
+    fail "explicit $runtime Work-start prompt produced a suggestion systemMessage"
+  fi
+  if printf '%s\n' "$output" | rg -q -F "Suggested by oh-my-ai: Work-start"; then
+    fail "explicit $runtime Work-start prompt produced a suggestion payload"
+  fi
+
+  echo "passed: $runtime explicit-prompt-no-suggestion"
 }
 
 check_runtime_entry_explicit() {
@@ -409,8 +479,14 @@ run_fixture "$FIXTURE_ROOT/FX-WSH-020-multi-scope-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-030-external-context-task"
 run_fixture "$FIXTURE_ROOT/FX-WSH-060-multiline-task-slug"
 check_runtime_entry_metadata
-check_runtime_entry_suggestion "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent"
-check_runtime_entry_no_suggestion "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
+check_codex_runtime_entry_metadata
+check_runtime_entry_suggestion claude "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent" "/work-start"
+check_runtime_entry_suggestion codex "$FIXTURE_ROOT/FX-WSH-040-runtime-entry-strong-intent" '$work-start'
+check_runtime_entry_no_suggestion claude "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
+check_runtime_entry_no_suggestion codex "$FIXTURE_ROOT/FX-WSH-050-runtime-entry-generic-code-task"
+check_runtime_entry_explicit_prompt_no_suggestion claude "/work-start 이 문제를 고치기 전에 관련 코드와 영향 범위를 먼저 정리해줘."
+check_runtime_entry_explicit_prompt_no_suggestion codex '$work-start 이 문제를 고치기 전에 관련 코드와 영향 범위를 먼저 정리해줘.'
 check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-070-explicit-work-start-entry"
+check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-080-codex-explicit-work-start-entry"
 
 echo "work-start fixtures passed"
