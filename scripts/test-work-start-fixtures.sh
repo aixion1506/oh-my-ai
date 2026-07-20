@@ -105,6 +105,11 @@ run_work_start_output() {
   TASK="$(cat "$task_file")" make work-start 2>&1
 }
 
+run_codex_work_start_output() {
+  local task_file="$1"
+  TASK="$(cat "$task_file")" scripts/codex-work-start-entry.sh 2>&1
+}
+
 check_common_artifact() {
   local artifact="$1"
   local fixture_dir="$2"
@@ -243,12 +248,16 @@ check_runtime_entry_metadata() {
 
 check_codex_runtime_entry_metadata() {
   require_file "skills/work-start/agents/openai.yaml"
+  require_file "scripts/codex-work-start-entry.sh"
   require_fixed "Codex Runtime Entry" "skills/work-start/SKILL.md"
   require_fixed 'official_explicit_invocation = $work-start <task>' "skills/work-start/SKILL.md"
   require_fixed "runtime = codex-cli" "skills/work-start/SKILL.md"
+  require_fixed '선두 명시 호출 토큰인 `$work-start` 뒤의 argument만 `TASK`로 전달한다' "skills/work-start/SKILL.md"
+  require_fixed 'Task 본문 안의 일반 문자열 `work-start`는 보존한다' "skills/work-start/SKILL.md"
+  require_fixed "scripts/codex-work-start-entry.sh" "skills/work-start/SKILL.md"
   require_fixed "Codex의 sandbox·approval·filesystem·network permission은 그대로 유지한다" "skills/work-start/SKILL.md"
   require_fixed "allow_implicit_invocation: false" "skills/work-start/agents/openai.yaml"
-  require_fixed 'Use $work-start <task> to create a Work-start Candidate and stop for Human Review.' "skills/work-start/agents/openai.yaml"
+  require_fixed 'pass only <task> through scripts/codex-work-start-entry.sh' "skills/work-start/agents/openai.yaml"
 
   [ -L ".agents/skills/work-start" ] || fail "missing repo-local Codex skill symlink: .agents/skills/work-start"
   [ "$(readlink ".agents/skills/work-start")" = "../../skills/work-start" ] \
@@ -434,6 +443,84 @@ check_runtime_entry_explicit() {
   echo "passed: $(basename "$fixture_dir") explicit-entry"
 }
 
+parse_artifact_from_output() {
+  sed -n 's/^work-start artifact created: //p' | tail -1
+}
+
+check_codex_runtime_entry_argument_normalization() {
+  local fixture_dir="$1"
+  local task_file="$fixture_dir/input/codex-prompt.txt"
+  local before_count
+  local after_count
+  local output
+  local artifact
+  local dir_name
+  local normalized_task="멀티라인 TASK 입력 시 Artifact 폴더명이 깨지는 문제를 수정하기 전에 관련 코드와 영향 범위를 정리해줘"
+
+  require_file "$fixture_dir/fixture.yaml"
+  require_file "$task_file"
+
+  before_count="$(work_start_artifact_count)"
+  output="$(run_codex_work_start_output "$task_file")"
+  after_count="$(work_start_artifact_count)"
+  [ "$after_count" = "$((before_count + 1))" ] || fail "Codex explicit entry did not create exactly one artifact after prefix normalization"
+
+  artifact="$(printf '%s\n' "$output" | parse_artifact_from_output)"
+  [ -n "$artifact" ] || fail "could not parse Codex normalized explicit entry artifact path"
+  cleanup_paths+=("$artifact")
+  dir_name="$(basename "$artifact")"
+
+  check_common_artifact "$artifact" "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
+  printf '%s\n' "$output" | rg -q -F "Needs human review" || fail "Codex normalized explicit output missing review status"
+  printf '%s\n' "$output" | rg -q -F -- "- Direct Handoff" || fail "Codex normalized explicit output missing Direct Handoff"
+  printf '%s\n' "$output" | rg -q -F -- "- Plan First" || fail "Codex normalized explicit output missing Plan First"
+  printf '%s\n' "$output" | rg -q -F -- "- Gather Context" || fail "Codex normalized explicit output missing Gather Context"
+  printf '%s\n' "$output" | rg -q -F "Review the Candidate before continuing." || fail "Codex normalized explicit output missing stop/review marker"
+
+  if printf '%s\n' "$dir_name" | rg -q '(^|-)work-start($|-)'; then
+    fail "Codex command token leaked into artifact slug: $dir_name"
+  fi
+  if rg -q -F '$work-start 멀티라인' "$artifact"; then
+    fail "Codex command token leaked into artifact body: $artifact"
+  fi
+  rg -q -F "$normalized_task" "$artifact" || fail "normalized Codex task not found in artifact body"
+
+  echo "passed: $(basename "$fixture_dir") codex-prefix-removal"
+}
+
+check_codex_runtime_entry_task_preservation() {
+  local fixture_dir="$1"
+  local task_file="$fixture_dir/input/codex-preserve-task.txt"
+  local before_count
+  local after_count
+  local output
+  local artifact
+  local dir_name
+  local preserved_task="work-start 스킬의 설명을 정리해줘"
+
+  require_file "$fixture_dir/fixture.yaml"
+  require_file "$task_file"
+
+  before_count="$(work_start_artifact_count)"
+  output="$(run_codex_work_start_output "$task_file")"
+  after_count="$(work_start_artifact_count)"
+  [ "$after_count" = "$((before_count + 1))" ] || fail "Codex explicit preservation entry did not create exactly one artifact"
+
+  artifact="$(printf '%s\n' "$output" | parse_artifact_from_output)"
+  [ -n "$artifact" ] || fail "could not parse Codex preservation artifact path"
+  cleanup_paths+=("$artifact")
+  dir_name="$(basename "$artifact")"
+
+  check_common_artifact "$artifact" "$FIXTURE_ROOT/FX-WSH-001-positive-doc-task"
+  if rg -q -F '$work-start work-start' "$artifact"; then
+    fail "Codex command token leaked into preserved-task artifact body: $artifact"
+  fi
+  rg -q -F "$preserved_task" "$artifact" || fail "Codex task body work-start mention was not preserved"
+  printf '%s\n' "$dir_name" | rg -q -F "work-start" || fail "Codex task body work-start mention was not preserved in slug: $dir_name"
+
+  echo "passed: $(basename "$fixture_dir") codex-task-preservation"
+}
+
 run_fixture() {
   local fixture_dir="$1"
   local fixture_id
@@ -467,6 +554,7 @@ run_fixture() {
 }
 
 require_file "scripts/work-start.sh"
+require_file "scripts/codex-work-start-entry.sh"
 require_file "scripts/work-start-skill-match.mjs"
 require_file "scripts/prompt-routing-hook.mjs"
 require_file "templates/result-basic.md"
@@ -488,5 +576,7 @@ check_runtime_entry_explicit_prompt_no_suggestion claude "/work-start 이 문제
 check_runtime_entry_explicit_prompt_no_suggestion codex '$work-start 이 문제를 고치기 전에 관련 코드와 영향 범위를 먼저 정리해줘.'
 check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-070-explicit-work-start-entry"
 check_runtime_entry_explicit "$FIXTURE_ROOT/FX-WSH-080-codex-explicit-work-start-entry"
+check_codex_runtime_entry_argument_normalization "$FIXTURE_ROOT/FX-WSH-080-codex-explicit-work-start-entry"
+check_codex_runtime_entry_task_preservation "$FIXTURE_ROOT/FX-WSH-080-codex-explicit-work-start-entry"
 
 echo "work-start fixtures passed"

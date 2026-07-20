@@ -6,9 +6,12 @@ input:
   task_file: input/task.txt
 expected:
   invocation: "$work-start <task>"
+  task_argument_boundary: strip_only_leading_explicit_token
   entry_mode: explicit
   approval: not_required
   artifact_created: exactly_one
+  command_token_leakage: forbidden
+  task_body_work_start_string: preserved
   status: Needs human review
   next_steps:
     - Direct Handoff
