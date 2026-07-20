@@ -1,7 +1,7 @@
 REPO    := $(shell pwd)
 PROFILE ?=
 
-.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-work-start-fixtures
+.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-work-start-fixtures test-notice-fixtures
 
 instructions:
 	./scripts/render-instructions.sh
@@ -17,6 +17,9 @@ work-start:
 
 test-work-start-fixtures:
 	./scripts/test-work-start-fixtures.sh
+
+test-notice-fixtures:
+	./scripts/test-notice-fixtures.sh
 
 test-install-fixtures:
 	./scripts/test-install-fixtures.sh

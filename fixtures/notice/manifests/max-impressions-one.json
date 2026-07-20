@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "notices": [
+    {
+      "notice_id": "fx-nt-capped",
+      "message": "fixture: max_impressions is 1.",
+      "max_impressions": 1
+    }
+  ]
+}

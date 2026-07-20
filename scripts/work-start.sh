@@ -12,6 +12,19 @@ if [ -z "$TASK_INPUT" ] && [ -z "$TASK_FILE_INPUT" ]; then
   exit 2
 fi
 
+# Product Notice: read the Local Cache Snapshot now, at the start of this
+# explicit Work-start run, so the text this run will show (if any) is fixed
+# before Core runs. This is a fail-open, Local-only side channel — see
+# docs/contracts/product-notice-contract.md. Any failure here (node absent,
+# notice.mjs missing, internal error) must never affect Work-start's exit
+# code or Candidate generation, so all output is discarded on error.
+NOTICE_VERSION=""
+NOTICE_TEXT=""
+if command -v node >/dev/null 2>&1 && [ -f "$REPO/scripts/notice.mjs" ]; then
+  NOTICE_VERSION="$(cat "$REPO/VERSION" 2>/dev/null || true)"
+  NOTICE_TEXT="$(node "$REPO/scripts/notice.mjs" render --version "$NOTICE_VERSION" 2>/dev/null || true)"
+fi
+
 is_denied_path() {
   case "$1" in
     .git|.git/*|./.git|./.git/*) return 0 ;;
@@ -777,3 +790,19 @@ echo "- Gather Context"
 echo ""
 echo "Work-start has not modified the requested product code."
 echo "Review the Candidate before continuing."
+
+# Product Notice: display uses only the Snapshot captured at the start of
+# this run (never the result of the refresh triggered just below), so the
+# same run's output stays deterministic regardless of network timing. This
+# is the true tail of Work-start's output, after every other line above.
+if [ -n "$NOTICE_TEXT" ]; then
+  printf '%s\n' "$NOTICE_TEXT"
+fi
+
+# Non-blocking one-shot refresh: only fires if the cache is stale and the
+# user has not opted out. Spawns a short detached process and returns
+# immediately; its result becomes visible starting with the next explicit
+# Work-start run, never this one.
+if command -v node >/dev/null 2>&1 && [ -f "$REPO/scripts/notice.mjs" ]; then
+  node "$REPO/scripts/notice.mjs" refresh-if-stale --version "$NOTICE_VERSION" >/dev/null 2>&1 || true
+fi
