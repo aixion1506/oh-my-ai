@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "notices": [
+    {
+      "notice_id": "fx-nt-bad-url",
+      "message": "fixture: action_url outside the allowlist must drop this notice.",
+      "action_url": "https://evil.example.com/phish"
+    },
+    {
+      "notice_id": "fx-nt-good-url",
+      "message": "fixture: sibling notice with an allowlisted action_url survives.",
+      "action_url": "https://github.com/aixion1506/oh-my-ai/releases"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "notices": [
+    {
+      "notice_id": "fx-nt-valid",
+      "message": "fixture: a valid single notice.",
+      "min_version": "0.0.1"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": 99,
+  "notices": [
+    {
+      "notice_id": "fx-nt-unsupported",
+      "message": "fixture: schema_version this runtime does not understand."
+    }
+  ]
+}
