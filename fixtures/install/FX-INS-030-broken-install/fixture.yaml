@@ -1,0 +1,11 @@
+fixture_id: FX-INS-030
+title: Doctor reports broken managed symlinks without changing legacy exit behavior
+type: doctor
+subject: shared-install
+expected:
+  dangling_symlinks: true
+  default_doctor_exit: 0
+  strict_doctor_exit: 1
+status:
+  fixture_definition: active
+  runner: scripts/test-install-fixtures.sh

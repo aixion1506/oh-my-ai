@@ -1,0 +1,11 @@
+fixture_id: FX-INS-001
+title: Fresh shared install is isolated and dry-run is write-free
+type: install
+subject: shared-install
+expected:
+  dry_run_writes: false
+  managed_links: true
+  strict_doctor_exit: 0
+status:
+  fixture_definition: active
+  runner: scripts/test-install-fixtures.sh

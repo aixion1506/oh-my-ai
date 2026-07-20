@@ -9,11 +9,13 @@ LOCAL_BIN="${LOCAL_BIN:-$HOME/.local/bin}"
 MODE="install-shared"
 PROFILE_NAME="${PROFILE:-}"
 DRY_RUN=0
+STRICT=0
+DOCTOR_FAIL_COUNT=0
 
 usage() {
   cat <<'EOF'
 usage:
-  setup.sh --doctor
+  setup.sh --doctor [--strict]
   setup.sh --install-shared [--dry-run]
   setup.sh --init-profile --profile <name> [--dry-run]
   setup.sh --install-profile --profile <name> [--dry-run]
@@ -40,6 +42,7 @@ while [ "$#" -gt 0 ]; do
     --install-profile) MODE="install-profile" ;;
     --profile) shift; PROFILE_NAME="${1:-}" ;;
     --dry-run) DRY_RUN=1 ;;
+    --strict) STRICT=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -64,7 +67,10 @@ path_state() {
   target="${2:-}"
   if [ -L "$path" ]; then
     link="$(readlink "$path")"
-    if [ -n "$target" ] && [ "$link" = "$target" ]; then
+    if [ ! -e "$path" ]; then
+      say "dangling: $path -> $link (missing) — run: make install-shared to relink"
+      DOCTOR_FAIL_COUNT=$((DOCTOR_FAIL_COUNT + 1))
+    elif [ -n "$target" ] && [ "$link" = "$target" ]; then
       say "managed: $path -> $link"
     else
       say "exists-symlink: $path -> $link"
@@ -122,6 +128,10 @@ safe_link() {
   src="$1"
   dest="$2"
   label="${3:-$dest}"
+  if [ ! -e "$src" ]; then
+    say "skip: $label source missing ($src)"
+    return 0
+  fi
   if same_link "$dest" "$src"; then
     say "ok: $label already managed"
     return 0
@@ -205,12 +215,8 @@ doctor() {
   prompt_hook_state "$CODEX_DIR/hooks.json" "codex"
   hook_path="$(git_hook_path 2>/dev/null || true)"
   if [ -n "$hook_path" ]; then
-    if [ -L "$hook_path" ] && [ ! -e "$hook_path" ]; then
-      say "dangling: $hook_path -> $(readlink "$hook_path") (missing) — run: make install-shared to relink"
-    else
-      hook_dir="$(dirname "$hook_path")"
-      path_state "$hook_path" "$(git_hook_relative_target "$hook_dir")"
-    fi
+    hook_dir="$(dirname "$hook_path")"
+    path_state "$hook_path" "$(git_hook_relative_target "$hook_dir")"
   fi
   say ""
   say "If a path says exists-local or exists-symlink, install-shared will skip it."
@@ -231,11 +237,15 @@ doctor() {
   else
     say "hint: set HARNESS_PROFILE=<name> to use a local profile (optional — see profiles/example/)"
   fi
+
+  if [ "$STRICT" -eq 1 ] && [ "$DOCTOR_FAIL_COUNT" -gt 0 ]; then
+    return 1
+  fi
 }
 
 install_shared() {
   say "=== oh-my-ai install-shared (non-destructive) ==="
-  "$REPO/scripts/render-instructions.sh"
+  run "$REPO/scripts/render-instructions.sh"
   run mkdir -p "$CLAUDE_DIR" "$CODEX_DIR" "$AGENT_DIR" "$LOCAL_BIN"
 
   safe_link "$REPO/claude/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" "Claude instruction"

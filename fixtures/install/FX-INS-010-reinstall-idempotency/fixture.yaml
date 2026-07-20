@@ -1,0 +1,10 @@
+fixture_id: FX-INS-010
+title: Reinstall preserves existing managed links
+type: install
+subject: shared-install
+expected:
+  managed_links_unchanged: true
+  already_managed_output: true
+status:
+  fixture_definition: active
+  runner: scripts/test-install-fixtures.sh
