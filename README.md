@@ -34,6 +34,263 @@ Jikji, Superpowers, MCP, `rg`/`find`, `rsync` 같은 외부 도구도 필요하�
 | Instruction cascade | `SKILL.md` 메타데이터에서 `AGENTS.md`, `CLAUDE.md`, `MINE.md`를 생성한다 |
 | Optional backends | Jikji, Superpowers, MCP, `rg`/`find`, `rsync` 같은 도구를 필요할 때 adapter/backend로 붙인다 |
 
+## Public V1
+
+### 제품 목적
+
+oh-my-ai Public V1은 **무료·Local-only·Cloud-independent**한 Manual Artifact Workflow다. Task를 설명하면 관련 Context 후보를 모아 Handoff Candidate를 만들고, 사람이 검토해 Worker에게 수동 전달하고, Worker가 결과를 Result Basic 형식으로 돌려주면 사람이 다시 검토한다. AI가 대신 결정하지 않는다 — **후보를 만들고, 사람이 확정한다.**
+
+### Public V1 범위
+
+포함:
+
+```text
+Local Installation
+Instruction Cascade
+Skill Registry / Routing
+Explicit Work-start Entry
+Structured Handoff Candidate
+Manual Copy/Paste
+Result Basic 수동 Template
+Human Review
+Local Product Notice Channel
+최소 Positive/Negative Fixture
+Manual E2E
+Doctor
+```
+
+비범위(V1 Non-goals)는 [아래](#v1-non-goals)에 별도로 정리했다.
+
+### Quick Start (Claude Code 기준)
+
+```bash
+git clone https://github.com/<owner>/oh-my-ai.git ~/Github/oh-my-ai
+cd ~/Github/oh-my-ai
+make doctor            # 읽기 전용 사전 점검
+make install-shared    # non-destructive 설치
+```
+
+Claude Code에서:
+
+```text
+/work-start 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
+```
+
+`Needs human review` 상태의 Candidate가 `.oh-my-ai/work-start/<timestamp>-<slug>/`에 생성된다. 이 시점까지 코드는 전혀 수정되지 않는다.
+
+### 지원 Runtime
+
+Static Capability 선언은 [`capabilities/runtime-capabilities.json`](capabilities/runtime-capabilities.json)이 canonical source다. `make test-capability-fixtures`가 이 파일의 정합성을 검증한다.
+
+| Runtime | Entry 진입점 | 검증 수준 |
+|---|---|---|
+| Claude Code | `/work-start <task>` | `advertised_support: true` — 이 세션에서 file.read/file.edit/shell.execute/validation.run을 실제로 사용해 검증 |
+| Codex | `$work-start <task>` | `advertised_support: false` — Entry/Hook 계층은 Fixture로 검증됐지만, 실제 Codex 세션을 통한 file/shell 동작은 아직 미검증(`unknown`)이며 정직하게 그렇게 표시된다 |
+
+`unknown`은 "안 되는 것"이 아니라 "아직 이 하네스가 직접 확인하지 않은 것"이다. 검증 안 된 기능을 `supported`로 과장하지 않는다.
+
+### Explicit Work-start Entry
+
+Work-start는 **명시 호출로만** 실행된다. 자연어로 "시작 전에 정리해줘" 같은 요청을 해도 Engine이 자동 실행되지 않는다.
+
+```text
+Claude Code: /work-start <task>
+Codex:       $work-start <task>
+```
+
+### Natural Suggestion과 실행 동의 차이
+
+자연어 요청이 Work-start와 관련 있어 보이면, prompt hook이 **제안(Suggestion)만** 한다. 이 시점에는:
+
+```text
+Engine이 실행되지 않음
+Artifact가 생성되지 않음
+```
+
+제안은 위 명시 명령을 사용자가 직접 입력해야 실행으로 이어진다. 같은 요청을 거절하면 동일 요청에 대한 재제안은 억제된다.
+
+### Human Review
+
+Work-start Candidate는 항상 `Needs human review` 상태로 시작한다. 사용자가 명시적으로 하나를 선택한다.
+
+```text
+Direct Handoff  — 범위가 충분히 명확하면 바로 Worker에게 전달
+Plan First      — 먼저 계획을 정리한 뒤 Handoff Candidate에 반영
+Gather Context  — 외부 자료를 더 확인한 뒤 재검토
+```
+
+기본 선택지는 없다. 시스템이 대신 고르지 않는다.
+
+### Manual Worker Handoff
+
+`handoff-candidate.md`를 검토한 뒤 그 내용을 Worker Session에 **수동으로 복사/붙여넣기**한다. Worker Session은 자동 생성되지 않고, 자동으로 실행되지 않는다.
+
+### Result Return
+
+Worker는 [`templates/result-basic.md`](templates/result-basic.md) 형식으로 결과를 돌려준다. 최소한 다음을 분리해서 기록해야 한다.
+
+```text
+Validation Performed / Validation Not Performed
+Files Read / Files Changed
+Scope Deviations
+Remaining Risks
+Blocked Reasons (execution_status: blocked일 때만)
+```
+
+Result Basic은 **Evidence Candidate**이지 자동 완료 증명이 아니다. 사람이 `not_reviewed → accepted/edited_and_accepted/rejected`로 검토해야 한다. `execution_status: complete`도 Human-approved를 의미하지 않는다.
+
+### Product Notice
+
+Public V1은 향후 V2 출시·보안·호환성 공지를 터미널에서 인지시키는 최소 채널을 갖는다.
+
+```text
+명시적 Work-start 실행에만 부수
+Cache-first: 표시는 실행 시작 시점 Cache Snapshot으로만 결정
+Next-run: 이번 실행에서 새로 받은 공지는 다음 Work-start부터 표시
+Fail-open: Notice 실패는 Work-start 결과에 전혀 영향 없음
+```
+
+Notice는 자동 Update·자동 설치·자동 Login이 **아니다.**
+
+### Network Behavior
+
+기본적으로 oh-my-ai는 Network를 사용하지 않는다. 유일한 예외:
+
+```text
+명시적 Work-start 실행 시
+→ Notice Cache가 stale이면
+→ https://raw.githubusercontent.com/<owner>/oh-my-ai/master/notices/manifest.json 에
+→ 비차단 one-shot 요청 (최대 2초 Hard Timeout)
+```
+
+이 요청은 Prompt·Task·Repository 이름·경로·Candidate·Artifact·코드를 전혀 담지 않는다. 정적 Manifest에 대한 읽기 전용 요청이다.
+
+일반적인 HTTPS 요청 과정에서 Client IP·요청 시각 같은 Network Metadata가 요청 대상 Host에 노출될 수 있다는 점은 축소하지 않고 명시한다. 이는 oh-my-ai가 별도로 수집·전송하는 데이터가 아니라 HTTPS 요청 자체의 일반 속성이다.
+
+```text
+Suggestion·Synthetic Event·Worker Session·Result Basic 생성·기본 Doctor·기본 setup.sh
+→ Network 호출 없음
+```
+
+첫 실행에서 Notice가 반드시 표시되는 것은 아니다 (Cache가 비어 있으므로). 새 Notice는 항상 **다음** Work-start부터 표시된다.
+
+### Notice Opt-out·Dismiss
+
+```bash
+node scripts/notice.mjs status        # 현재 Notice/Opt-out 상태 확인
+node scripts/notice.mjs dismiss <id>  # 특정 Notice 숨기기
+node scripts/notice.mjs opt-out       # 원격 Notice 확인 전체 중단 (Network 호출 자체가 사라짐)
+node scripts/notice.mjs opt-in        # 다시 활성화
+```
+
+Opt-out 상태에서는 Cache 읽기도, Network 요청도 발생하지 않는다.
+
+### Privacy
+
+```text
+전송하지 않음: Prompt, Task, Repository 이름, Git Remote, 작업 경로, Candidate, Artifact, 사용자 코드
+전송 대상:     정적 Notice Manifest 요청뿐 (사용자 데이터 없음)
+```
+
+사용 측정(harness-event)은 별도 로컬 XDG 로그이며 Git에 커밋되지 않고 외부로 전송되지 않는다. 자세한 내용은 [스킬 사용량 조회](#스킬-사용량-조회) 참고.
+
+### Handoff Example
+
+`handoff-candidate.md`에서 실제로 생성되는 형태(발췌):
+
+```markdown
+## Human Review: Choose the Next Step
+
+- [ ] Direct Handoff
+- [ ] Plan First
+- [ ] Gather Context
+
+Candidate state before selection: Needs human review.
+No next step is selected by default, and Work-start does not choose,
+recommend, or run any next step automatically.
+
+## Goal
+- 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
+
+## Allowed Actions
+- Needs human review: no Worker action is approved by this Candidate alone.
+
+## Prohibited Actions
+- Do not treat this Candidate as Runtime Invocation, Worker auto-creation,
+  Session Linking, Managed Task, automatic Result return, automatic Apply,
+  or automatic Merge.
+```
+
+### Result Example
+
+`templates/result-basic.md`를 따라 실제로 작성된 결과(발췌, 실제 Manual Result Return E2E 실행분 — [`docs/testing/manual-result-return-e2e.md`](docs/testing/manual-result-return-e2e.md) 참고):
+
+```markdown
+## Findings
+- fixtures/notice/manifests/invalid.json 는 파싱 실패 (의도된 negative fixture, 결함 아님)
+
+## Validation Performed
+- 6개 파일 각각을 실제로 JSON.parse로 검사; 결과를 파일별로 개별 기록
+
+## Validation Not Performed
+- Schema-level 검증(schema_version, notice 필드 형태)은 이번 작업 범위 밖이라 수행하지 않음
+```
+
+### Troubleshooting
+
+| 증상 | 원인 | 조치 |
+|---|---|---|
+| `make doctor-strict`가 실패함 | 기존에 이미 존재하던 dangling symlink 때문일 수 있음 | `make doctor`(non-strict)로 먼저 원인 확인. 이 하네스가 만들지 않은 기존 링크라면 Host Pre-existing Failure로 취급하고 PASS로 잘못 기록하지 않는다 |
+| Work-start가 검색 결과를 못 찾음 | `rg`도 `grep`도 없음 | `content_scan: scan_unavailable`로 정직하게 기록됨(부재 단언 아님). `ripgrep` 설치 권장 |
+| Notice가 안 보임 | 정상일 수 있음 | Cache가 비어 있으면 표시 없이 Refresh만 수행. 다음 실행부터 표시됨. `node scripts/notice.mjs status`로 상태 확인 |
+| Offline인데 Work-start가 느림/실패함 | Notice Refresh는 2초 Hard Timeout이 있어 정상적으로는 영향 없음 | `node scripts/notice.mjs opt-out`으로 Network 시도 자체를 제거 가능 |
+
+### Fresh Install
+
+```bash
+make doctor            # 읽기 전용. 아무것도 바꾸지 않음
+make install-shared    # 기존 skills/settings/hooks가 있으면 skip. non-destructive
+```
+
+`make doctor`가 `exists-local`/`exists-symlink`로 표시하는 경로는 `install-shared`가 건드리지 않는다.
+
+### Doctor / Doctor Strict
+
+```bash
+make doctor          # 읽기 전용 점검, 항상 exit 0
+make doctor-strict   # 위와 동일한 점검을 하되, 문제 발견 시 exit 0이 아님
+```
+
+`doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
+
+### Release Notes
+
+```text
+VERSION      = 현재 제품 Runtime Version Source (Network 없이 읽음)
+version.md   = Roadmap/Milestone 설명 문서. Runtime이 읽는 파일이 아님
+```
+
+Public Stable Release Tag는 `v1.0.0`처럼 SemVer-clean 형식을 쓴다. 설명은 Tag 접미사가 아니라 GitHub Release Title/Notes에 적는다.
+
+### V2 Boundary
+
+V2는 독립 CLI + Login + Device 인증 + Cloud Control Plane이다. V1에는 전혀 포함되지 않는다. V1 사용자는 V2가 출시된 뒤에도 로그인 없이 V1 무료 기능을 계속 쓸 수 있다.
+
+### V1 Non-goals
+
+```text
+Cloud Account / Auth / Billing / Entitlement
+자동 Update / 자동 설치 / 자동 Login
+자동 Worker Session 생성 / Session Linking
+Result 자동 회수 / 자동 승인
+Managed Task ID / Task Registry
+Runtime Invocation (자동 실행)
+Worktree 자동 생성
+Organization Governance
+Telemetry / Analytics / Push Notification
+상주 Daemon / Scheduler / OS Service
+```
+
 ### 설계 원칙 (다른 dotfiles와 다른 점)
 
 - **런타임 비속박**: 공유 규칙의 근원은 `instructions/harness.md`이고, `CLAUDE.md`, `claude/CLAUDE.md`, `AGENTS.md`는 AI별 adapter로 생성된다. 특정 모델·런타임·도구에 묶이지 않는다. Claude Code/Codex/OpenClone 같은 런타임과 Jikji/Superpowers/MCP/`rg`/`find`/`rsync` 같은 도구는 backend/adapter로 느슨하게 붙이고, 성능·취향·안전 기준에 따라 갈아끼운다. 레이어는 유지한다.

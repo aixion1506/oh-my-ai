@@ -1,5 +1,39 @@
 # oh-my-ai V1/V2 Product Boundary Audit
 
+> **Status: Historical / Superseded — not current V1 definition.**
+>
+> This document is a point-in-time planning snapshot written before the Foundation
+> canonical Contracts existed. It uses pre-Foundation terminology (`Task Packet`,
+> `Worker Task Packet`, `Result Packet`) that the shipped product does **not**
+> use. The terms this document proposed were superseded by the actually
+> implemented and canonical vocabulary:
+>
+> ```text
+> Task Packet / Worker Task Packet  → superseded by Structured Handoff Candidate
+>                                      (docs/contracts/work-start-contract.md,
+>                                      docs/contracts/handoff-basic-contract.md,
+>                                      Foundation repo: harness-foundation-docs)
+> Result Packet                     → superseded by Result Basic
+>                                      (docs/contracts/result-basic-contract.md,
+>                                      templates/result-basic.md)
+> ```
+>
+> Do not treat the "V1 필요성 판정" table below, the progress estimate ("45-50%"),
+> or the CLI proposal in this document as the current V1 definition. The current
+> canonical V1 definition is:
+>
+> ```text
+> Foundation:  harness-foundation-docs/docs/product/v1-completion-criteria.md
+> Product:     README.md ("Public V1" section)
+> ```
+>
+> If this file is loaded as automatic session context, read it as historical
+> background on how the product's thinking evolved, not as a source of truth
+> for current scope, terminology, or completion status. Kept for history, not
+> deleted, per this repository's document-artifact policy.
+>
+> — Flagged during Public V1 P0 closeout, 2026-07-21
+
 ## 1. Executive Summary
 
 현재 `oh-my-ai`는 `Skill Routing + Runtime Adapter Instruction + Local Context + Human-gated Execution` 하네스로는 상당 부분 구현되어 있다. 하지만 새 제품 정의인 `Main Session -> Worker Task Packet -> Human Review -> Worker Result Packet -> Human Review -> Main Session` 기준으로 보면 핵심 흐름은 아직 구현되지 않았다.
