@@ -1,5 +1,14 @@
 # Version Roadmap
 
+이 문서는 Roadmap/Milestone 설명이며, Runtime이 읽는 Version Source가 **아니다.**
+
+```text
+VERSION      = 제품 Runtime이 Network 없이 읽는 canonical SemVer 값
+version.md   = 이 문서. 사람이 읽는 로드맵/마일스톤 설명
+```
+
+**Public Stable Release Tag 정책** (Foundation DEC-055): SemVer-clean 형식을 쓰고, 설명은 Tag 접미사가 아니라 GitHub Release Title/Notes에 적는다. 아래 로드맵 표의 `v1.0.0-local-first-control-plane` 같은 설명 접미사 Tag 이름은 계획 단계의 별칭이며, **실제 Public V1 정식 Tag는 `v1.0.0`**이다 (설명은 Release Title `oh-my-ai Public V1 — Local Developer Harness`로 옮긴다). `v0.1.0-control-plane`~`v0.6.0-search-backend-pilot` 같은 기존 태그는 이미 게시된 이력이라 그대로 두되, 이후 Public Stable Tag부터 이 정책을 적용한다.
+
 ## 현재 릴리즈 기준
 
 | 버전 | 이름 | 제품 의미 | 상태 | 목표 |

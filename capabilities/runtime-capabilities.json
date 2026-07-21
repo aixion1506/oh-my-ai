@@ -1,0 +1,691 @@
+{
+  "schema_version": 1,
+  "contract_source": "docs/contracts/runtime-capability-contract.md",
+  "scope_note": "V1 P0 scope is the Static Capability declaration only. The full Handoff Requirement Mapping / Compatibility computation engine described in Runtime Capability Contract Part V is V1 Alpha quality, not P0 (see Contract Part I: 'Runtime Projection\uacfc Runtime\ubcc4 \uc815\uc801 \uc0ac\uc6a9 \uc548\ub0b4 \uace0\ub3c4\ud654\ub294 V1 Alpha \ud488\uc9c8 \ubc94\uc704\ub2e4').",
+  "runtimes": {
+    "claude": {
+      "runtime_id": "claude-code",
+      "adapter_id": "runtime-adapter.claude",
+      "adapter_version": "1.0",
+      "runtime_version_range": "*",
+      "metadata_version": "1.0",
+      "lifecycle_status": "active",
+      "advertised_support": true,
+      "advertised_support_status": "eligible",
+      "advertised_support_evidence": [
+        "CAP-GATE-METADATA",
+        "CAP-GATE-E2E",
+        "CAP-GATE-QUICKSTART"
+      ],
+      "capability_metadata_status": "valid",
+      "drift_status": "current",
+      "last_verified_at": "2026-07-20T00:00:00Z",
+      "last_verified_by": "manual_fixture",
+      "capabilities": [
+        {
+          "capability_id": "capability.prompt.initial",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "public_runtime_documentation",
+            "reference": "Claude Code CLI: initial prompt / task input"
+          },
+          "evidence_refs": [
+            "CAP-E-CLAUDE-PROMPT-01"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.session.resume",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "oh-my-ai does not invoke or test Runtime session-resume behavior; Work-start/Handoff/Result are designed as artifact-based, not session-based",
+          "verification_needed": "Manual test of session-resume interaction with a Work-start Candidate Artifact across two separate Claude Code sessions",
+          "safe_fallback": "Treat each Work-start / Handoff / Result cycle as a fresh session; do not rely on Runtime session memory across the Human Review boundary",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": false
+        },
+        {
+          "capability_id": "capability.file.read",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [
+            "Subject to the Runtime's own file-access permission/sandbox configuration, which oh-my-ai does not control"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "PR #53/#54 implementation session: Read tool used successfully across this repository"
+          },
+          "evidence_refs": [
+            "CAP-E-CLAUDE-FILE-01"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.file.edit",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [
+            "Subject to the Runtime's own file-write permission/sandbox configuration, which oh-my-ai does not control"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "PR #53/#54 implementation session: Edit/Write tools used successfully across this repository"
+          },
+          "evidence_refs": [
+            "CAP-E-CLAUDE-FILE-02"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.shell.execute",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [
+            "Subject to the Runtime's own command-execution permission/sandbox configuration, which oh-my-ai does not control"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "PR #53/#54 implementation session: make test-*, git, node commands executed successfully"
+          },
+          "evidence_refs": [
+            "CAP-E-CLAUDE-SHELL-01"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.validation.run",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "PR #53/#54 implementation session: make test-notice-fixtures, make test-work-start-fixtures, make doctor executed and results read"
+          },
+          "evidence_refs": [
+            "CAP-E-CLAUDE-VALIDATION-01"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.result.freeform",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "templates/result-basic.md manual Markdown return, exercised in Manual Result Return E2E"
+          },
+          "evidence_refs": [
+            "CAP-E-CLAUDE-RESULT-01"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.result.structured",
+          "declared_status": "conditional",
+          "drift_status": "current",
+          "effective_status": "conditional",
+          "conditions": [
+            "Worker manually follows the required headings in templates/result-basic.md"
+          ],
+          "failure_mode": "If the Worker omits required headings or free-forms the response, the returned Result cannot be parsed as Structured Result and must be treated as freeform only",
+          "limitations": [
+            "No automatic enforcement or validation that the Runtime itself produced conformant structure; conformance is a manual authoring convention, not a Runtime guarantee"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [
+            "Worker fills every required Result Basic heading by hand before returning to the Main Session"
+          ],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "scripts/validate-result-basic.mjs + fixtures/result/*"
+          },
+          "evidence_refs": [
+            "CAP-E-CLAUDE-RESULT-02"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Automatic Result collection/parsing/import is V2 scope; this is manual-only in V1"
+          ],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.workspace.worktree",
+          "declared_status": "unsupported",
+          "drift_status": "current",
+          "effective_status": "unsupported",
+          "conditions": [],
+          "limitations": [
+            "V1 does not create, switch, or manage git worktrees on the user's behalf"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "safe_fallback": "Work-start and Handoff operate on the currently checked-out branch/worktree only; the user manages any additional worktrees manually",
+          "source": {
+            "type": "explicit_verification_record",
+            "reference": "docs/roadmap/product-roadmap.md V1 \ube44\ubc94\uc704: Worktree \uc790\ub3d9 \uc0dd\uc131 (Foundation)"
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Deliberate V1 non-goal, not an unexplored gap"
+          ],
+          "required_for_advertised_support": false
+        },
+        {
+          "capability_id": "capability.entry.explicit_entry",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-070-explicit-work-start-entry"
+          },
+          "evidence_refs": [
+            "FX-WSH-070"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Display: /work-start <task>"
+          ],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.suggestion",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [
+            "Suggestion never triggers Engine invocation or Artifact generation by itself"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-040-runtime-entry-strong-intent, check_runtime_entry_suggestion"
+          },
+          "evidence_refs": [
+            "FX-WSH-040"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.confirmation",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-040 (no artifact before explicit follow-up) + FX-WSH-070 (explicit follow-up runs Engine)"
+          },
+          "evidence_refs": [
+            "FX-WSH-040",
+            "FX-WSH-070"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.command_discovery",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "skills/work-start/SKILL.md display-name metadata, check_runtime_entry_metadata"
+          },
+          "evidence_refs": [
+            "FX-WSH-METADATA"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.session_suppression",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-090-synthetic-task-notification + repeated-suggestion suppression in check_runtime_entry_suggestion"
+          },
+          "evidence_refs": [
+            "FX-WSH-090"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.artifact_path_display",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "scripts/work-start.sh prints 'work-start artifact created: <path>' on every successful run"
+          },
+          "evidence_refs": [
+            "FX-WSH-001"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        }
+      ]
+    },
+    "codex": {
+      "runtime_id": "codex-cli",
+      "adapter_id": "runtime-adapter.codex",
+      "adapter_version": "1.0",
+      "runtime_version_range": "*",
+      "metadata_version": "1.0",
+      "lifecycle_status": "active",
+      "advertised_support": false,
+      "advertised_support_status": "review_required",
+      "advertised_support_evidence": [
+        "CAP-GATE-METADATA"
+      ],
+      "capability_metadata_status": "valid",
+      "drift_status": "current",
+      "last_verified_at": "2026-07-20T00:00:00Z",
+      "last_verified_by": "manual_fixture",
+      "capabilities": [
+        {
+          "capability_id": "capability.prompt.initial",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
+          "verification_needed": "Run scripts/codex-work-start-entry.sh through an actual Codex CLI session and record the result",
+          "safe_fallback": "Do not assume Codex Runtime behavior beyond what is documented and fixture-verified at the entry/hook layer (see capability.entry.*)",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence per Runtime Capability Contract"
+          ],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.session.resume",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "oh-my-ai does not invoke or test Runtime session-resume behavior for any Runtime",
+          "verification_needed": "Manual test of session-resume interaction with a Work-start Candidate Artifact across two separate Codex sessions",
+          "safe_fallback": "Treat each Work-start / Handoff / Result cycle as a fresh session",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": false
+        },
+        {
+          "capability_id": "capability.file.read",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
+          "verification_needed": "Run a Codex CLI session through Work-start and Manual Handoff and observe file read behavior",
+          "safe_fallback": "Treat as unverified; do not advertise Codex as a fully supported Runtime until verified",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence"
+          ],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.file.edit",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
+          "verification_needed": "Run a Codex CLI session through Work-start and Manual Handoff and observe file edit behavior",
+          "safe_fallback": "Treat as unverified; do not advertise Codex as a fully supported Runtime until verified",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence"
+          ],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.shell.execute",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
+          "verification_needed": "Run a Codex CLI session through Work-start and observe command-execution behavior",
+          "safe_fallback": "Treat as unverified",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence"
+          ],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.validation.run",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session",
+          "verification_needed": "Run a Codex CLI session and confirm it can invoke make test-* commands and read results",
+          "safe_fallback": "Treat as unverified",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.result.freeform",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session",
+          "verification_needed": "Have a Codex Worker return a freeform Result and confirm it is readable in a Main Session",
+          "safe_fallback": "Treat as unverified",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.result.structured",
+          "declared_status": "unknown",
+          "drift_status": "current",
+          "effective_status": "unknown",
+          "conditions": [],
+          "limitations": [
+            "No automatic enforcement or validation that the Runtime itself produced conformant structure; conformance is a manual authoring convention, not a Runtime guarantee",
+            "Not independently verified with a real Codex session in this implementation session"
+          ],
+          "unknown_reason": "capability.result.freeform is itself unverified for Codex in this implementation session, so a conditional structured-result claim built on top of it would be an overclaim",
+          "required_manual_step": [],
+          "source": {
+            "type": "not_verified",
+            "reference": null
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Automatic Result collection/parsing/import is V2 scope; this is manual-only in V1"
+          ],
+          "required_for_advertised_support": true,
+          "verification_needed": "Verify capability.result.freeform for Codex first, then re-assess whether the manual Result Basic template convention is followed",
+          "safe_fallback": "Treat as unverified; do not advertise Codex Structured Result support"
+        },
+        {
+          "capability_id": "capability.workspace.worktree",
+          "declared_status": "unsupported",
+          "drift_status": "current",
+          "effective_status": "unsupported",
+          "conditions": [],
+          "limitations": [
+            "V1 does not create, switch, or manage git worktrees on the user's behalf"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "safe_fallback": "Work-start and Handoff operate on the currently checked-out branch/worktree only; the user manages any additional worktrees manually",
+          "source": {
+            "type": "explicit_verification_record",
+            "reference": "docs/roadmap/product-roadmap.md V1 \ube44\ubc94\uc704: Worktree \uc790\ub3d9 \uc0dd\uc131 (Foundation)"
+          },
+          "evidence_refs": [],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Deliberate V1 non-goal, applies identically to every Runtime"
+          ],
+          "required_for_advertised_support": false
+        },
+        {
+          "capability_id": "capability.entry.explicit_entry",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-080-codex-explicit-work-start-entry"
+          },
+          "evidence_refs": [
+            "FX-WSH-080"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [
+            "Display: $work-start <task>"
+          ],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.suggestion",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [
+            "Suggestion never triggers Engine invocation or Artifact generation by itself"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-040-runtime-entry-strong-intent, check_runtime_entry_suggestion codex"
+          },
+          "evidence_refs": [
+            "FX-WSH-040"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.confirmation",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-040 (no artifact before explicit follow-up) + FX-WSH-080 (explicit follow-up runs Engine)"
+          },
+          "evidence_refs": [
+            "FX-WSH-040",
+            "FX-WSH-080"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.command_discovery",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "skills/work-start/agents/openai.yaml + check_codex_runtime_entry_metadata"
+          },
+          "evidence_refs": [
+            "FX-WSH-METADATA-CODEX"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.session_suppression",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/work-start/FX-WSH-090-synthetic-task-notification codex + repeated-suggestion suppression"
+          },
+          "evidence_refs": [
+            "FX-WSH-090"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "capability.entry.artifact_path_display",
+          "declared_status": "supported",
+          "drift_status": "current",
+          "effective_status": "supported",
+          "conditions": [],
+          "limitations": [],
+          "unknown_reason": null,
+          "required_manual_step": [],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "scripts/codex-work-start-entry.sh forwards to scripts/work-start.sh, which prints the artifact path on every successful run"
+          },
+          "evidence_refs": [
+            "FX-WSH-001"
+          ],
+          "last_verified_at": "2026-07-20T00:00:00Z",
+          "notes": [],
+          "required_for_advertised_support": true
+        }
+      ]
+    }
+  }
+}
