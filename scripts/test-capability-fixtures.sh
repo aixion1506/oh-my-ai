@@ -135,7 +135,7 @@ fx_cap_013() {
   local d out
   d="$(sandbox)"; out="$d/mutated.json"
   mutate '
-    const cap = doc.runtimes.codex.capabilities.find(c => c.capability_id === "capability.file.read");
+    const cap = doc.runtimes.codex.capabilities.find(c => c.capability_id === "capability.session.resume");
     cap.required_manual_step = ["Just trust it works"];
   ' "$out"
   expect_invalid "$out" "FX-CAP-013" "would imply a verified manual-step promotion"
@@ -211,7 +211,7 @@ fx_supplementary_unknown_with_evidence() {
   local d out
   d="$(sandbox)"; out="$d/mutated.json"
   mutate '
-    const cap = doc.runtimes.codex.capabilities.find(c => c.capability_id === "capability.file.read");
+    const cap = doc.runtimes.codex.capabilities.find(c => c.capability_id === "capability.session.resume");
     cap.evidence_refs = ["should-not-be-here"];
   ' "$out"
   expect_invalid "$out" "unknown-with-evidence" "must not carry evidence_refs"
