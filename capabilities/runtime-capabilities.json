@@ -354,35 +354,38 @@
       "runtime_version_range": "*",
       "metadata_version": "1.0",
       "lifecycle_status": "active",
-      "advertised_support": false,
-      "advertised_support_status": "review_required",
+      "advertised_support": true,
+      "advertised_support_status": "eligible",
       "advertised_support_evidence": [
-        "CAP-GATE-METADATA"
+        "CAP-GATE-METADATA",
+        "CAP-GATE-MANUAL-E2E"
       ],
       "capability_metadata_status": "valid",
       "drift_status": "current",
-      "last_verified_at": "2026-07-20T00:00:00Z",
+      "last_verified_at": "2026-07-21T00:00:00Z",
       "last_verified_by": "manual_fixture",
       "capabilities": [
         {
           "capability_id": "capability.prompt.initial",
-          "declared_status": "unknown",
+          "declared_status": "supported",
           "drift_status": "current",
-          "effective_status": "unknown",
+          "effective_status": "supported",
           "conditions": [],
-          "limitations": [],
-          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
-          "verification_needed": "Run scripts/codex-work-start-entry.sh through an actual Codex CLI session and record the result",
-          "safe_fallback": "Do not assume Codex Runtime behavior beyond what is documented and fixture-verified at the entry/hook layer (see capability.entry.*)",
+          "limitations": [
+            "Verified by a user-executed, human-reviewed manual Codex CLI session; no PID/session-id process attestation or CI reproduction was collected"
+          ],
+          "unknown_reason": null,
           "required_manual_step": [],
           "source": {
-            "type": "not_verified",
-            "reference": null
+            "type": "manual_fixture",
+            "reference": "docs/testing/codex-cross-process-e2e.md"
           },
-          "evidence_refs": [],
-          "last_verified_at": "2026-07-20T00:00:00Z",
+          "evidence_refs": [
+            "CAP-E-CODEX-PROMPT-01"
+          ],
+          "last_verified_at": "2026-07-21T00:00:00Z",
           "notes": [
-            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence per Runtime Capability Contract"
+            "Codex CLI's own public documentation describes this capability, but that alone was not treated as oh-my-ai Evidence; promotion is based on the manual E2E run in docs/testing/codex-cross-process-e2e.md"
           ],
           "required_for_advertised_support": true
         },
@@ -408,134 +411,155 @@
         },
         {
           "capability_id": "capability.file.read",
-          "declared_status": "unknown",
+          "declared_status": "supported",
           "drift_status": "current",
-          "effective_status": "unknown",
+          "effective_status": "supported",
           "conditions": [],
-          "limitations": [],
-          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
-          "verification_needed": "Run a Codex CLI session through Work-start and Manual Handoff and observe file read behavior",
-          "safe_fallback": "Treat as unverified; do not advertise Codex as a fully supported Runtime until verified",
+          "limitations": [
+            "Verified by a user-executed, human-reviewed manual Codex CLI session; no PID/session-id process attestation or CI reproduction was collected"
+          ],
+          "unknown_reason": null,
           "required_manual_step": [],
           "source": {
-            "type": "not_verified",
-            "reference": null
+            "type": "manual_fixture",
+            "reference": "docs/testing/codex-cross-process-e2e.md"
           },
-          "evidence_refs": [],
-          "last_verified_at": "2026-07-20T00:00:00Z",
+          "evidence_refs": [
+            "CAP-E-CODEX-FILE-READ-01"
+          ],
+          "last_verified_at": "2026-07-21T00:00:00Z",
           "notes": [
-            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence"
+            "Codex CLI's own public documentation describes this capability, but that alone was not treated as oh-my-ai Evidence; promotion is based on the manual E2E run in docs/testing/codex-cross-process-e2e.md (Codex read fixture.json and templates/result-basic.md)"
           ],
           "required_for_advertised_support": true
         },
         {
           "capability_id": "capability.file.edit",
-          "declared_status": "unknown",
+          "declared_status": "supported",
           "drift_status": "current",
-          "effective_status": "unknown",
+          "effective_status": "supported",
           "conditions": [],
-          "limitations": [],
-          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
-          "verification_needed": "Run a Codex CLI session through Work-start and Manual Handoff and observe file edit behavior",
-          "safe_fallback": "Treat as unverified; do not advertise Codex as a fully supported Runtime until verified",
+          "limitations": [
+            "Verified by a user-executed, human-reviewed manual Codex CLI session; no PID/session-id process attestation or CI reproduction was collected"
+          ],
+          "unknown_reason": null,
           "required_manual_step": [],
           "source": {
-            "type": "not_verified",
-            "reference": null
+            "type": "manual_fixture",
+            "reference": "docs/testing/codex-cross-process-e2e.md"
           },
-          "evidence_refs": [],
-          "last_verified_at": "2026-07-20T00:00:00Z",
+          "evidence_refs": [
+            "CAP-E-CODEX-FILE-EDIT-01"
+          ],
+          "last_verified_at": "2026-07-21T00:00:00Z",
           "notes": [
-            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence"
+            "Codex CLI's own public documentation describes this capability, but that alone was not treated as oh-my-ai Evidence; promotion is based on the manual E2E run in docs/testing/codex-cross-process-e2e.md (Codex changed fixture.json status field only, leaving fixture_id/note unchanged)"
           ],
           "required_for_advertised_support": true
         },
         {
           "capability_id": "capability.shell.execute",
-          "declared_status": "unknown",
+          "declared_status": "supported",
           "drift_status": "current",
-          "effective_status": "unknown",
+          "effective_status": "supported",
           "conditions": [],
-          "limitations": [],
-          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session; no Codex CLI session was run against this repository",
-          "verification_needed": "Run a Codex CLI session through Work-start and observe command-execution behavior",
-          "safe_fallback": "Treat as unverified",
+          "limitations": [
+            "Verified by a user-executed, human-reviewed manual Codex CLI session; no PID/session-id process attestation or CI reproduction was collected"
+          ],
+          "unknown_reason": null,
           "required_manual_step": [],
           "source": {
-            "type": "not_verified",
-            "reference": null
+            "type": "manual_fixture",
+            "reference": "docs/testing/codex-cross-process-e2e.md"
           },
-          "evidence_refs": [],
-          "last_verified_at": "2026-07-20T00:00:00Z",
+          "evidence_refs": [
+            "CAP-E-CODEX-SHELL-01"
+          ],
+          "last_verified_at": "2026-07-21T00:00:00Z",
           "notes": [
-            "Codex CLI's own public documentation describes this capability; that is not treated as oh-my-ai Evidence"
+            "Codex CLI's own public documentation describes this capability, but that alone was not treated as oh-my-ai Evidence; promotion is based on the manual E2E run in docs/testing/codex-cross-process-e2e.md (Codex ran the requested node -e JSON.parse command and observed exit status 0)"
           ],
           "required_for_advertised_support": true
         },
         {
           "capability_id": "capability.validation.run",
-          "declared_status": "unknown",
+          "declared_status": "supported",
           "drift_status": "current",
-          "effective_status": "unknown",
+          "effective_status": "supported",
           "conditions": [],
-          "limitations": [],
-          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session",
-          "verification_needed": "Run a Codex CLI session and confirm it can invoke make test-* commands and read results",
-          "safe_fallback": "Treat as unverified",
+          "limitations": [
+            "Verified by a user-executed, human-reviewed manual Codex CLI session; no PID/session-id process attestation or CI reproduction was collected",
+            "The verified command was a direct `node -e`/`node scripts/validate-result-basic.mjs` invocation, not a `make test-*` target"
+          ],
+          "unknown_reason": null,
           "required_manual_step": [],
           "source": {
-            "type": "not_verified",
-            "reference": null
+            "type": "manual_fixture",
+            "reference": "docs/testing/codex-cross-process-e2e.md"
           },
-          "evidence_refs": [],
-          "last_verified_at": "2026-07-20T00:00:00Z",
-          "notes": [],
+          "evidence_refs": [
+            "CAP-E-CODEX-VALIDATION-01"
+          ],
+          "last_verified_at": "2026-07-21T00:00:00Z",
+          "notes": [
+            "Promotion is based on the manual E2E run in docs/testing/codex-cross-process-e2e.md, where Codex ran the requested JSON.parse validation and observed exit status 0"
+          ],
           "required_for_advertised_support": true
         },
         {
           "capability_id": "capability.result.freeform",
-          "declared_status": "unknown",
+          "declared_status": "supported",
           "drift_status": "current",
-          "effective_status": "unknown",
+          "effective_status": "supported",
           "conditions": [],
-          "limitations": [],
-          "unknown_reason": "Not independently verified by oh-my-ai in this implementation session",
-          "verification_needed": "Have a Codex Worker return a freeform Result and confirm it is readable in a Main Session",
-          "safe_fallback": "Treat as unverified",
+          "limitations": [
+            "Verified by a user-executed, human-reviewed manual Codex CLI session; the Result was manually transferred back by the user, not automatically collected"
+          ],
+          "unknown_reason": null,
           "required_manual_step": [],
           "source": {
-            "type": "not_verified",
-            "reference": null
+            "type": "manual_fixture",
+            "reference": "docs/testing/codex-cross-process-e2e.md"
           },
-          "evidence_refs": [],
-          "last_verified_at": "2026-07-20T00:00:00Z",
-          "notes": [],
+          "evidence_refs": [
+            "CAP-E-CODEX-RESULT-01"
+          ],
+          "last_verified_at": "2026-07-21T00:00:00Z",
+          "notes": [
+            "A Codex Worker authored .oh-my-ai/codex-e2e-scratch/result-basic.md and the Main Session read it back manually; promotion is based on docs/testing/codex-cross-process-e2e.md"
+          ],
           "required_for_advertised_support": true
         },
         {
           "capability_id": "capability.result.structured",
-          "declared_status": "unknown",
+          "declared_status": "conditional",
           "drift_status": "current",
-          "effective_status": "unknown",
-          "conditions": [],
+          "effective_status": "conditional",
+          "conditions": [
+            "Worker manually follows the required headings in templates/result-basic.md"
+          ],
+          "failure_mode": "If the Worker omits required headings or free-forms the response, the returned Result cannot be parsed as Structured Result and must be treated as freeform only",
           "limitations": [
             "No automatic enforcement or validation that the Runtime itself produced conformant structure; conformance is a manual authoring convention, not a Runtime guarantee",
-            "Not independently verified with a real Codex session in this implementation session"
+            "Verified by a user-executed, human-reviewed manual Codex CLI session; no PID/session-id process attestation or CI reproduction was collected"
           ],
-          "unknown_reason": "capability.result.freeform is itself unverified for Codex in this implementation session, so a conditional structured-result claim built on top of it would be an overclaim",
-          "required_manual_step": [],
+          "unknown_reason": null,
+          "required_manual_step": [
+            "Worker fills every required Result Basic heading by hand before returning to the Main Session"
+          ],
           "source": {
-            "type": "not_verified",
-            "reference": null
+            "type": "manual_fixture",
+            "reference": "scripts/validate-result-basic.mjs + docs/testing/codex-cross-process-e2e.md"
           },
-          "evidence_refs": [],
-          "last_verified_at": "2026-07-20T00:00:00Z",
-          "notes": [
-            "Automatic Result collection/parsing/import is V2 scope; this is manual-only in V1"
+          "evidence_refs": [
+            "CAP-E-CODEX-RESULT-02"
           ],
-          "required_for_advertised_support": true,
-          "verification_needed": "Verify capability.result.freeform for Codex first, then re-assess whether the manual Result Basic template convention is followed",
-          "safe_fallback": "Treat as unverified; do not advertise Codex Structured Result support"
+          "last_verified_at": "2026-07-21T00:00:00Z",
+          "notes": [
+            "Automatic Result collection/parsing/import is V2 scope; this is manual-only in V1",
+            "capability.result.freeform is now supported for Codex, so this conditional claim is not a Structured Result Overclaim (see scripts/validate-capabilities.mjs FX-CAP-015)"
+          ],
+          "required_for_advertised_support": true
         },
         {
           "capability_id": "capability.workspace.worktree",

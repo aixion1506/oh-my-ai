@@ -85,7 +85,7 @@ Static Capability 선언은 [`capabilities/runtime-capabilities.json`](capabilit
 | Runtime | Entry 진입점 | 검증 수준 |
 |---|---|---|
 | Claude Code | `/work-start <task>` | `advertised_support: true` — 이 세션에서 file.read/file.edit/shell.execute/validation.run을 실제로 사용해 검증 |
-| Codex | `$work-start <task>` | `advertised_support: false` — Entry/Hook 계층은 Fixture로 검증됐지만, 실제 Codex 세션을 통한 file/shell 동작은 아직 미검증(`unknown`)이며 정직하게 그렇게 표시된다 |
+| Codex | `$work-start <task>` | `advertised_support: true` — Entry/Hook 계층은 Fixture로 검증됐고, prompt/file.read/file.edit/shell.execute/validation.run/result.freeform은 사용자가 직접 실행한 별도 Codex CLI 세션(`docs/testing/codex-cross-process-e2e.md`)으로 검증됨. 다만 PID·session-id 기반 프로세스 격리 증명이나 자동화된 재현은 아직 없고, session.resume/자동 Session 생성/자동 Result 회수는 여전히 `unknown` |
 
 `unknown`은 "안 되는 것"이 아니라 "아직 이 하네스가 직접 확인하지 않은 것"이다. 검증 안 된 기능을 `supported`로 과장하지 않는다.
 
