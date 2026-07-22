@@ -397,10 +397,10 @@ write_related_files_md() {
 }
 
 skill_match_script="$REPO/scripts/work-start-skill-match.mjs"
-skill_gap_md=$'## Skill candidates\n\n- skill gap: no routed skill matched this task; proceed without skill assist.\n'
-skill_gap_yaml=$'skill_candidates:\n  status: skill_gap\n  primary: []\n  secondary: []\n'
-skill_md="$skill_gap_md"
-skill_yaml="$skill_gap_yaml"
+skill_unavailable_md=$'## Skill candidates\n\n- routing_status: unavailable\n- routing_error_code: consumer_error\n- primary: none\n- secondary: none\n- warning: Skill routing unavailable; generic Work-start output generated.\n'
+skill_unavailable_yaml=$'routing_status: unavailable\nrouting_error_code: consumer_error\nrouting_warnings:\n  - '\''Skill routing unavailable; generic Work-start output generated.'\''\nskill_candidates:\n  status: unavailable\n  primary: []\n  secondary: []\n'
+skill_md="$skill_unavailable_md"
+skill_yaml="$skill_unavailable_yaml"
 if command -v node >/dev/null 2>&1 && [ -f "$skill_match_script" ]; then
   skill_md_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=markdown 2>/dev/null || true)"
   skill_yaml_out="$(printf '%s' "$TASK_TEXT" | node "$skill_match_script" --format=yaml 2>/dev/null || true)"

@@ -66,14 +66,21 @@ Structured Handoff Candidate는 Worker에게 전달할 작업 계약 후보이�
 
 | 항목 | `handoff-prompt` | `project-context` |
 |------|-----------------|-------------------|
-| 목적 | 특정 작업을 Worker에게 전달하는 단기 Candidate | 장기 설계·결정 맥락 축적 |
+| 목적 | Structured Handoff Candidate — 현재 Task를 다음 Worker Session에 전달하는 단기 실행 계약 | CONTEXT CHECKPOINT — 장기적이고 Human-confirmed인 Project Context 갱신 |
 | 저장 위치 | 기본 미저장. 필요 시 local-only 임시 파일 | `docs/context/*` (Git tracking 가능) |
 | 입력 | Work-start 후보 + 현재 repo 상태 + 사람이 확인한 제약/결정 | human-confirmed 설계 배경, 장기 보존 맥락 |
 | Git tracking | 금지 | curated 내용만 가능 |
 | 수명 | 해당 Worker 작업 종료 후 폐기 | 장기 유지 |
 
-`handoff-prompt`는 `project-context`를 반드시 거칠 필요 없다. 현재 repo 상태만으로도 생성 가능하다.
-다만 관련 `docs/context/*`가 있으면 `repository_context`에 참조하고, 확인된 사실과 가정을 분리한다.
+### Project Context Preflight
+
+Structured Handoff Candidate를 만들기 전에 Durable Context의 존재와 최신성을 확인한다.
+
+- 최신 Durable Context가 존재하면 해당 Context와 현재 Task 상태를 사용해 Candidate를 생성한다.
+- Durable Context가 없으면 기존 `project-context` CREATE 흐름을 먼저 수행하고, 사용자 확인 후 Context를 저장한 다음 Candidate를 생성한다.
+- Durable Context가 현재 작업보다 오래됐으면 기존 `project-context` UPDATE 흐름을 먼저 수행하고, 사용자 확인 후 최신 Context를 반영한 다음 Candidate를 생성한다.
+
+이 연결은 기존 `project-context` CREATE/UPDATE → `handoff-prompt` 책임 순서만 정의한다. Structured Handoff Candidate를 `docs/context/*`에 저장하거나 자동 Promotion하지 않는다.
 
 ## conversation-capture와의 차이
 
@@ -100,7 +107,9 @@ Structured Handoff Candidate는 Worker에게 전달할 작업 계약 후보이�
 
 ## Handoff Prompt 작성 절차
 
-### 1. 현재 repo 상태 수집 (CLI로 직접 확인)
+### 1. Project Context Preflight와 현재 repo 상태 수집
+
+위 Preflight에 따라 Durable Context를 확인한 뒤 CLI로 현재 상태를 직접 확인한다.
 
 ```bash
 git remote -v         # remote 확인 (credential 제거)

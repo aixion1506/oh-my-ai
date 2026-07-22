@@ -302,7 +302,7 @@
     {
       "name": "project-context",
       "path": "skills/project-context/SKILL.md",
-      "description": "Use when starting a new session on a codebase, resuming interrupted work from a previous session, after making an architectural or design decision, or before ending a session or creating a PR — to create, update, or hand off docs/context/ project context files.",
+      "description": "Use when starting a new session on a codebase, resuming interrupted work, after making an architectural or design decision, or before ending a session or creating a PR — to create, update, or checkpoint human-confirmed durable docs/context/ project context files.",
       "summary": "세션 간 설계 배경과 작업 상태를 이어주는 컨텍스트 관리",
       "routing": {
         "visibility": "contextual",
@@ -310,7 +310,7 @@
         "task_types": [
           "project-context",
           "design-record",
-          "handoff-context"
+          "context-checkpoint"
         ],
         "triggers": [
           {

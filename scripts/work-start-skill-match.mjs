@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { matchSkillCandidatesWithStatus } from "./lib/routing-status.mjs";
 
-const format = process.argv.includes("--format=yaml") ? "yaml" : "markdown";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, "..");
-const skillIndexPath = path.join(repoRoot, "skills", "skill-index.json");
+const format = process.argv.includes("--format=yaml")
+  ? "yaml"
+  : process.argv.includes("--format=json")
+    ? "json"
+    : "markdown";
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -16,65 +14,54 @@ process.stdin.on("data", chunk => {
   input += chunk;
 });
 process.stdin.on("end", () => {
-  const normalized = input.toLowerCase();
-  const { primary, secondary } = matchSkillCandidates(normalized);
-  process.stdout.write(format === "yaml" ? renderYaml(primary, secondary) : renderMarkdown(primary, secondary));
+  const result = matchSkillCandidatesWithStatus(input.toLowerCase());
+  const { primary, secondary } = tierCandidates(result.candidates);
+
+  if (format === "json") {
+    process.stdout.write(`${JSON.stringify(renderJson(result), null, 2)}\n`);
+  } else if (format === "yaml") {
+    process.stdout.write(renderYaml(result, primary, secondary));
+  } else {
+    process.stdout.write(renderMarkdown(result, primary, secondary));
+  }
 });
 
-function loadSkillIndex() {
-  try {
-    const raw = fs.readFileSync(skillIndexPath, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.skills)) return [];
-    return parsed.skills;
-  } catch {
-    return [];
-  }
-}
-
-function matchSkillCandidates(normalized) {
-  const candidates = [];
-
-  for (const skill of loadSkillIndex()) {
-    if (!skill) continue;
-    const routing = skill.routing || {};
-    if (routing.visibility === "hidden") continue;
-    if (routing.risk_level === "high") continue;
-
-    const keywordValues = (routing.triggers || [])
-      .filter(trigger => trigger && trigger.kind === "keyword")
-      .flatMap(trigger => Array.isArray(trigger.values) ? trigger.values : []);
-
-    const matched = keywordValues.filter(value => normalized.includes(String(value).toLowerCase()));
-    if (matched.length > 0) {
-      candidates.push({ name: skill.name, path: skill.path, matched, score: matched.length });
-    }
-  }
-
+function tierCandidates(candidates) {
   if (candidates.length === 0) return { primary: [], secondary: [] };
-
-  const maxScore = Math.max(...candidates.map(candidate => candidate.score));
-  const topTied = candidates
-    .filter(candidate => candidate.score === maxScore)
-    .sort((a, b) => (a.name === b.name ? a.path.localeCompare(b.path) : a.name.localeCompare(b.name)));
-
-  const [primaryPick, ...restTied] = topTied;
-  const secondaryPicks = [...restTied, ...candidates.filter(candidate => candidate.score !== maxScore)];
-
-  const primary = [{ name: primaryPick.name, matched: primaryPick.matched }];
-  const secondary = secondaryPicks.map(candidate => ({ name: candidate.name, matched: candidate.matched }));
-
-  return { primary, secondary };
+  const [primaryPick, ...secondaryPicks] = candidates;
+  return {
+    primary: [candidateSummary(primaryPick)],
+    secondary: secondaryPicks.map(candidateSummary),
+  };
 }
 
-function renderMarkdown(primary, secondary) {
+function candidateSummary(candidate) {
+  return { name: candidate.name, matched: candidate.matched };
+}
+
+function renderJson(result) {
+  return {
+    routing_status: result.status,
+    routing_error_code: result.errorCode,
+    skill_candidates: result.candidates.map(candidateSummary),
+    warnings: result.warnings,
+  };
+}
+
+function renderMarkdown(result, primary, secondary) {
   const lines = ["## Skill candidates", ""];
-  if (primary.length === 0 && secondary.length === 0) {
+  lines.push(`- routing_status: ${result.status}`);
+  lines.push(`- routing_error_code: ${result.errorCode || "none"}`);
+  if (result.status === "unavailable") {
+    lines.push("- primary: none");
+    lines.push("- secondary: none");
+  } else if (primary.length === 0 && secondary.length === 0) {
     lines.push("- skill gap: no routed skill matched this task; proceed without skill assist.");
   } else {
     lines.push(`- primary: ${renderMarkdownList(primary)}`);
     lines.push(`- secondary: ${renderMarkdownList(secondary)}`);
   }
+  for (const warning of result.warnings) lines.push(`- warning: ${warning}`);
   lines.push("");
   return lines.join("\n");
 }
@@ -86,14 +73,28 @@ function renderMarkdownList(candidates) {
     .join(", ");
 }
 
-function renderYaml(primary, secondary) {
-  const lines = ["skill_candidates:"];
-  if (primary.length === 0 && secondary.length === 0) {
+function renderYaml(result, primary, secondary) {
+  const lines = [
+    `routing_status: ${result.status}`,
+    `routing_error_code: ${result.errorCode || "null"}`,
+    "routing_warnings:",
+  ];
+  if (result.warnings.length === 0) {
+    lines[lines.length - 1] += " []";
+  } else {
+    for (const warning of result.warnings) lines.push(`  - '${yamlEscape(warning)}'`);
+  }
+  lines.push("skill_candidates:");
+  if (result.status === "unavailable") {
+    lines.push("  status: unavailable");
+    lines.push("  primary: []");
+    lines.push("  secondary: []");
+  } else if (primary.length === 0 && secondary.length === 0) {
     lines.push("  status: skill_gap");
     lines.push("  primary: []");
     lines.push("  secondary: []");
   } else {
-    lines.push("  status: matched");
+    lines.push(`  status: ${result.status}`);
     lines.push(renderYamlTier("primary", primary));
     lines.push(renderYamlTier("secondary", secondary));
   }

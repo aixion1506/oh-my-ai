@@ -1,6 +1,6 @@
 ---
 name: project-context
-description: Use when starting a new session on a codebase, resuming interrupted work from a previous session, after making an architectural or design decision, or before ending a session or creating a PR — to create, update, or hand off docs/context/ project context files.
+description: Use when starting a new session on a codebase, resuming interrupted work, after making an architectural or design decision, or before ending a session or creating a PR — to create, update, or checkpoint human-confirmed durable docs/context/ project context files.
 metadata:
   source: born-here
   summary: 세션 간 설계 배경과 작업 상태를 이어주는 컨텍스트 관리
@@ -10,7 +10,7 @@ metadata:
     task_types:
       - project-context
       - design-record
-      - handoff-context
+      - context-checkpoint
     triggers:
       - kind: keyword
         values:
@@ -46,23 +46,27 @@ metadata:
       - human_confirmed_design_context
 ---
 
-# Project Context — 생성·업데이트·핸드오프
+# Project Context — 생성·업데이트·체크포인트
 
 ## Overview
 
-세션 간 컨텍스트 단절 문제를 해결하는 living doc 관리 스킬.  
-`docs/context/<도메인>/<서비스>.md` 를 생성·업데이트·핸드오프해서 새 세션도 즉시 맥락을 확보한다.
+세션 간 컨텍스트 단절 문제를 해결하는 Human-confirmed Durable Context 관리 스킬.
+`docs/context/<도메인>/<서비스>.md`를 생성·업데이트·체크포인트해서 장기 설계 배경과 결정 맥락을 보존한다.
 
-**핵심 원칙: 태스크 목록만으로는 핸드오프 불가.** 결정 로그·설계 배경·파일 맵이 함께 있어야 다음 세션이 이어받을 수 있다.
+**핵심 원칙: Context는 대화 Raw Log나 작업 전달 Artifact가 아니다.** 사용자 확인을 거친 결정 로그·설계 배경·파일 맵만 Durable Context로 저장한다.
+
+- `CONTEXT CHECKPOINT`는 Structured Handoff Candidate가 아니다.
+- Worker에게 현재 Task 실행을 위임할 때는 `handoff-prompt`를 사용한다.
+- Context는 사용자 확인을 거쳐 Durable Context로 저장한다.
 
 ---
 
 ## 모드 선택
 
 ```
-docs/context/ 파일 있음? ─── YES ──→ [UPDATE] 또는 [HANDOFF]
+docs/context/ 파일 있음? ─── YES ──→ [UPDATE] 또는 [CONTEXT CHECKPOINT]
         │                                    │
-        NO                          세션 끝/PR 전? ─── YES ──→ [HANDOFF]
+        NO                          세션 끝/PR 전? ─── YES ──→ [CONTEXT CHECKPOINT]
         │                                    │
         ↓                                   NO
     [CREATE]                            [UPDATE] (결정 로그만)
@@ -130,32 +134,13 @@ branch: <현재 브랜치>
 | # | 작업 | 파일 |
 |---|------|------|
 
-## 핸드오프 — 새 Claude 세션 시작 시 붙여넣기
+## CONTEXT CHECKPOINT
 
-```
-<현재 작업 요약>
-
-컨텍스트:
-- <핵심 배경 1>
-- <핵심 배경 2>
-
-현재 상태:
-- <완료된 것> ✅
-- <진행 중> 🔄
-- <미착수> ❌
-
-해야 할 것 (순서대로):
-1. ...
-
-핵심 설계 결정:
-- <결정 1>: <이유>
-- <결정 2>: <이유>
-
-레퍼런스 파일:
-- <파일 경로> — <역할>
-
-규칙: 현재 execution mode를 따른다. `suggest-only`이면 diff 형식(+/- 마커)으로 변경안을 보여주고 직접 수정하지 않는다.
-```
+- 마지막 확인 시점: <YYYY-MM-DD>
+- 확인된 현재 상태: <완료·진행·미착수 상태>
+- 확인된 주요 결정: <결정과 이유>
+- 확인된 Risk·Blocker: <장기 보존할 위험 또는 없음>
+- Promotion Source: <사용자가 검토한 Result/PR/결정 출처>
 ```
 
 ---
@@ -170,26 +155,58 @@ branch: <현재 브랜치>
    - 결정: 결정 내용 (무엇을 선택했나)
    - 이유: 선택하지 않은 대안 포함한 근거
 3. `현재 상태` 표 상태 변경 있으면 업데이트
-4. `last_updated` 갱신
+4. Risk·Blocker 또는 구현·검증 상태 변경이 있으면 관련 섹션 갱신
+5. 사용자 확인 후 반영하고 `last_updated` 갱신
 
 ---
 
-## [HANDOFF] 세션 종료·PR 전
+## [CONTEXT CHECKPOINT] 세션 종료·PR 전
 
-다음 세션이 즉시 이어받을 수 있게 핸드오프 섹션을 최신화.
+현재까지 확인된 Durable Context가 실제 작업 상태보다 오래되지 않도록 체크포인트를 갱신한다.
 
 1. 기존 파일 Read
 2. `현재 상태` 표 갱신 (이번 세션에서 완료된 것 ✅, 새로 시작된 것 🔄)
 3. `남은 태스크` 갱신
-4. `핸드오프` 섹션 재작성:
-   - 이번 세션에서 한 것
-   - 내린 결정 요약
-   - **정확한 다음 단계** (파일명·함수명·줄번호 수준)
-   - 레퍼런스 파일 목록
+4. `CONTEXT CHECKPOINT` 갱신:
+   - 사용자가 확인한 현재 상태와 주요 결정
+   - 장기 보존해야 하는 Risk·Blocker
+   - Promotion Source
 5. `last_updated` 갱신
+6. 사용자 확인 후 Durable Context로 저장
 
-**핸드오프 섹션은 다음 세션에 그대로 붙여넣기 가능해야 한다.**  
-"대략 이런 작업" 수준이면 부족 — "다음 할 일은 X 파일 Y 함수부터" 수준이어야 한다.
+`CONTEXT CHECKPOINT`는 장기 맥락 갱신이며 Worker 실행 지시문이 아니다. 현재 Task를 다음 Worker Session에 전달해야 하면 최신 Context를 준비한 뒤 `handoff-prompt`로 Structured Handoff Candidate를 별도 생성한다.
+
+---
+
+## Context 갱신 사건
+
+모든 대화를 저장하지 않는다. 다음 사건에서 기존 CREATE 또는 UPDATE 흐름을 사용한다.
+
+- 작업 시작
+- Scope 또는 주요 Decision 변경
+- Risk·Blocker 발견
+- 구현 또는 검증 완료
+- PR·Merge 전
+- Session 종료 또는 Handoff 전
+
+---
+
+## Result Promotion 경계
+
+Worker Result는 Durable Context가 아니라 Evidence Candidate다. 다음 순서를 지킨다.
+
+```text
+Result
+→ Context Update Candidate
+→ Human Review
+→ Promotion
+```
+
+- Promotion 승인 주체는 사용자다.
+- Promotion Source를 Context에 기록한다.
+- 기존 Durable Context와 충돌하면 자동으로 덮어쓰지 않고 사용자에게 충돌을 제시한다.
+- Reject된 Result는 Promotion하지 않는다.
+- 승인 전 Candidate를 Confirmed Fact나 Durable Context로 표현하지 않는다.
 
 ---
 
@@ -198,9 +215,10 @@ branch: <현재 브랜치>
 | 상황 | 모드 |
 |------|------|
 | 세션 시작 + `[HARNESS:context]` 목록 보임 | 목록에서 관련 파일 Read |
-| 세션 시작 + context 파일 없음 | CREATE |
+| 세션 시작 + context 파일 없음 | CREATE (사용자 확인 후 저장) |
 | 중요 결정 내린 직후 | UPDATE (결정 로그) |
-| 세션 종료 / PR 생성 전 | HANDOFF |
+| Scope·Risk·구현·검증 상태 변경 | UPDATE |
+| 세션 종료 / PR 생성 전 | CONTEXT CHECKPOINT |
 | 새 기능·서비스 착수 | CREATE |
 
 ---
@@ -209,7 +227,8 @@ branch: <현재 브랜치>
 
 | 실수 | 올바른 방법 |
 |------|-------------|
-| 태스크 목록만 남김 | 결정 로그·이유·대안까지 |
-| 핸드오프를 "대략" 수준으로 | 파일명·다음 단계 구체적으로 |
-| 세션 끝에 깜빡함 | PR 커밋 전에 context 파일 업데이트 포함 |
+| 대화 Raw Log를 그대로 저장 | 사용자 확인을 거친 장기 맥락만 선별 |
+| Context에 Worker 실행 지시문 작성 | `handoff-prompt`로 Structured Handoff Candidate 생성 |
+| Result를 자동 반영 | Candidate → Human Review → Promotion 순서 준수 |
+| 세션 끝에 체크포인트 누락 | PR 커밋 전에 Context 최신성 확인 |
 | 도메인 구분 없이 flat하게 | `docs/context/<도메인>/` 하위로 분류 |
