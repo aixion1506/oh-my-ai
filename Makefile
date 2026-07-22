@@ -1,7 +1,7 @@
 REPO    := $(shell pwd)
 PROFILE ?=
 
-.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-v1-fixtures
+.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-v1-fixtures
 
 instructions:
 	./scripts/render-instructions.sh
@@ -14,6 +14,9 @@ doctor-strict:
 
 work-start:
 	./scripts/work-start.sh
+
+test-routing-fixtures:
+	./scripts/test-routing-fixtures.sh
 
 test-work-start-fixtures:
 	./scripts/test-work-start-fixtures.sh
@@ -33,7 +36,7 @@ test-truthfulness-fixtures:
 test-install-fixtures:
 	./scripts/test-install-fixtures.sh
 
-test-v1-fixtures: test-install-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures
+test-v1-fixtures: test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures
 
 install: install-shared
 

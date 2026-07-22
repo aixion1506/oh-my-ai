@@ -4,20 +4,22 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { matchSkillCandidatesWithStatus } from "./lib/routing-status.mjs";
 
 const args = new Set(process.argv.slice(2));
-const format = args.has("--format=claude-json")
-  ? "claude-json"
-  : args.has("--format=codex-json")
-    ? "codex-json"
-    : args.has("--format=text")
-      ? "text"
-      : "codex-json";
+const format = args.has("--format=routing-json")
+  ? "routing-json"
+  : args.has("--format=claude-json")
+    ? "claude-json"
+    : args.has("--format=codex-json")
+      ? "codex-json"
+      : args.has("--format=text")
+        ? "text"
+        : "codex-json";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const automationCandidatesPath = path.join(repoRoot, ".oh-my-ai", "state", "automation-candidates.log");
 const workStartSuggestionStatePath = path.join(repoRoot, ".oh-my-ai", "state", "work-start-suggestions.json");
-const skillIndexPath = path.join(repoRoot, "skills", "skill-index.json");
 const SKILL_CANDIDATE_LIMIT = 2;
 
 let input = "";
@@ -33,6 +35,11 @@ process.stdin.on("end", () => {
   }
   const runtime = format === "claude-json" ? "claude" : format === "codex-json" ? "codex" : "text";
   const payload = buildPromptRoutingPayload(prompt, { runtime });
+
+  if (format === "routing-json") {
+    process.stdout.write(`${JSON.stringify(payload.routing, null, 2)}\n`);
+    return;
+  }
 
   if (!payload.context && !payload.systemMessage) {
     process.exit(0);
@@ -100,14 +107,14 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   const pr = hasPrSignal(prompt, normalized);
   const legacyHandoffNudged = handoff || pr;
   if (legacyHandoffNudged) {
-    const prSuffix = pr ? " For PR creation, verify first and also consider whether `project-context` HANDOFF needs updating." : "";
+    const prSuffix = pr ? " For PR creation, verify first and also consider whether the `project-context` CONTEXT CHECKPOINT needs updating." : "";
     notes.push(
       "- Handoff/PR signal: consider the `handoff-prompt` skill for a short, confirmed next-session export." + prSuffix
     );
   }
 
   if (hasProjectContextSignal(prompt, normalized)) {
-    notes.push("- Project context signal: consider `project-context` CREATE/UPDATE before proceeding; handoff must include decision background, not only a task list.");
+    notes.push("- Project context signal: consider `project-context` CREATE/UPDATE before proceeding; a durable context checkpoint must include decision background, not only a task list.");
   }
 
   if (
@@ -122,18 +129,31 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   }
 
   const excludeSkillNames = legacyHandoffNudged ? ["handoff-prompt"] : [];
-  const skillCandidates = matchSkillCandidates(normalized, excludeSkillNames);
-  if (skillCandidates.length > 0) {
-    const rendered = skillCandidates
+  const routing = matchSkillCandidatesWithStatus(normalized, {
+    excludeSkillNames,
+    limit: SKILL_CANDIDATE_LIMIT,
+  });
+  if (routing.status === "unavailable") {
+    notes.push(
+      `- Skill routing unavailable: routing_status=unavailable; routing_error_code=${routing.errorCode}; skill_candidates=[]. ${routing.warnings.join(" ")}`,
+    );
+  } else {
+    for (const warning of routing.warnings) {
+      notes.push(`- Skill routing warning: ${warning}`);
+    }
+  }
+
+  if (routing.candidates.length > 0) {
+    const rendered = routing.candidates
       .map(candidate => `\`${candidate.name}\` (matched: ${candidate.matched.join(", ")})`)
       .join(", ");
     notes.push(
-      `- Skill routing candidates: ${rendered}. Do not auto-execute skills; inspect fit before applying.`
+      `- Skill routing candidates: ${rendered}. routing_status=${routing.status}. Do not auto-execute skills; inspect fit before applying.`,
     );
   }
 
   if (notes.length === 0 && !workStartSuggestion) {
-    return { context: "", systemMessage: "" };
+    return { context: "", systemMessage: "", routing: renderRoutingJson(routing) };
   }
 
   const context = notes.length === 0 ? "" : [
@@ -145,6 +165,19 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   return {
     context,
     systemMessage: workStartSuggestion ? workStartSuggestion.systemMessage : "",
+    routing: renderRoutingJson(routing),
+  };
+}
+
+function renderRoutingJson(routing) {
+  return {
+    routing_status: routing.status,
+    routing_error_code: routing.errorCode,
+    skill_candidates: routing.candidates.map(candidate => ({
+      name: candidate.name,
+      matched: candidate.matched,
+    })),
+    warnings: routing.warnings,
   };
 }
 
@@ -329,39 +362,4 @@ function hasWorkStartIntentSignal(prompt, normalized) {
   }
 
   return true;
-}
-
-function loadSkillIndex() {
-  try {
-    const raw = fs.readFileSync(skillIndexPath, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.skills)) return [];
-    return parsed.skills;
-  } catch {
-    return [];
-  }
-}
-
-function matchSkillCandidates(normalized, excludeSkillNames) {
-  const excluded = new Set(excludeSkillNames);
-  const candidates = [];
-
-  for (const skill of loadSkillIndex()) {
-    if (!skill || excluded.has(skill.name)) continue;
-    const routing = skill.routing || {};
-    if (routing.visibility === "hidden") continue;
-    if (routing.risk_level === "high") continue;
-
-    const keywordValues = (routing.triggers || [])
-      .filter(trigger => trigger && trigger.kind === "keyword")
-      .flatMap(trigger => Array.isArray(trigger.values) ? trigger.values : []);
-
-    const matched = keywordValues.filter(value => normalized.includes(String(value).toLowerCase()));
-    if (matched.length > 0) {
-      candidates.push({ name: skill.name, matched });
-    }
-  }
-
-  candidates.sort((a, b) => b.matched.length - a.matched.length);
-  return candidates.slice(0, SKILL_CANDIDATE_LIMIT);
 }
