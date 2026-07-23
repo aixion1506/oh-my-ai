@@ -61,22 +61,26 @@ Doctor
 
 비범위(V1 Non-goals)는 [아래](#v1-non-goals)에 별도로 정리했다.
 
-### Quick Start (Claude Code 기준)
+### Quick Start
 
 ```bash
 git clone https://github.com/<owner>/oh-my-ai.git ~/Github/oh-my-ai
 cd ~/Github/oh-my-ai
 make doctor            # 읽기 전용 사전 점검
 make install-shared    # non-destructive 설치
+make doctor-strict     # 설치된 Public Entry와 Runtime 경계 검증
 ```
 
-Claude Code에서:
+설치 검증 후 Runtime에 맞는 명시 호출을 사용한다.
 
 ```text
-/work-start 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
+Claude Code: /work-start 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
+Codex:       $work-start 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
 ```
 
 `Needs human review` 상태의 Candidate가 `.oh-my-ai/work-start/<timestamp>-<slug>/`에 생성된다. 이 시점까지 코드는 전혀 수정되지 않는다.
+
+현재 Public V1의 출시 근거, 검증 상태, Known Limitations, 출시 체크리스트는 [V1.0.0 Release Notes (Draft)](docs/release/v1.0.0.md)를 따른다.
 
 ### 지원 Runtime
 
@@ -271,8 +275,9 @@ make doctor-strict   # 위와 동일한 점검을 하되, 문제 발견 시 exit
 
 ```text
 VERSION      = 현재 제품 Runtime Version Source (Network 없이 읽음)
-version.md   = Roadmap/Milestone 설명 문서. Runtime이 읽는 파일이 아님
 ```
+
+현재 Public V1 Runtime Version은 `1.0.0`이다.
 
 Public Stable Release Tag는 `v1.0.0`처럼 SemVer-clean 형식을 쓴다. 설명은 Tag 접미사가 아니라 GitHub Release Title/Notes에 적는다.
 

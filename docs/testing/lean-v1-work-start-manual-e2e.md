@@ -7,7 +7,27 @@ Status:
 - Cross-session Worker Step: not performed
 - Actual Full Manual E2E: not performed
 - Claude Code Runtime Procedure Defined: yes
-- Claude Code Full Manual E2E: not performed
+- macOS Claude Explicit Work-start E2E: passed (2026-07-23)
+- Claude Code Full Manual E2E: not performed (the Worker/Task continuation steps below remain separate)
+- Public Release Created: no
+
+## macOS Claude explicit Work-start E2E — Passed
+
+This records the completed terminal-boundary gate only. It does not mark the
+cross-session Worker flow or a public release as complete.
+
+| Item | Result |
+| --- | --- |
+| Runtime | macOS Claude UI |
+| Explicit request | `/work-start 구현을 시작하기 전에 관련 코드와 영향 범위를 먼저 모아줘. MAC-E2E-UNIQUE-005` |
+| Artifact | `.oh-my-ai/work-start/20260723T075915Z-mac-e2e-unique-005` |
+| Engine / artifact set | exactly 1 / exactly 1 (five required files) |
+| Boundary | `Needs human review`; Direct Handoff / Plan First / Gather Context displayed; response stopped |
+| Regressions | no duplicate Work-start suggestion, no false “not executed” notice, no automatic Artifact read, selection, or task analysis |
+
+Fixture Passed, Doctor Passed, macOS Manual E2E Passed, and Public Release
+Created are independent release states. Only the first three are complete for
+this gate; Public Release Created remains incomplete.
 
 This document defines the manual end-to-end procedure for the Lean V1 Local Manual Artifact Workflow.
 
