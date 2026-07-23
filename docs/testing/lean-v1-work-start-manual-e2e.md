@@ -264,7 +264,23 @@ Both explicit Skill entries run `"$HOME/.local/bin/oh-my-ai" work-start -- "<sin
 
 Verify the Artifact is under the Repository where Claude was started, not the oh-my-ai source Repository or `~/.claude/skills/work-start`. The Public Entry resolves the Engine through its own installed realpath while preserving the caller cwd. Re-run `make install-shared` after relocating the source Repository.
 
-If Claude emits a later `UserPromptSubmit` payload with the slash token removed but the same Task text, the target Repository's short-lived, session-scoped post-execution marker suppresses a duplicate Work-start Suggestion. It does not run the Engine, create an Artifact, read the existing Artifact, select a Human Review option, affect another Repository or session, or block a later explicit invocation.
+If Claude emits a later `UserPromptSubmit` payload with the slash token removed but the same Task text, the target Repository's short-lived post-execution marker suppresses a duplicate Work-start Suggestion only when **Repository, Runtime, Session, and normalized Task** match. Claude requires the same Hook `session_id`/`sessionId` and Engine `CLAUDE_CODE_SESSION_ID`; Codex requires an explicitly forwarded Codex session value. If either side lacks a verifiable Session ID, suppression fails open. The marker does not run the Engine, create an Artifact, or block a later explicit invocation.
+
+### Post-execution Boundary Evidence
+
+The automated fixture proves only deterministic CLI/Hook behavior:
+
+- Engine executes once and creates one Artifact set for an explicit entry.
+- A matching post-execution marker suppresses the duplicate Suggestion, including the `아직 Work-start는 실행되지 않았습니다` text.
+- Continuation-shaped input does not run the Engine again or create another Artifact.
+- Missing, malformed, expired, cross-Repository, cross-Runtime, cross-Session, and cross-Task markers fail open.
+- The explicit-entry Skill contract contains the three Human Review choices and stop instruction.
+
+The following remain **Mac Claude/Codex manual release-gate checks**, because a shell fixture cannot prove model UI behavior:
+
+- The Runtime does not automatically read the Artifact, select Gather Context, or continue original-task analysis.
+- After displaying Direct Handoff / Plan First / Gather Context, the actual response ends.
+- On the next user message, only the explicitly selected continuation proceeds and it reuses the existing Artifact.
 
 ### Natural Intent Suggestion Path
 

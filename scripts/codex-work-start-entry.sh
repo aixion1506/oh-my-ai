@@ -17,4 +17,4 @@ if [[ "$NORMALIZED_TASK" =~ ^[[:space:]]*\$work-start([[:space:]]|$) ]]; then
 fi
 
 PUBLIC_ENTRY="${OH_MY_AI_ENTRY:-$HOME/.local/bin/oh-my-ai}"
-exec "$PUBLIC_ENTRY" work-start -- "$NORMALIZED_TASK"
+exec env OH_MY_AI_WORK_START_RUNTIME=codex "$PUBLIC_ENTRY" work-start -- "$NORMALIZED_TASK"

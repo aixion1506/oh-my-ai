@@ -47,13 +47,25 @@ function runWorkStart(args) {
   }
   const status = result.status ?? 1;
   if (status === 0) {
+    const execution = workStartExecutionContext();
     rememberWorkStartExecution(
       process.cwd(),
+      execution.runtime,
+      execution.sessionId,
       task,
-      process.env.CLAUDE_CODE_SESSION_ID || process.env.OH_MY_AI_WORK_START_SESSION_ID,
     );
   }
   process.exit(status);
+}
+
+function workStartExecutionContext() {
+  if (process.env.CLAUDE_CODE_SESSION_ID) {
+    return { runtime: "claude", sessionId: process.env.CLAUDE_CODE_SESSION_ID };
+  }
+  if (process.env.OH_MY_AI_WORK_START_RUNTIME === "codex" && process.env.OH_MY_AI_WORK_START_SESSION_ID) {
+    return { runtime: "codex", sessionId: process.env.OH_MY_AI_WORK_START_SESSION_ID };
+  }
+  return { runtime: "", sessionId: "" };
 }
 
 function runHook(args) {

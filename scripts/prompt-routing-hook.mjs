@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { matchSkillCandidatesWithStatus } from "./lib/routing-status.mjs";
 import {
   hasRecentWorkStartExecution,
-  rememberExplicitWorkStartInvocation,
   workStartSuggestionStatePath,
 } from "./lib/work-start-execution-state.mjs";
 
@@ -103,20 +102,12 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   const runtime = options.runtime;
   const sessionId = options.sessionId;
   const explicitWorkStart = hasExplicitWorkStartInvocation(prompt, runtime);
-  if (explicitWorkStart) {
-    rememberExplicitWorkStartInvocation(
-      process.cwd(),
-      sessionId,
-      workStartTaskFromExplicitInvocation(prompt, runtime),
-    );
-  }
-  const completedWorkStart = hasRecentWorkStartExecution(process.cwd(), sessionId, prompt);
+  const completedWorkStart = hasRecentWorkStartExecution(process.cwd(), runtime, sessionId, prompt);
   const routing = matchSkillCandidatesWithStatus(normalized, { limit: SKILL_CANDIDATE_LIMIT });
 
-  // Claude can remove the slash-command token before a later UserPromptSubmit
-  // event. A target-repository, session-scoped execution marker distinguishes
-  // that event from a new natural-language request without examining
-  // model-generated text.
+  // A Runtime can remove an explicit command token before a later
+  // UserPromptSubmit event. Suppress only when the Engine supplied the same
+  // runtime and session identifier; missing correlation deliberately fails open.
   if (explicitWorkStart || completedWorkStart) {
     return { context: "", systemMessage: "", routing: renderRoutingJson(routing) };
   }
@@ -336,13 +327,6 @@ function hasExplicitWorkStartInvocation(prompt, runtime) {
     return /^\$work-start(?:\s|$)/.test(trimmed);
   }
   return false;
-}
-
-function workStartTaskFromExplicitInvocation(prompt, runtime) {
-  const trimmed = prompt.trim();
-  if (runtime === "claude") return trimmed.replace(/^\/work-start(?:\s+|$)/, "");
-  if (runtime === "codex") return trimmed.replace(/^\$work-start(?:\s+|$)/, "");
-  return trimmed;
 }
 
 function hasToilSignal(prompt, normalized) {
