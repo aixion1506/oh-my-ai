@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "$#" -gt 1 ]; then
+  echo "usage: codex-work-start-entry.sh [<single task argument>]" >&2
+  exit 2
+fi
+
 RAW_TASK="${TASK:-}"
-if [ "$#" -gt 0 ]; then
-  RAW_TASK="$*"
+if [ "$#" -eq 1 ]; then
+  RAW_TASK="$1"
 fi
 
 NORMALIZED_TASK="$RAW_TASK"

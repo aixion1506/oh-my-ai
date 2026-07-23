@@ -17,12 +17,13 @@ if (command === "hook") {
 }
 
 function runWorkStart(args) {
-  const taskArgs = args[0] === "--" ? args.slice(1) : args;
-  const task = taskArgs.length > 0 ? taskArgs.join(" ") : (process.env.TASK || "");
-  if (!task.trim()) {
+  if (args.length !== 2 || args[0] !== "--" || !args[1].trim()) {
     process.stderr.write("usage: oh-my-ai work-start -- <task>\n");
     process.exit(2);
   }
+  // The public entry accepts exactly one argv task. Do not reconstruct it:
+  // quoting and shell metacharacters are part of the caller's original task.
+  const task = args[1];
 
   const repoRoot = findRepoRoot();
   const engine = path.join(repoRoot, "scripts", "work-start.sh");

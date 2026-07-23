@@ -124,6 +124,7 @@ assert_work_start_artifact() {
   local target="$1"
   local source="$2"
   local output="$3"
+  local invocation_log="$4"
   local artifact
 
   artifact="$(printf '%s\n' "$output" | sed -n 's/^work-start artifact created: //p' | tail -1)"
@@ -137,8 +138,26 @@ assert_work_start_artifact() {
     require_file "$target/$artifact/$file"
   done
   [ ! -e "$source/.oh-my-ai/work-start" ] || fail "artifact leaked into oh-my-ai source repository"
-  [ "$(find "$target/.oh-my-ai/work-start" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = "1" ] \
-    || fail "installed public entry did not run the Engine exactly once"
+  [ "$(artifact_directory_count "$target/.oh-my-ai/work-start")" = "1" ] \
+    || fail "installed public entry did not create exactly one artifact"
+  [ "$(engine_invocation_count "$invocation_log")" = "1" ] \
+    || fail "installed public entry did not invoke the Engine exactly once"
+}
+
+artifact_directory_count() {
+  node -e '
+    const fs = require("fs"); const root = process.argv[1];
+    if (!fs.existsSync(root)) { console.log(0); process.exit(0); }
+    console.log(fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).length);
+  ' "$1"
+}
+
+engine_invocation_count() {
+  node -e '
+    const fs = require("fs"); const file = process.argv[1];
+    if (!fs.existsSync(file)) { console.log(0); process.exit(0); }
+    console.log(fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).length);
+  ' "$1"
 }
 
 make_target_repo() {
@@ -154,9 +173,10 @@ run_installed_work_start() {
   local target="$1"
   local entry="$2"
   local task="$3"
+  local invocation_log="$4"
   (
     cd "$target"
-    "$entry" work-start -- "$task"
+    OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$entry" work-start -- "$task"
   )
 }
 
@@ -640,6 +660,61 @@ check_core_requirement_matrix() {
   echo "passed: CLI, entrypoint, Hook, and work-start strict matrix"
 }
 
+break_runtime_contract() {
+  local skill="$1"
+  local runtime="$2"
+  local comment_only="$3"
+  node -e '
+    const fs = require("fs");
+    const [skill, runtime, commentOnly] = process.argv.slice(1);
+    const heading = runtime === "claude" ? "## Claude Code Runtime Entry" : "## Codex Runtime Entry";
+    const content = fs.readFileSync(skill, "utf8");
+    const start = content.indexOf(`${heading}\n`);
+    const end = content.indexOf("\n## ", start + heading.length + 1);
+    if (start < 0) process.exit(2);
+    const sectionEnd = end < 0 ? content.length : end;
+    let section = content.slice(start, sectionEnd)
+      .replaceAll("public_entry = \"$HOME/.local/bin/oh-my-ai\" work-start -- \"<single task argument>\"", "public_entry = scripts/work-start.sh")
+      .replaceAll("\"$HOME/.local/bin/oh-my-ai\" work-start -- \"<single task argument>\"", "scripts/work-start.sh");
+    if (commentOnly === "comment-only") {
+      section += "\n<!-- example only: \\\"$HOME/.local/bin/oh-my-ai\\\" work-start -- \\\"<single task argument>\\\" -->\n";
+    }
+    fs.writeFileSync(skill, content.slice(0, start) + section + content.slice(sectionEnd));
+  ' "$skill" "$runtime" "$comment_only"
+}
+
+check_work_start_runtime_contracts() {
+  local fixture="$FIXTURE_ROOT/FX-INS-100-work-start-runtime-contract"
+  local scenario clone home_dir output expected_runtime other_runtime
+
+  check_fixture_metadata "$fixture"
+  for scenario in claude-relative-path codex-relative-path claude-comment-only codex-comment-only; do
+    clone="$(clone_fixture_repo "work-start-contract-$scenario")"
+    home_dir="$TEMP_ROOT/work-start-contract-$scenario/home"
+    run_setup "$clone" "$home_dir" --install-shared >/dev/null
+    [ "$(doctor_strict_status "$clone" "$home_dir")" = "0" ] || fail "$scenario baseline was not strict-ready"
+    case "$scenario" in
+      claude-*) expected_runtime="claude"; other_runtime="Codex" ;;
+      codex-*) expected_runtime="codex"; other_runtime="Claude" ;;
+    esac
+    case "$scenario" in
+      *comment-only) break_runtime_contract "$clone/skills/work-start/SKILL.md" "$expected_runtime" comment-only ;;
+      *) break_runtime_contract "$clone/skills/work-start/SKILL.md" "$expected_runtime" relative-path ;;
+    esac
+    [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "$scenario did not fail doctor-strict"
+    output="$(run_setup "$clone" "$home_dir" --doctor)"
+    if [ "$expected_runtime" = "claude" ]; then
+      require_fixed "Claude: incomplete" "$output"
+      require_fixed "Codex: configured" "$output"
+    else
+      require_fixed "Claude: configured" "$output"
+      require_fixed "Codex: incomplete" "$output"
+    fi
+  done
+
+  echo "passed: FX-INS-100 runtime-specific Work-start Skill contracts"
+}
+
 check_runtime_strict_readiness() {
   local fixture="$FIXTURE_ROOT/FX-INS-090-runtime-strict-readiness"
   local clone home_dir output status
@@ -662,7 +737,7 @@ check_runtime_strict_readiness() {
 }
 
 check_installed_work_start_e2e() {
-  local clone home_dir target output task fixture
+  local clone home_dir target output task fixture invocation_log
 
   fixture="$FIXTURE_ROOT/FX-WS-E2E-001-claude-installed-explicit-invocation"
   check_fixture_metadata "$fixture"
@@ -672,11 +747,13 @@ check_installed_work_start_e2e() {
   make_target_repo "$target"
   run_setup "$clone" "$home_dir" --install-shared >/dev/null
   assert_link "$home_dir/.claude/skills/work-start" "$clone/skills/work-start"
-  grep -q -F -- '"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>' "$home_dir/.claude/skills/work-start/SKILL.md" \
+  node "$clone/scripts/check-work-start-runtime-contract.mjs" --runtime claude --skill "$home_dir/.claude/skills/work-start/SKILL.md" \
     || fail "installed Claude Skill does not reference the public Work-start entry"
-  task='quoted task: preserve "spaces" and create one candidate'
-  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" "$task")"
-  assert_work_start_artifact "$target" "$clone" "$output"
+  task='quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start'
+  invocation_log="$TEMP_ROOT/work-start-e2e-claude/engine-invocations.log"
+  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" "$task" "$invocation_log")"
+  assert_work_start_artifact "$target" "$clone" "$output" "$invocation_log"
+  grep -r -q -F -- "$task" "$target/.oh-my-ai/work-start" || fail "Claude public entry changed the single task argument"
   echo "passed: FX-WS-E2E-001 Claude installed explicit invocation"
 
   fixture="$FIXTURE_ROOT/FX-WS-E2E-002-codex-installed-explicit-invocation"
@@ -687,15 +764,57 @@ check_installed_work_start_e2e() {
   make_target_repo "$target"
   run_setup "$clone" "$home_dir" --install-shared >/dev/null
   assert_link "$home_dir/.agents/skills/work-start" "$clone/skills/work-start"
-  grep -q -F -- '"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>' "$home_dir/.agents/skills/work-start/SKILL.md" \
+  node "$clone/scripts/check-work-start-runtime-contract.mjs" --runtime codex --skill "$home_dir/.agents/skills/work-start/SKILL.md" \
     || fail "installed Codex Skill does not reference the public Work-start entry"
-  task='$work-start quoted task: preserve "spaces" and keep body work-start'
-  output="$(cd "$target" && OH_MY_AI_ENTRY="$home_dir/.local/bin/oh-my-ai" TASK="$task" "$clone/scripts/codex-work-start-entry.sh")"
-  assert_work_start_artifact "$target" "$clone" "$output"
+  task='$work-start quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start'
+  invocation_log="$TEMP_ROOT/work-start-e2e-codex/engine-invocations.log"
+  output="$(cd "$target" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$clone/scripts/codex-work-start-entry.sh" "$task")"
+  assert_work_start_artifact "$target" "$clone" "$output" "$invocation_log"
   if printf '%s\n' "$output" | grep -q -F -- '$work-start quoted'; then
     fail "Codex entry leaked the explicit invocation token into its artifact"
   fi
+  grep -r -q -F -- 'quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start' "$target/.oh-my-ai/work-start" \
+    || fail "Codex entry changed the task body after removing its explicit token"
+
+  set +e
+  (cd "$target" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$clone/scripts/codex-work-start-entry.sh" '$work-start first' second) >/dev/null 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 2 ] || fail "Codex entry accepted multiple task argv"
+  [ "$(engine_invocation_count "$invocation_log")" = "1" ] || fail "Codex multi-argv rejection invoked the Engine"
   echo "passed: FX-WS-E2E-002 Codex installed explicit invocation"
+}
+
+check_work_start_public_entry_parser() {
+  local clone home_dir target invocation_log task output status
+
+  clone="$(clone_fixture_repo work-start-public-entry-parser)"
+  home_dir="$TEMP_ROOT/work-start-public-entry-parser/home"
+  target="$TEMP_ROOT/work-start-public-entry-parser/target repository"
+  invocation_log="$TEMP_ROOT/work-start-public-entry-parser/engine-invocations.log"
+  make_target_repo "$target"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+
+  for case_name in missing-separator unknown-option empty-task multiple-task-arguments; do
+    set +e
+    case "$case_name" in
+      missing-separator) (cd "$target" && OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$home_dir/.local/bin/oh-my-ai" work-start task) >/dev/null 2>&1 ;;
+      unknown-option) (cd "$target" && OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$home_dir/.local/bin/oh-my-ai" work-start --bogus) >/dev/null 2>&1 ;;
+      empty-task) (cd "$target" && OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$home_dir/.local/bin/oh-my-ai" work-start -- "") >/dev/null 2>&1 ;;
+      multiple-task-arguments) (cd "$target" && OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$home_dir/.local/bin/oh-my-ai" work-start -- first second) >/dev/null 2>&1 ;;
+    esac
+    status=$?
+    set -e
+    [ "$status" -eq 2 ] || fail "public entry $case_name exit was $status, expected 2"
+    [ "$(artifact_directory_count "$target/.oh-my-ai/work-start")" = "0" ] || fail "public entry $case_name created an artifact"
+    [ "$(engine_invocation_count "$invocation_log")" = "0" ] || fail "public entry $case_name invoked the Engine"
+  done
+
+  task='single task: preserve "quotes" $ dollar ; semicolon * star 한글 work-start'
+  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" "$task" "$invocation_log")"
+  assert_work_start_artifact "$target" "$clone" "$output" "$invocation_log"
+  grep -r -q -F -- "$task" "$target/.oh-my-ai/work-start" || fail "public entry did not preserve the exact single task argument"
+  echo "passed: Work-start public entry parser and argv preservation"
 }
 
 check_work_start_engine_failure_modes() {
@@ -734,7 +853,7 @@ check_work_start_engine_failure_modes() {
 }
 
 check_work_start_source_relocation() {
-  local fixture clone relocated home_dir target output before status
+  local fixture clone relocated home_dir target output before status invocation_log
 
   fixture="$FIXTURE_ROOT/FX-WS-E2E-005-source-relocation-reinstall"
   check_fixture_metadata "$fixture"
@@ -754,13 +873,14 @@ check_work_start_source_relocation() {
   run_setup "$relocated" "$home_dir" --install-shared >/dev/null
   assert_link "$home_dir/.local/bin/oh-my-ai" "$relocated/scripts/oh-my-ai.mjs"
   [ "$(doctor_strict_status "$relocated" "$home_dir")" = "0" ] || fail "reinstall did not recover relocated source"
-  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" 'relocation recovery')"
-  assert_work_start_artifact "$target" "$relocated" "$output"
+  invocation_log="$TEMP_ROOT/work-start-source-relocation/engine-invocations.log"
+  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" 'relocation recovery' "$invocation_log")"
+  assert_work_start_artifact "$target" "$relocated" "$output" "$invocation_log"
   echo "passed: FX-WS-E2E-005 source relocation/reinstall"
 }
 
 check_work_start_consent_boundary() {
-  local fixture clone home_dir target before after payload
+  local fixture clone home_dir target before after payload output invocation_log
 
   fixture="$FIXTURE_ROOT/FX-WS-E2E-006-consent-boundary"
   check_fixture_metadata "$fixture"
@@ -769,11 +889,15 @@ check_work_start_consent_boundary() {
   target="$TEMP_ROOT/work-start-consent-boundary/target repository"
   make_target_repo "$target"
   run_setup "$clone" "$home_dir" --install-shared >/dev/null
-  before="$(find "$target" -path '*/.oh-my-ai/work-start/*' -type d | wc -l | tr -d ' ')"
+  invocation_log="$TEMP_ROOT/work-start-consent-boundary/engine-invocations.log"
+  before="$(artifact_directory_count "$target/.oh-my-ai/work-start")"
   payload='{"prompt":"구현 전에 관련 코드와 영향 범위를 먼저 모아서 정리해줘."}'
-  (cd "$target" && printf '%s' "$payload" | "$home_dir/.local/bin/oh-my-ai" hook claude UserPromptSubmit) >/dev/null
-  after="$(find "$target" -path '*/.oh-my-ai/work-start/*' -type d | wc -l | tr -d ' ')"
+  output="$(cd "$target" && printf '%s' "$payload" | OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$home_dir/.local/bin/oh-my-ai" hook claude UserPromptSubmit)"
+  after="$(artifact_directory_count "$target/.oh-my-ai/work-start")"
   [ "$before" = "$after" ] || fail "natural-language suggestion crossed the Work-start consent boundary"
+  [ "$(engine_invocation_count "$invocation_log")" = "0" ] || fail "natural-language suggestion invoked the Engine"
+  printf '%s\n' "$output" | grep -q -F -- "Suggested by oh-my-ai: Work-start" \
+    || fail "natural-language prompt did not produce a Work-start suggestion"
   echo "passed: FX-WS-E2E-006 consent boundary"
 }
 
@@ -798,7 +922,9 @@ check_legacy_customization_preservation
 check_runtime_strict_readiness
 check_disabled_runtime_states
 check_core_requirement_matrix
+check_work_start_runtime_contracts
 check_installed_work_start_e2e
+check_work_start_public_entry_parser
 check_work_start_engine_failure_modes
 check_work_start_source_relocation
 check_work_start_consent_boundary

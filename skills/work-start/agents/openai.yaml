@@ -1,7 +1,7 @@
 interface:
   display_name: "Work-start"
   short_description: "Create a reviewed Work-start Candidate before implementation"
-  default_prompt: "Use $work-start <task> to create a Work-start Candidate; pass only <task> to $HOME/.local/bin/oh-my-ai work-start -- <shell-quoted task> from the current repository and stop for Human Review."
+  default_prompt: 'Use $work-start <task> to create a Work-start Candidate; pass only <task> as one argument to $HOME/.local/bin/oh-my-ai work-start -- "<single task argument>" from the current repository and stop for Human Review.'
 
 policy:
   allow_implicit_invocation: false

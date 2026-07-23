@@ -107,14 +107,35 @@ work_start_skill_status() {
 work_start_engine_status() {
   entry_status="$(entrypoint_status "$REPO/scripts/oh-my-ai.mjs" "$LOCAL_BIN/oh-my-ai")"
   engine="$REPO/scripts/work-start.sh"
-  skill="$REPO/skills/work-start/SKILL.md"
   if [ "$entry_status" != "ready" ] || [ ! -f "$engine" ] || [ ! -x "$engine" ]; then
     printf '%s\n' "incomplete"
-  elif ! grep -q -F -- 'command === "work-start"' "$REPO/scripts/oh-my-ai.mjs" \
-    || ! grep -q -F -- '$HOME/.local/bin/oh-my-ai" work-start --' "$skill"; then
+    return 0
+  fi
+
+  # Read-only behavior probe: a managed entry must reject an empty task with
+  # the documented parser status before it can resolve or execute the Engine.
+  set +e
+  "$LOCAL_BIN/oh-my-ai" work-start >/dev/null 2>&1
+  entry_probe_status=$?
+  set -e
+  if [ "$entry_probe_status" -ne 2 ]; then
     printf '%s\n' "incomplete"
   else
     printf '%s\n' "ready"
+  fi
+}
+
+work_start_runtime_contract_status() {
+  runtime="$1"
+  skill_dir="$2"
+  skill="$skill_dir/SKILL.md"
+  if [ ! -f "$skill" ] || ! command -v node >/dev/null 2>&1 \
+    || [ ! -f "$REPO/scripts/check-work-start-runtime-contract.mjs" ]; then
+    printf '%s\n' "incomplete"
+  elif node "$REPO/scripts/check-work-start-runtime-contract.mjs" --runtime "$runtime" --skill "$skill" >/dev/null 2>&1; then
+    printf '%s\n' "ready"
+  else
+    printf '%s\n' "incomplete"
   fi
 }
 
@@ -174,14 +195,16 @@ runtime_status() {
     hook_status="$(runtime_hook_status claude "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json")"
     activation_status="$(runtime_hooks_enabled_status claude "$CLAUDE_DIR/settings.json")"
     skill_status="$(work_start_skill_status "$CLAUDE_DIR/skills/work-start")"
+    skill_contract_status="$(work_start_runtime_contract_status claude "$CLAUDE_DIR/skills/work-start")"
     [ "$activation_status" = "enabled" ] && activation_status="ready" || activation_status="incomplete"
-    combined_status "$cli_status" "$engine_status" "$event_status" "$hook_status" "$skill_status" "$activation_status"
+    combined_status "$cli_status" "$engine_status" "$event_status" "$hook_status" "$skill_status" "$skill_contract_status" "$activation_status"
   else
     hook_status="$(runtime_hook_status codex "$REPO/codex/hooks.json" "$CODEX_DIR/hooks.json")"
     activation_status="$(runtime_hooks_enabled_status codex "$CODEX_DIR/hooks.json")"
     skill_status="$(work_start_skill_status "$AGENT_DIR/skills/work-start")"
+    skill_contract_status="$(work_start_runtime_contract_status codex "$AGENT_DIR/skills/work-start")"
     [ "$activation_status" = "enabled" ] && activation_status="ready" || activation_status="incomplete"
-    combined_status "$cli_status" "$engine_status" "$hook_status" "$skill_status" "$activation_status"
+    combined_status "$cli_status" "$engine_status" "$hook_status" "$skill_status" "$skill_contract_status" "$activation_status"
   fi
 }
 

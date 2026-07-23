@@ -98,7 +98,7 @@ Claude Code: /work-start <task>
 Codex:       $work-start <task>
 ```
 
-설치된 Skill은 공통 Engine 파일을 현재 프로젝트에서 찾지 않는다. 대신 `make install-shared`가 관리하는 `"$HOME/.local/bin/oh-my-ai" work-start -- <task>` Public Entry를 호출한다. Engine은 oh-my-ai source에서 해석하지만 실행 cwd는 현재 작업 Repository로 유지하므로 Artifact는 항상 현재 Repository의 `.oh-my-ai/work-start/`에 생성된다. source Repository를 옮긴 뒤에는 `make install-shared`를 다시 실행해 managed entry를 갱신한다.
+설치된 Skill은 공통 Engine 파일을 현재 프로젝트에서 찾지 않는다. 대신 `make install-shared`가 관리하는 `"$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"` Public Entry를 호출한다. `--`와 단일 Task argv는 필수이며, Entry는 Task를 재조합하지 않는다. Engine은 oh-my-ai source에서 해석하지만 실행 cwd는 현재 작업 Repository로 유지하므로 Artifact는 항상 현재 Repository의 `.oh-my-ai/work-start/`에 생성된다. source Repository를 옮긴 뒤에는 `make install-shared`를 다시 실행해 managed entry를 갱신한다.
 
 ### Natural Suggestion과 실행 동의 차이
 

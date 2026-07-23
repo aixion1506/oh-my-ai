@@ -73,11 +73,28 @@ run_work_start() {
 }
 
 work_start_artifact_count() {
-  if [ ! -d ".oh-my-ai/work-start" ]; then
-    echo 0
-    return 0
-  fi
-  find .oh-my-ai/work-start -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '
+  node -e '
+    const fs = require("fs");
+    const root = process.argv[1];
+    if (!fs.existsSync(root)) process.exit(0);
+    console.log(fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).length);
+  ' ".oh-my-ai/work-start"
+}
+
+work_start_named_artifact_count() {
+  node -e '
+    const fs = require("fs");
+    const [root, name] = process.argv.slice(1);
+    if (!fs.existsSync(root)) process.exit(0);
+    console.log(fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name === name).length);
+  ' ".oh-my-ai/work-start" "$1"
+}
+
+sha256_file() {
+  node -e '
+    const crypto = require("crypto"); const fs = require("fs");
+    process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"));
+  ' "$1"
 }
 
 run_claude_prompt_hook() {
@@ -231,7 +248,7 @@ check_multiline_slug() {
   printf '%s' "$dir_name" | grep -Eq '^[0-9]{8}T[0-9]{6}Z-[a-z0-9]+(-[a-z0-9]+)*$' \
     || fail "artifact directory name does not match expected slug shape: $dir_name"
 
-  [ "$(find ".oh-my-ai/work-start" -mindepth 1 -maxdepth 1 -type d -name "$dir_name" | wc -l | tr -d ' ')" = "1" ] \
+  [ "$(work_start_named_artifact_count "$dir_name")" = "1" ] \
     || fail "expected exactly one artifact directory named $dir_name"
 }
 
@@ -261,10 +278,12 @@ check_codex_runtime_entry_metadata() {
   require_fixed "runtime = codex-cli" "skills/work-start/SKILL.md"
   require_fixed '선두 명시 호출 토큰인 `$work-start` 뒤의 argument만 `TASK`로 전달한다' "skills/work-start/SKILL.md"
   require_fixed 'Task 본문 안의 일반 문자열 `work-start`는 보존한다' "skills/work-start/SKILL.md"
-  require_fixed '"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>' "skills/work-start/SKILL.md"
+  require_fixed '```oh-my-ai-work-start-contract' "skills/work-start/SKILL.md"
+  require_fixed 'runtime = codex' "skills/work-start/SKILL.md"
+  require_fixed 'public_entry = "$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"' "skills/work-start/SKILL.md"
   require_fixed "Codex의 sandbox·approval·filesystem·network permission은 그대로 유지한다" "skills/work-start/SKILL.md"
   require_fixed "allow_implicit_invocation: false" "skills/work-start/agents/openai.yaml"
-  require_fixed 'pass only <task> to $HOME/.local/bin/oh-my-ai work-start -- <shell-quoted task>' "skills/work-start/agents/openai.yaml"
+  require_fixed 'pass only <task> as one argument to $HOME/.local/bin/oh-my-ai work-start -- "<single task argument>"' "skills/work-start/agents/openai.yaml"
 
   [ -L ".agents/skills/work-start" ] || fail "missing repo-local Codex skill symlink: .agents/skills/work-start"
   [ "$(readlink ".agents/skills/work-start")" = "../../skills/work-start" ] \
@@ -424,12 +443,12 @@ check_runtime_entry_synthetic_task_notification() {
   printf '%s\n' "$natural_output" | grep -q -F -- "Suggested by oh-my-ai: Work-start" \
     || fail "real user prompt did not establish suggestion state before synthetic notification"
   [ -f "$state_file" ] || fail "real user prompt did not create suggestion state"
-  before_state_hash="$(sha256sum "$state_file")"
+  before_state_hash="$(sha256_file "$state_file")"
 
   before_count="$(work_start_artifact_count)"
   synthetic_output="$(run_prompt_hook_for_runtime "$runtime" "$task_file")"
   after_count="$(work_start_artifact_count)"
-  after_state_hash="$(sha256sum "$state_file")"
+  after_state_hash="$(sha256_file "$state_file")"
 
   [ "$before_count" = "$after_count" ] || fail "synthetic task notification created a Work-start artifact"
   [ -z "$synthetic_output" ] || fail "synthetic task notification produced routing output"

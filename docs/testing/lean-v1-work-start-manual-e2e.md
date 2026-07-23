@@ -243,7 +243,7 @@ This procedure verifies the P0 Claude Code Runtime Entry without changing the Le
 
 ### Installed Public Engine Boundary
 
-Both explicit Skill entries run `"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>` from the Repository where the session started. The entry resolves `scripts/work-start.sh` from its own installed realpath, but it does not change cwd: the Artifact must be created only at `<current repository>/.oh-my-ai/work-start/...`.
+Both explicit Skill entries run `"$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"` from the Repository where the session started. The `--` separator and exactly one Task argv are required; the entry passes that argv unchanged. The entry resolves `scripts/work-start.sh` from its own installed realpath, but it does not change cwd: the Artifact must be created only at `<current repository>/.oh-my-ai/work-start/...`.
 
 | Runtime | Explicit Skill token | Public Entry input | Required check |
 | --- | --- | --- | --- |
@@ -257,7 +257,7 @@ Both explicit Skill entries run `"$HOME/.local/bin/oh-my-ai" work-start -- <shel
 | 1 | Start a new Claude Code session in the repository | Session loads shared settings and skills | Claude starts in safe mode or without skills unintentionally | Session note |
 | 2 | Open slash command or skills discovery and find `/work-start` | Work-start entry is discoverable | `/work-start` is missing | Screenshot or note |
 | 3 | Enter `/work-start <task>` | Work-start is treated as explicit user entry | Product confirmation is requested again before engine entry | Prompt text |
-| 4 | Allow any Runtime-level Shell permission if prompted | installed `"$HOME/.local/bin/oh-my-ai" work-start -- <task>` runs through normal Runtime approval | Runtime permission is bypassed, the Skill searches for an Engine, or cwd changes to oh-my-ai source | Permission prompt note |
+| 4 | Allow any Runtime-level Shell permission if prompted | installed `"$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"` runs through normal Runtime approval | Runtime permission is bypassed, the Skill searches for an Engine, cwd changes to oh-my-ai source, or the Task is split/reconstructed | Permission prompt note |
 | 5 | Inspect output | Artifact path and generated files are displayed | Output omits artifact path | Output excerpt |
 | 6 | Inspect artifact | `handoff-candidate.md`, `starter-prompt.md`, `context-manifest.yaml`, `sources.md`, `context-gap-report.md` exist | Required artifact missing | Directory listing |
 | 7 | Inspect Human Review section | Direct Handoff, Plan First, Gather Context are visible and unchecked | Next Step is auto-selected | Handoff excerpt |

@@ -7,6 +7,12 @@ cd "$REPO"
 TASK_INPUT="${TASK:-}"
 TASK_FILE_INPUT="${TASK_FILE:-}"
 
+# Fixture-only observability. The public entry passes this environment through,
+# allowing installed E2E tests to prove that the common Engine ran exactly once.
+if [ -n "${OH_MY_AI_WORK_START_INVOCATION_LOG:-}" ]; then
+  printf '%s\n' "$$" >> "$OH_MY_AI_WORK_START_INVOCATION_LOG"
+fi
+
 if [ -z "$TASK_INPUT" ] && [ -z "$TASK_FILE_INPUT" ]; then
   echo "usage: make work-start TASK=\"...\" or make work-start TASK_FILE=task.md" >&2
   exit 2

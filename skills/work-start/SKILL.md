@@ -33,12 +33,18 @@ entry_mode = explicit
 approval = not_required
 ```
 
+```oh-my-ai-work-start-contract
+version = 1
+runtime = claude
+public_entry = "$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"
+```
+
 이 명시 호출은 Work-start 제품 동의가 이미 존재한다는 뜻이다. 단, Claude Code의 File·Shell·Network·Git permission은 그대로 유지한다.
 
 실행 절차:
 
 1. `<task>`를 원래 사용자 Task로 보존한다.
-2. 현재 사용자 작업 Repository의 cwd에서 안정적인 Public Entry인 `"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>`를 한 번 실행한다. 설치된 Skill 경로나 현재 Repository에서 Engine 파일을 찾거나, oh-my-ai source Repository로 cwd를 변경하지 않는다.
+2. 현재 사용자 작업 Repository의 cwd에서 안정적인 Public Entry인 `"$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"`를 한 번 실행한다. 설치된 Skill 경로나 현재 Repository에서 Engine 파일을 찾거나, oh-my-ai source Repository로 cwd를 변경하지 않는다.
 3. 생성된 Artifact 경로와 생성 파일을 사용자에게 표시한다.
 4. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
 5. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
@@ -94,13 +100,19 @@ approval = not_required
 official_explicit_invocation = $work-start <task>
 ```
 
+```oh-my-ai-work-start-contract
+version = 1
+runtime = codex
+public_entry = "$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"
+```
+
 이 명시 호출은 Work-start 제품 동의가 이미 존재한다는 뜻이다. 단, Codex의 sandbox·approval·filesystem·network permission은 그대로 유지한다.
 
 실행 절차:
 
 1. `<task>`를 원래 사용자 Task로 보존한다. 사용자의 전체 입력을 `TASK`로 전달하지 말고, 선두 명시 호출 토큰인 `$work-start` 뒤의 argument만 `TASK`로 전달한다.
 2. Codex Entry Boundary에서 선두 `$work-start` 토큰만 제거한다. Task 본문 안의 일반 문자열 `work-start`는 보존한다.
-3. 현재 사용자 작업 Repository의 cwd에서 안정적인 Public Entry인 `"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>`를 한 번 실행한다. 설치된 Skill 경로나 현재 Repository에서 Engine 파일을 찾거나, oh-my-ai source Repository로 cwd를 변경하지 않는다.
+3. 현재 사용자 작업 Repository의 cwd에서 안정적인 Public Entry인 `"$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"`를 한 번 실행한다. 설치된 Skill 경로나 현재 Repository에서 Engine 파일을 찾거나, oh-my-ai source Repository로 cwd를 변경하지 않는다.
 4. 생성된 Artifact 경로와 생성 파일을 사용자에게 표시한다.
 5. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
 6. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
