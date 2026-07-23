@@ -1,0 +1,3 @@
+id: FX-INS-070
+name: work-start name conflict
+purpose: Preserve a user-owned work-start skill and report a failed core install.

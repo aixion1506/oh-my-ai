@@ -35,8 +35,8 @@ clone_fixture_repo() {
   git clone --quiet --local "$REPO" "$clone"
 
   # Let the runner validate the current working tree before its changes are committed.
-  if ! git diff --quiet HEAD -- setup.sh Makefile; then
-    git diff --binary HEAD -- setup.sh Makefile | git -C "$clone" apply
+  if ! git diff --quiet HEAD --; then
+    git diff --binary HEAD -- | git -C "$clone" apply
   fi
   printf '%s\n' "$clone"
 }
@@ -62,24 +62,81 @@ assert_link() {
   [ -e "$path" ] || fail "dangling symlink after install: $path"
 }
 
-assert_shared_links() {
+assert_resolved_link() {
+  local path="$1"
+  local target="$2"
+  [ -L "$path" ] || fail "expected symlink: $path"
+  node -e 'const fs = require("fs"); process.exit(fs.realpathSync(process.argv[1]) === fs.realpathSync(process.argv[2]) ? 0 : 1)' "$path" "$target" \
+    || fail "unexpected resolved symlink target for $path"
+  [ -e "$path" ] || fail "dangling symlink after install: $path"
+}
+
+assert_managed_hooks_once() {
+  local runtime="$1"
+  local target="$2"
+
+  # Verify final JSON independently of the installer's operation classifier.
+  node -e '
+    const fs = require("fs");
+    const runtime = process.argv[1];
+    const installed = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const normalise = (value) => String(value).trim()
+      .replace(/"\$(?:HOME|\{HOME\})\/\.local\/bin\/oh-my-ai"|\$(?:HOME|\{HOME\})\/\.local\/bin\/oh-my-ai/g, "<oh>")
+      .replace(/"\$(?:HOME|\{HOME\})\/\.local\/bin\/harness-event"|\$(?:HOME|\{HOME\})\/\.local\/bin\/harness-event/g, "<event>")
+      .replace(/\s+/g, " ");
+    const matcher = (group) => group.matcher === undefined ? "none" : (typeof group.matcher === "string" && ["Skill", "^Skill$"].includes(group.matcher.trim()) ? "skill" : "other");
+    const count = (event, requiredMatcher, predicate) => (installed.hooks[event] || []).flatMap((group) => matcher(group) === requiredMatcher ? (group.hooks || []) : []).filter(predicate).length;
+    const wrapper = (event) => (hook) => hook.type === "command" && normalise(hook.command) === `if [ -x <oh> ]; then <oh> hook ${runtime} ${event}; else cat >/dev/null 2>&1 || :; fi`;
+    if (runtime === "claude") {
+      if (count("SessionStart", "none", wrapper("SessionStart")) !== 1) process.exit(1);
+      if (count("UserPromptSubmit", "none", (hook) => wrapper("UserPromptSubmit")(hook) || (hook.type === "command" && /prompt-routing-hook\.mjs/.test(hook.command) && /claude-json/.test(hook.command))) !== 1) process.exit(1);
+      if (count("PostToolUse", "skill", (hook) => hook.type === "command" && /harness-event/.test(hook.command) && /emit\s+skill-start/.test(hook.command) && /--runtime\s+claude/.test(hook.command)) !== 1) process.exit(1);
+    } else if (count("UserPromptSubmit", "none", (hook) => wrapper("UserPromptSubmit")(hook) || (hook.type === "command" && /prompt-routing-hook\.mjs/.test(hook.command) && /--format(?:=|\s+)text/.test(hook.command))) !== 1) {
+      process.exit(1);
+    }
+  ' "$runtime" "$target" || fail "managed Hook operations were not installed exactly once in $target"
+}
+
+assert_shared_install() {
   local clone="$1"
   local home_dir="$2"
 
   assert_link "$home_dir/.claude/CLAUDE.md" "$clone/claude/CLAUDE.md"
-  assert_link "$home_dir/.claude/settings.json" "$clone/claude/settings.json"
-  assert_link "$home_dir/.claude/skills" "$clone/skills"
+  [ -f "$home_dir/.claude/settings.json" ] || fail "missing Claude settings config"
+  [ ! -L "$home_dir/.claude/settings.json" ] || fail "Claude settings must be merged, not linked"
+  [ "$(node "$clone/scripts/merge-runtime-hooks.mjs" --mode check --runtime claude --source "$clone/claude/settings.json" --target "$home_dir/.claude/settings.json")" = "ready" ] \
+    || fail "Claude managed hooks are not ready"
+  assert_managed_hooks_once claude "$home_dir/.claude/settings.json"
+  assert_link "$home_dir/.claude/skills/work-start" "$clone/skills/work-start"
   [ ! -L "$home_dir/.claude/agents" ] || fail "install created a link for a missing Claude agents source"
   assert_link "$home_dir/.codex/AGENTS.md" "$clone/AGENTS.md"
-  assert_link "$home_dir/.codex/hooks.json" "$clone/codex/hooks.json"
-  assert_link "$home_dir/.agents/skills" "$clone/skills"
+  [ -f "$home_dir/.codex/hooks.json" ] || fail "missing Codex hooks config"
+  [ ! -L "$home_dir/.codex/hooks.json" ] || fail "Codex hooks must be merged, not linked"
+  [ "$(node "$clone/scripts/merge-runtime-hooks.mjs" --mode check --runtime codex --source "$clone/codex/hooks.json" --target "$home_dir/.codex/hooks.json")" = "ready" ] \
+    || fail "Codex managed hooks are not ready"
+  assert_managed_hooks_once codex "$home_dir/.codex/hooks.json"
+  assert_link "$home_dir/.agents/skills/work-start" "$clone/skills/work-start"
   assert_link "$home_dir/.local/bin/oh-my-ai" "$clone/scripts/oh-my-ai.mjs"
-  assert_link "$home_dir/.local/bin/harness-event" "$clone/scripts/harness-event.mjs"
+  assert_resolved_link "$home_dir/.local/bin/harness-event" "$clone/scripts/harness-event.mjs"
 }
 
+hash_files() {
+  node -e '
+    const crypto = require("crypto"); const fs = require("fs");
+    const hash = crypto.createHash("sha256");
+    for (const file of process.argv.slice(1)) { hash.update(file); hash.update("\0"); hash.update(fs.readFileSync(file)); hash.update("\0"); }
+    console.log(hash.digest("hex"));
+  ' "$@"
+}
+
+file_hash() { hash_files "$1"; }
+
 link_manifest() {
-  local home_dir="$1"
-  find "$home_dir" -type l -printf '%p -> %l\n' | sort
+  node -e '
+    const fs = require("fs"); const path = require("path"); const root = process.argv[1]; const links = [];
+    function visit(directory) { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { const item = path.join(directory, entry.name); const stat = fs.lstatSync(item); if (stat.isSymbolicLink()) links.push(`${item} -> ${fs.readlinkSync(item)}`); else if (stat.isDirectory()) visit(item); } }
+    if (fs.existsSync(root)) visit(root); console.log(links.sort().join("\n"));
+  ' "$1"
 }
 
 check_fixture_metadata() {
@@ -96,9 +153,9 @@ check_fresh_install() {
   check_fixture_metadata "$fixture"
   clone="$(clone_fixture_repo fresh-install)"
   home_dir="$TEMP_ROOT/fresh-install/home"
-  before="$(sha256sum "$clone/CLAUDE.md" "$clone/claude/CLAUDE.md" "$clone/AGENTS.md" "$clone/MINE.md")"
+  before="$(hash_files "$clone/CLAUDE.md" "$clone/claude/CLAUDE.md" "$clone/AGENTS.md" "$clone/MINE.md")"
   dry_run_output="$(run_setup "$clone" "$home_dir" --install-shared --dry-run)"
-  after="$(sha256sum "$clone/CLAUDE.md" "$clone/claude/CLAUDE.md" "$clone/AGENTS.md" "$clone/MINE.md")"
+  after="$(hash_files "$clone/CLAUDE.md" "$clone/claude/CLAUDE.md" "$clone/AGENTS.md" "$clone/MINE.md")"
 
   [ "$before" = "$after" ] || fail "dry-run changed generated repository instructions"
   [ ! -e "$home_dir/.claude" ] && [ ! -e "$home_dir/.codex" ] && [ ! -e "$home_dir/.agents" ] && [ ! -e "$home_dir/.local" ] \
@@ -106,7 +163,7 @@ check_fresh_install() {
   require_fixed "DRY-RUN: $clone/scripts/render-instructions.sh" "$dry_run_output"
 
   run_setup "$clone" "$home_dir" --install-shared >/dev/null
-  assert_shared_links "$clone" "$home_dir"
+  assert_shared_install "$clone" "$home_dir"
   doctor_output="$(run_setup "$clone" "$home_dir" --doctor --strict)"
   if printf '%s\n' "$doctor_output" | grep -q -E '^dangling:'; then
     fail "healthy fresh install reported a dangling symlink"
@@ -117,19 +174,29 @@ check_fresh_install() {
 
 check_reinstall_idempotency() {
   local fixture="$FIXTURE_ROOT/FX-INS-010-reinstall-idempotency"
-  local clone home_dir before after output
+  local clone home_dir before after config_before config_after output relative_target
 
   check_fixture_metadata "$fixture"
   clone="$(clone_fixture_repo reinstall-idempotency)"
   home_dir="$TEMP_ROOT/reinstall-idempotency/home"
   run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  relative_target="$(node -e 'const path = require("path"); console.log(path.relative(path.dirname(process.argv[1]), process.argv[2]))' "$home_dir/.local/bin/harness-event" "$clone/scripts/harness-event.mjs")"
+  rm -f -- "$home_dir/.local/bin/harness-event"
+  ln -s "$relative_target" "$home_dir/.local/bin/harness-event"
   before="$(link_manifest "$home_dir")"
+  config_before="$(hash_files "$home_dir/.claude/settings.json" "$home_dir/.codex/hooks.json")"
   output="$(run_setup "$clone" "$home_dir" --install-shared)"
   after="$(link_manifest "$home_dir")"
+  config_after="$(hash_files "$home_dir/.claude/settings.json" "$home_dir/.codex/hooks.json")"
 
   [ "$before" = "$after" ] || fail "reinstall changed managed symlinks"
+  [ "$config_before" = "$config_after" ] || fail "reinstall changed merged hook config"
   require_fixed "already managed" "$output"
-  assert_shared_links "$clone" "$home_dir"
+  require_fixed "Claude managed hooks: ready" "$output"
+  require_fixed "Codex managed hooks: ready" "$output"
+  assert_shared_install "$clone" "$home_dir"
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "0" ] \
+    || fail "relative managed entrypoint did not remain strict-ready"
 
   echo "passed: FX-INS-010 reinstall-idempotency"
 }
@@ -166,8 +233,8 @@ check_broken_install() {
 
   default_output="$(run_setup "$clone" "$home_dir" --doctor)"
   require_fixed "dangling: $home_dir/.claude/CLAUDE.md" "$default_output"
-  require_fixed "dangling: $home_dir/.claude/skills" "$default_output"
-  require_fixed "dangling: $home_dir/.agents/skills" "$default_output"
+  require_fixed "Claude: incomplete" "$default_output"
+  require_fixed "Codex: incomplete" "$default_output"
 
   set +e
   strict_output="$(run_setup "$clone" "$home_dir" --doctor --strict 2>&1)"
@@ -218,15 +285,15 @@ check_dangling_link_recovery() {
   [ "$(doctor_strict_status "$clone" "$home_dir")" = "0" ] \
     || fail "case A: strict doctor still fails after following install-shared guidance"
 
-  # --- Case B: source itself removed, so install-shared cannot help.
-  # Use a static managed source: install-shared re-renders generated instruction
-  # files and needs skills/ to build its index, so neither can express "source gone".
-  link_path="$home_dir/.codex/hooks.json"
-  rm -f -- "$clone/codex/hooks.json"
+  # --- Case B: an optional managed source is absent, so install-shared cannot help.
+  # Core runtime readiness remains healthy after the user follows the printed
+  # guidance, which makes this a host pre-existing dangling-link check.
+  link_path="$home_dir/.claude/agents"
+  ln -s "$clone/claude/agents.missing" "$link_path"
 
   output="$(run_setup "$clone" "$home_dir" --doctor)"
   require_fixed "dangling: $link_path" "$output"
-  require_fixed "source $clone/codex/hooks.json is also missing" "$output"
+  require_fixed "source $clone/claude/agents is also missing" "$output"
   require_fixed "to clear it: rm '$link_path'" "$output"
   if printf '%s\n' "$output" | grep -q -E "source exists; run: make install-shared to relink"; then
     fail "case B: doctor recommended install-shared although the source is missing"
@@ -246,6 +313,314 @@ check_dangling_link_recovery() {
   echo "passed: FX-INS-040 dangling-link-recovery"
 }
 
+check_existing_claude_settings_merge() {
+  local fixture="$FIXTURE_ROOT/FX-INS-050-existing-claude-settings"
+  local clone home_dir output
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo existing-claude-settings)"
+  home_dir="$TEMP_ROOT/existing-claude-settings/home"
+  mkdir -p "$home_dir/.claude"
+  node -e '
+    const fs = require("fs");
+    const settings = {
+      theme: "user-theme",
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: "user-session-hook" }] }],
+        UserPromptSubmit: [{ hooks: [{ type: "command", command: "user-prompt-hook" }] }],
+      },
+    };
+    fs.writeFileSync(process.argv[1], `${JSON.stringify(settings, null, 2)}\n`);
+  ' "$home_dir/.claude/settings.json"
+
+  output="$(run_setup "$clone" "$home_dir" --install-shared)"
+  require_fixed "Claude managed hooks: updated" "$output"
+  require_fixed "Claude: configured" "$output"
+  require_fixed '"theme": "user-theme"' "$(cat "$home_dir/.claude/settings.json")"
+  require_fixed "user-session-hook" "$(cat "$home_dir/.claude/settings.json")"
+  require_fixed "user-prompt-hook" "$(cat "$home_dir/.claude/settings.json")"
+  assert_managed_hooks_once claude "$home_dir/.claude/settings.json"
+
+  echo "passed: FX-INS-050 existing-claude-settings"
+}
+
+check_existing_skill_directories() {
+  local fixture="$FIXTURE_ROOT/FX-INS-060-existing-skill-directories"
+  local clone home_dir
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo existing-skill-directories)"
+  home_dir="$TEMP_ROOT/existing-skill-directories/home"
+  mkdir -p "$home_dir/.claude/skills/user-skill" "$home_dir/.agents/skills/user-skill"
+  printf '%s\n' 'user Claude skill' >"$home_dir/.claude/skills/user-skill/SKILL.md"
+  printf '%s\n' 'user Codex skill' >"$home_dir/.agents/skills/user-skill/SKILL.md"
+
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  require_fixed "user Claude skill" "$(cat "$home_dir/.claude/skills/user-skill/SKILL.md")"
+  require_fixed "user Codex skill" "$(cat "$home_dir/.agents/skills/user-skill/SKILL.md")"
+  assert_link "$home_dir/.claude/skills/work-start" "$clone/skills/work-start"
+  assert_link "$home_dir/.agents/skills/work-start" "$clone/skills/work-start"
+
+  echo "passed: FX-INS-060 existing-skill-directories"
+}
+
+check_work_start_conflict() {
+  local fixture="$FIXTURE_ROOT/FX-INS-070-work-start-conflict"
+  local clone home_dir output status
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-conflict)"
+  home_dir="$TEMP_ROOT/work-start-conflict/home"
+  mkdir -p "$home_dir/.claude/skills/work-start"
+  printf '%s\n' 'user-owned work-start skill' >"$home_dir/.claude/skills/work-start/SKILL.md"
+
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "work-start collision install exit code was $status, expected 1"
+  require_fixed "Claude work-start skill exists and does not point to this repository" "$output"
+  require_fixed "Claude: conflict" "$output"
+  require_fixed "user-owned work-start skill" "$(cat "$home_dir/.claude/skills/work-start/SKILL.md")"
+
+  echo "passed: FX-INS-070 work-start-conflict"
+}
+
+check_invalid_existing_json() {
+  local fixture="$FIXTURE_ROOT/FX-INS-080-invalid-existing-json"
+  local clone home_dir output status before after
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo invalid-existing-json)"
+  home_dir="$TEMP_ROOT/invalid-existing-json/home"
+  mkdir -p "$home_dir/.claude"
+  printf '%s\n' '{ invalid JSON' >"$home_dir/.claude/settings.json"
+  before="$(file_hash "$home_dir/.claude/settings.json")"
+
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+  status=$?
+  set -e
+  after="$(file_hash "$home_dir/.claude/settings.json")"
+  [ "$status" -eq 1 ] || fail "invalid JSON install exit code was $status, expected 1"
+  [ "$before" = "$after" ] || fail "invalid existing Claude JSON was changed"
+  require_fixed "hook merge conflict" "$output"
+  require_fixed "Claude: conflict" "$output"
+
+  echo "passed: FX-INS-080 invalid-existing-json"
+}
+
+check_semantic_hook_dedup() {
+  local fixture="$FIXTURE_ROOT/FX-INS-050-existing-claude-settings"
+  local clone home_dir output
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo semantic-hook-dedup)"
+  home_dir="$TEMP_ROOT/semantic-hook-dedup/home"
+  mkdir -p "$home_dir/.claude" "$home_dir/.codex"
+
+  node -e '
+    const fs = require("fs");
+    const claude = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const codex = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const claudePrompt = claude.hooks.UserPromptSubmit[0].hooks[0];
+    claudePrompt.command = `REPO="$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"; node "$REPO/scripts/prompt-routing-hook.mjs" --format claude-json || true`;
+    claude.hooks.UserPromptSubmit[0].hooks.push({ type: "command", command: "echo oh-my-ai is only a user hook" });
+    claude.hooks.PostToolUse[0].matcher = " ^Skill$ ";
+    claude.hooks.SessionStart[0].hooks[0].command = claude.hooks.SessionStart[0].hooks[0].command.replace(/\s+/g, "   ").replace(/"\$HOME\/\.local\/bin\/oh-my-ai"/g, "$HOME/.local/bin/oh-my-ai") + "   ";
+    codex.hooks.UserPromptSubmit[0].hooks[0].command = codex.hooks.UserPromptSubmit[0].hooks[0].command.replace(/; then/g, ";    then").replace(/"\$HOME\/\.local\/bin\/oh-my-ai"/g, "$HOME/.local/bin/oh-my-ai") + " ";
+    fs.writeFileSync(process.argv[3], `${JSON.stringify(claude, null, 2)}\n`);
+    fs.writeFileSync(process.argv[4], `${JSON.stringify(codex, null, 2)}\n`);
+  ' "$clone/claude/settings.json" "$clone/codex/hooks.json" "$home_dir/.claude/settings.json" "$home_dir/.codex/hooks.json"
+
+  output="$(run_setup "$clone" "$home_dir" --install-shared)"
+  require_fixed "Claude managed hooks: updated" "$output"
+  require_fixed "Codex managed hooks: updated" "$output"
+  require_fixed "echo oh-my-ai is only a user hook" "$(cat "$home_dir/.claude/settings.json")"
+  assert_managed_hooks_once claude "$home_dir/.claude/settings.json"
+  assert_managed_hooks_once codex "$home_dir/.codex/hooks.json"
+  [ "$(node "$clone/scripts/merge-runtime-hooks.mjs" --mode check --runtime claude --source "$clone/claude/settings.json" --target "$home_dir/.claude/settings.json")" = "ready" ] \
+    || fail "Claude semantic variants were not canonicalised"
+  [ "$(node "$clone/scripts/merge-runtime-hooks.mjs" --mode check --runtime codex --source "$clone/codex/hooks.json" --target "$home_dir/.codex/hooks.json")" = "ready" ] \
+    || fail "Codex semantic variants were not canonicalised"
+
+  echo "passed: semantic hook dedup variants"
+}
+
+check_legacy_customization_preservation() {
+  local fixture="$FIXTURE_ROOT/FX-INS-050-existing-claude-settings"
+  local clone canonical_home home_dir output status before after scenario
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo legacy-customization-preservation)"
+
+  # The historic official command is accepted and canonicalised to one current
+  # operation. The assertion below is independent of merge-runtime-hooks.mjs.
+  canonical_home="$TEMP_ROOT/legacy-canonical/home"
+  mkdir -p "$canonical_home/.claude"
+  node -e '
+    const fs = require("fs");
+    const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    settings.hooks.UserPromptSubmit[0].hooks[0].command = `REPO="$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"; node "$REPO/scripts/prompt-routing-hook.mjs" --format=claude-json || true`;
+    fs.writeFileSync(process.argv[2], `${JSON.stringify(settings, null, 2)}\n`);
+  ' "$clone/claude/settings.json" "$canonical_home/.claude/settings.json"
+  run_setup "$clone" "$canonical_home" --install-shared >/dev/null
+  assert_managed_hooks_once claude "$canonical_home/.claude/settings.json"
+  [ "$(node "$clone/scripts/merge-runtime-hooks.mjs" --mode check --runtime claude --source "$clone/claude/settings.json" --target "$canonical_home/.claude/settings.json")" = "ready" ] \
+    || fail "official legacy Hook was not canonicalised"
+
+  for scenario in prefix suffix and fallback extra-env; do
+    home_dir="$TEMP_ROOT/legacy-custom-$scenario/home"
+    mkdir -p "$home_dir/.claude"
+    node -e '
+      const fs = require("fs");
+      const scenario = process.argv[3];
+      const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const legacy = `REPO="$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"; node "$REPO/scripts/prompt-routing-hook.mjs" --format=claude-json`;
+      const commands = {
+        prefix: `echo USER_BEFORE; ${legacy}`,
+        suffix: `${legacy}; echo USER_AFTER`,
+        and: `${legacy} && custom-command`,
+        fallback: `${legacy} || fallback-command`,
+        "extra-env": `CUSTOM=value ${legacy}`,
+      };
+      settings.hooks.UserPromptSubmit[0].hooks[0].command = commands[scenario];
+      fs.writeFileSync(process.argv[2], `${JSON.stringify(settings, null, 2)}\n`);
+    ' "$clone/claude/settings.json" "$home_dir/.claude/settings.json" "$scenario"
+    before="$(file_hash "$home_dir/.claude/settings.json")"
+    set +e
+    output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+    status=$?
+    set -e
+    after="$(file_hash "$home_dir/.claude/settings.json")"
+    [ "$status" -eq 1 ] || fail "legacy $scenario install exit code was $status, expected 1"
+    [ "$before" = "$after" ] || fail "legacy $scenario customization was changed"
+    require_fixed "Claude: conflict" "$output"
+    [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "legacy $scenario conflict did not fail strict doctor"
+  done
+
+  # A plain text reference is not a legacy operation and stays alongside the
+  # newly added managed Hook instead of creating a false conflict.
+  home_dir="$TEMP_ROOT/legacy-incidental/home"
+  mkdir -p "$home_dir/.claude"
+  node -e '
+    const fs = require("fs");
+    const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    settings.hooks.UserPromptSubmit[0].hooks[0].command = "echo scripts/prompt-routing-hook.mjs is a user note";
+    fs.writeFileSync(process.argv[2], `${JSON.stringify(settings, null, 2)}\n`);
+  ' "$clone/claude/settings.json" "$home_dir/.claude/settings.json"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  require_fixed "echo scripts/prompt-routing-hook.mjs is a user note" "$(cat "$home_dir/.claude/settings.json")"
+  assert_managed_hooks_once claude "$home_dir/.claude/settings.json"
+
+  echo "passed: legacy customization preservation"
+}
+
+check_disabled_runtime_states() {
+  local fixture="$FIXTURE_ROOT/FX-INS-090-runtime-strict-readiness"
+  local clone home_dir output status claude_before codex_before
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo disabled-runtime-states)"
+  home_dir="$TEMP_ROOT/disabled-runtime-states/home"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+
+  node -e 'const fs = require("fs"); const p = process.argv[1]; const settings = JSON.parse(fs.readFileSync(p, "utf8")); settings.disableAllHooks = true; fs.writeFileSync(p, `${JSON.stringify(settings, null, 2)}\n`);' "$home_dir/.claude/settings.json"
+  claude_before="$(file_hash "$home_dir/.claude/settings.json")"
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "disabled Claude install exit code was $status, expected 1"
+  require_fixed "Claude: incomplete" "$output"
+  require_fixed "disableAllHooks=true" "$output"
+  [ "$claude_before" = "$(file_hash "$home_dir/.claude/settings.json")" ] || fail "disabled Claude settings were changed"
+  claude_before="$(file_hash "$home_dir/.claude/settings.json")"
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "strict doctor accepted disabled Claude hooks"
+  [ "$claude_before" = "$(file_hash "$home_dir/.claude/settings.json")" ] || fail "doctor changed disabled Claude settings"
+
+  node -e 'const fs = require("fs"); const p = process.argv[1]; const settings = JSON.parse(fs.readFileSync(p, "utf8")); settings.disableAllHooks = false; fs.writeFileSync(p, `${JSON.stringify(settings, null, 2)}\n`);' "$home_dir/.claude/settings.json"
+  printf '%s\n' '[features]' 'hooks = false' >"$home_dir/.codex/config.toml"
+  codex_before="$(file_hash "$home_dir/.codex/config.toml")"
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "disabled Codex install exit code was $status, expected 1"
+  require_fixed "Codex: incomplete" "$output"
+  require_fixed "[features] hooks = false" "$output"
+  [ "$codex_before" = "$(file_hash "$home_dir/.codex/config.toml")" ] || fail "disabled Codex config was changed"
+  codex_before="$(file_hash "$home_dir/.codex/config.toml")"
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "strict doctor accepted disabled Codex hooks"
+  [ "$codex_before" = "$(file_hash "$home_dir/.codex/config.toml")" ] || fail "doctor changed disabled Codex config"
+
+  node -e 'const fs = require("fs"); const p = process.argv[1]; const settings = JSON.parse(fs.readFileSync(p, "utf8")); settings.disableAllHooks = true; fs.writeFileSync(p, `${JSON.stringify(settings, null, 2)}\n`);' "$home_dir/.claude/settings.json"
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "both disabled Runtime install exit code was $status, expected 1"
+  require_fixed "Claude: incomplete" "$output"
+  require_fixed "Codex: incomplete" "$output"
+
+  node -e 'const fs = require("fs"); const p = process.argv[1]; const settings = JSON.parse(fs.readFileSync(p, "utf8")); settings.disableAllHooks = false; fs.writeFileSync(p, `${JSON.stringify(settings, null, 2)}\n`);' "$home_dir/.claude/settings.json"
+  printf '%s\n' '[features]' 'hooks = true' >"$home_dir/.codex/config.toml"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "0" ] || fail "strict doctor rejected enabled Runtime hooks"
+
+  echo "passed: disabled Claude and Codex runtime states"
+}
+
+check_core_requirement_matrix() {
+  local fixture="$FIXTURE_ROOT/FX-INS-090-runtime-strict-readiness"
+  local scenario clone home_dir output
+
+  check_fixture_metadata "$fixture"
+  for scenario in missing-cli missing-harness missing-claude-hook missing-codex-hook missing-claude-skill missing-codex-skill; do
+    clone="$(clone_fixture_repo "$scenario")"
+    home_dir="$TEMP_ROOT/$scenario/home"
+    run_setup "$clone" "$home_dir" --install-shared >/dev/null
+    case "$scenario" in
+      missing-cli) rm -f -- "$home_dir/.local/bin/oh-my-ai" ;;
+      missing-harness) rm -f -- "$home_dir/.local/bin/harness-event" ;;
+      missing-claude-hook) node -e 'require("fs").writeFileSync(process.argv[1], "{\"hooks\":{}}\n")' "$home_dir/.claude/settings.json" ;;
+      missing-codex-hook) node -e 'require("fs").writeFileSync(process.argv[1], "{\"hooks\":{}}\n")' "$home_dir/.codex/hooks.json" ;;
+      missing-claude-skill) rm -f -- "$home_dir/.claude/skills/work-start" ;;
+      missing-codex-skill) rm -f -- "$home_dir/.agents/skills/work-start" ;;
+    esac
+    [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "$scenario did not fail strict doctor"
+    output="$(run_setup "$clone" "$home_dir" --doctor)"
+    case "$scenario" in
+      missing-cli) require_fixed "Claude: incomplete" "$output"; require_fixed "Codex: incomplete" "$output" ;;
+      missing-harness|missing-claude-hook|missing-claude-skill) require_fixed "Claude: incomplete" "$output"; require_fixed "Codex: configured" "$output" ;;
+      missing-codex-hook|missing-codex-skill) require_fixed "Claude: configured" "$output"; require_fixed "Codex: incomplete" "$output" ;;
+    esac
+  done
+
+  echo "passed: CLI, entrypoint, Hook, and work-start strict matrix"
+}
+
+check_runtime_strict_readiness() {
+  local fixture="$FIXTURE_ROOT/FX-INS-090-runtime-strict-readiness"
+  local clone home_dir output status
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo runtime-strict-readiness)"
+  home_dir="$TEMP_ROOT/runtime-strict-readiness/home"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "0" ] || fail "strict doctor did not accept a complete install"
+
+  rm -f -- "$home_dir/.agents/skills/work-start"
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --doctor --strict 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "strict doctor exit code was $status, expected 1 for missing Codex work-start"
+  require_fixed "Codex: incomplete" "$output"
+
+  echo "passed: FX-INS-090 runtime-strict-readiness"
+}
+
 require_file "setup.sh"
 require_file "Makefile"
 for fixture in "$FIXTURE_ROOT"/FX-INS-*; do
@@ -258,5 +633,14 @@ check_reinstall_idempotency
 check_healthy_doctor
 check_broken_install
 check_dangling_link_recovery
+check_existing_claude_settings_merge
+check_existing_skill_directories
+check_work_start_conflict
+check_invalid_existing_json
+check_semantic_hook_dedup
+check_legacy_customization_preservation
+check_runtime_strict_readiness
+check_disabled_runtime_states
+check_core_requirement_matrix
 
 echo "all install fixtures passed"

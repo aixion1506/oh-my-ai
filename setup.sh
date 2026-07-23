@@ -11,6 +11,7 @@ PROFILE_NAME="${PROFILE:-}"
 DRY_RUN=0
 STRICT=0
 DOCTOR_FAIL_COUNT=0
+INSTALL_FAILURE=0
 
 usage() {
   cat <<'EOF'
@@ -28,7 +29,9 @@ Profile onboarding flow:
 
 Policy:
   - Existing ~/.claude/skills and ~/.agents/skills are never overwritten.
-  - Existing settings, hooks, agents, and scripts are skipped unless already managed by this repo.
+  - Existing JSON settings are preserved; only recognised oh-my-ai Hook operations are merged.
+  - A disabled Runtime is reported as incomplete and is never enabled automatically.
+  - Codex hook trust is not readable from the CLI; verify it manually with /hooks.
   - Profiles are opt-in. Use profiles/example for templates and profiles/local/<name> for private local profiles.
   - profiles/local/ is gitignored. Never commit real account values or tokens.
 EOF
@@ -62,6 +65,155 @@ same_link() {
   [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]
 }
 
+same_managed_path() {
+  src="$1"
+  dest="$2"
+  command -v node >/dev/null 2>&1 || return 1
+  node -e 'const fs = require("fs"); process.exit(fs.realpathSync(process.argv[1]) === fs.realpathSync(process.argv[2]) ? 0 : 1)' "$src" "$dest" >/dev/null 2>&1
+}
+
+entrypoint_status() {
+  src="$1"
+  dest="$2"
+  if [ ! -f "$src" ] || [ ! -x "$src" ]; then
+    printf '%s\n' "incomplete"
+  elif same_managed_path "$src" "$dest" && [ -x "$dest" ]; then
+    printf '%s\n' "ready"
+  elif [ -e "$dest" ] || [ -L "$dest" ]; then
+    printf '%s\n' "conflict"
+  else
+    printf '%s\n' "incomplete"
+  fi
+}
+
+work_start_skill_status() {
+  src="$REPO/skills/work-start"
+  dest="$1"
+  if [ ! -f "$src/SKILL.md" ]; then
+    printf '%s\n' "incomplete"
+  elif same_managed_path "$src" "$dest"; then
+    printf '%s\n' "ready"
+  elif [ -e "$dest" ] || [ -L "$dest" ]; then
+    printf '%s\n' "conflict"
+  else
+    printf '%s\n' "incomplete"
+  fi
+}
+
+runtime_hook_status() {
+  runtime="$1"
+  source="$2"
+  target="$3"
+  if ! command -v node >/dev/null 2>&1 || [ ! -f "$REPO/scripts/merge-runtime-hooks.mjs" ]; then
+    printf '%s\n' "incomplete"
+    return 0
+  fi
+  if ! status="$(node "$REPO/scripts/merge-runtime-hooks.mjs" --mode check --runtime "$runtime" --source "$source" --target "$target" 2>/dev/null)"; then
+    status="conflict"
+  fi
+  case "$status" in
+    ready|incomplete|conflict) printf '%s\n' "$status" ;;
+    *) printf '%s\n' "conflict" ;;
+  esac
+}
+
+runtime_hooks_enabled_status() {
+  runtime="$1"
+  target="$2"
+  if ! command -v node >/dev/null 2>&1 || [ ! -f "$REPO/scripts/merge-runtime-hooks.mjs" ]; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+  if [ "$runtime" = "codex" ]; then
+    config="$CODEX_DIR/config.toml"
+  else
+    config=""
+  fi
+  if ! status="$(node "$REPO/scripts/merge-runtime-hooks.mjs" --mode enabled --runtime "$runtime" --target "$target" --config "$config" 2>/dev/null)"; then
+    status="unknown"
+  fi
+  case "$status" in
+    enabled|disabled|unknown) printf '%s\n' "$status" ;;
+    *) printf '%s\n' "unknown" ;;
+  esac
+}
+
+combined_status() {
+  has_incomplete=0
+  for status in "$@"; do
+    [ "$status" != "conflict" ] || { printf '%s\n' "conflict"; return 0; }
+    [ "$status" != "ready" ] && has_incomplete=1
+  done
+  [ "$has_incomplete" -eq 0 ] && printf '%s\n' "configured" || printf '%s\n' "incomplete"
+}
+
+runtime_status() {
+  runtime="$1"
+  cli_status="$(entrypoint_status "$REPO/scripts/oh-my-ai.mjs" "$LOCAL_BIN/oh-my-ai")"
+  if [ "$runtime" = "claude" ]; then
+    event_status="$(entrypoint_status "$REPO/scripts/harness-event.mjs" "$LOCAL_BIN/harness-event")"
+    hook_status="$(runtime_hook_status claude "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json")"
+    activation_status="$(runtime_hooks_enabled_status claude "$CLAUDE_DIR/settings.json")"
+    skill_status="$(work_start_skill_status "$CLAUDE_DIR/skills/work-start")"
+    [ "$activation_status" = "enabled" ] && activation_status="ready" || activation_status="incomplete"
+    combined_status "$cli_status" "$event_status" "$hook_status" "$skill_status" "$activation_status"
+  else
+    hook_status="$(runtime_hook_status codex "$REPO/codex/hooks.json" "$CODEX_DIR/hooks.json")"
+    activation_status="$(runtime_hooks_enabled_status codex "$CODEX_DIR/hooks.json")"
+    skill_status="$(work_start_skill_status "$AGENT_DIR/skills/work-start")"
+    [ "$activation_status" = "enabled" ] && activation_status="ready" || activation_status="incomplete"
+    combined_status "$cli_status" "$hook_status" "$skill_status" "$activation_status"
+  fi
+}
+
+install_runtime_hooks() {
+  runtime="$1"
+  source="$2"
+  target="$3"
+  label="$4"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    say "DRY-RUN: node $REPO/scripts/merge-runtime-hooks.mjs --mode merge --runtime $runtime --source $source --target $target"
+    return 0
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    say "conflict: $label requires node to safely merge managed hooks"
+    INSTALL_FAILURE=1
+    return 0
+  fi
+  if result="$(node "$REPO/scripts/merge-runtime-hooks.mjs" --mode merge --runtime "$runtime" --source "$source" --target "$target" 2>&1)"; then
+    say "$label: $result"
+  else
+    say "conflict: $label was not changed"
+    say "      $result"
+    INSTALL_FAILURE=1
+  fi
+}
+
+install_work_start_skill() {
+  runtime="$1"
+  dest="$2"
+  source="$REPO/skills/work-start"
+  label="$runtime work-start skill"
+  if [ ! -f "$source/SKILL.md" ]; then
+    say "incomplete: $label source missing ($source)"
+    INSTALL_FAILURE=1
+    return 0
+  fi
+  if same_managed_path "$source" "$dest"; then
+    say "ok: $label already managed"
+    return 0
+  fi
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    say "conflict: $label exists and does not point to this repository ($dest)"
+    say "      preserving the existing skill; choose a different name or replace it intentionally"
+    INSTALL_FAILURE=1
+    return 0
+  fi
+  run mkdir -p "$(dirname "$dest")"
+  run ln -s "$source" "$dest"
+  say "linked: $label -> $source"
+}
+
 path_state() {
   path="$1"
   target="${2:-}"
@@ -93,21 +245,47 @@ path_state() {
   fi
 }
 
-prompt_hook_state() {
-  path="$1"
-  runtime="$2"
-  if [ ! -f "$path" ]; then
-    say "missing: $runtime UserPromptSubmit hook config ($path)"
-    return 0
-  fi
-  if grep -Fq '$HOME/.local/bin/oh-my-ai' "$path" && grep -Fq "hook $runtime UserPromptSubmit" "$path"; then
-    say "ok: $runtime UserPromptSubmit hook uses oh-my-ai entrypoint"
-  elif grep -Fq "prompt-routing-hook.mjs" "$path"; then
-    say "warn: $runtime UserPromptSubmit hook still calls prompt-routing-hook.mjs directly"
-    say "      run make install-shared if this file is managed, or merge the oh-my-ai command manually"
-  else
-    say "warn: $runtime UserPromptSubmit hook entrypoint not found in $path"
-  fi
+report_runtime_readiness() {
+  runtime="$1"
+  status="$(runtime_status "$runtime")"
+  case "$runtime" in
+    claude) runtime_label="Claude" ;;
+    codex) runtime_label="Codex" ;;
+    *) runtime_label="$runtime" ;;
+  esac
+  case "$status" in
+    configured)
+      say "$runtime_label: configured"
+      if [ "$runtime" = "codex" ]; then
+        say "      trust: unverified — review the installed hook in Codex /hooks; oh-my-ai does not auto-approve trust"
+      fi
+      ;;
+    incomplete)
+      say "$runtime_label: incomplete"
+      activation_status="$(runtime_hooks_enabled_status "$runtime" "$([ "$runtime" = "claude" ] && printf '%s' "$CLAUDE_DIR/settings.json" || printf '%s' "$CODEX_DIR/hooks.json")")"
+      case "$activation_status" in
+        disabled)
+          if [ "$runtime" = "claude" ]; then
+            say "      hooks are disabled by $CLAUDE_DIR/settings.json (disableAllHooks=true); set it to false or remove it, then retry"
+          else
+            say "      hooks are disabled by $CODEX_DIR/config.toml ([features] hooks = false); set it to true or remove it, then retry"
+          fi
+          ;;
+        unknown)
+          say "      hook activation could not be verified from the Runtime configuration"
+          ;;
+        *)
+          say "      required oh-my-ai entrypoint, managed hooks, or work-start skill is missing"
+          ;;
+      esac
+      DOCTOR_FAIL_COUNT=$((DOCTOR_FAIL_COUNT + 1))
+      ;;
+    conflict)
+      say "$runtime_label: conflict"
+      say "      an existing config or work-start path was preserved because it is not managed by this repository"
+      DOCTOR_FAIL_COUNT=$((DOCTOR_FAIL_COUNT + 1))
+      ;;
+  esac
 }
 
 show_profile_skills() {
@@ -209,28 +387,23 @@ install_git_hook() {
 doctor() {
   say "=== oh-my-ai doctor (read-only) ==="
   path_state "$CLAUDE_DIR/CLAUDE.md" "$REPO/claude/CLAUDE.md"
-  path_state "$CLAUDE_DIR/settings.json" "$REPO/claude/settings.json"
   path_state "$CLAUDE_DIR/skills" "$REPO/skills"
   path_state "$CLAUDE_DIR/agents" "$REPO/claude/agents"
   path_state "$CODEX_DIR/AGENTS.md" "$REPO/AGENTS.md"
-  path_state "$CODEX_DIR/hooks.json" "$REPO/codex/hooks.json"
   path_state "$AGENT_DIR/skills" "$REPO/skills"
   path_state "$LOCAL_BIN/oh-my-ai" "$REPO/scripts/oh-my-ai.mjs"
   path_state "$LOCAL_BIN/harness-event" "$REPO/scripts/harness-event.mjs"
-  if [ -x "$LOCAL_BIN/oh-my-ai" ]; then
-    say "ok: oh-my-ai CLI executable"
-  else
-    say "warn: oh-my-ai CLI missing or not executable; UserPromptSubmit hooks may fail"
-  fi
-  prompt_hook_state "$CLAUDE_DIR/settings.json" "claude"
-  prompt_hook_state "$CODEX_DIR/hooks.json" "codex"
+  say ""
+  say "=== Runtime readiness ==="
+  report_runtime_readiness claude
+  report_runtime_readiness codex
   hook_path="$(git_hook_path 2>/dev/null || true)"
   if [ -n "$hook_path" ]; then
     hook_dir="$(dirname "$hook_path")"
     path_state "$hook_path" "$(git_hook_relative_target "$hook_dir")"
   fi
   say ""
-  say "If a path says exists-local or exists-symlink, install-shared will skip it."
+  say "Core hooks are merged additively; work-start is installed as an individual skill path. Codex trust remains a manual /hooks check."
   say ""
   if [ -n "${HARNESS_PROFILE:-}" ]; then
     profile_local="$REPO/profiles/local/$HARNESS_PROFILE"
@@ -260,17 +433,42 @@ install_shared() {
   run mkdir -p "$CLAUDE_DIR" "$CODEX_DIR" "$AGENT_DIR" "$LOCAL_BIN"
 
   safe_link "$REPO/claude/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" "Claude instruction"
-  safe_link "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json" "Claude shared settings"
   safe_link "$REPO/AGENTS.md" "$CODEX_DIR/AGENTS.md" "Codex instruction"
-  safe_link "$REPO/codex/hooks.json" "$CODEX_DIR/hooks.json" "Codex shared hooks"
   safe_link "$REPO/scripts/oh-my-ai.mjs" "$LOCAL_BIN/oh-my-ai" "oh-my-ai"
   safe_link "$REPO/scripts/harness-event.mjs" "$LOCAL_BIN/harness-event" "harness-event"
-  safe_link "$REPO/skills" "$CLAUDE_DIR/skills" "Claude shared skills"
-  safe_link "$REPO/skills" "$AGENT_DIR/skills" "Codex shared skills"
+  install_runtime_hooks claude "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json" "Claude managed hooks"
+  install_runtime_hooks codex "$REPO/codex/hooks.json" "$CODEX_DIR/hooks.json" "Codex managed hooks"
+  install_work_start_skill Claude "$CLAUDE_DIR/skills/work-start"
+  install_work_start_skill Codex "$AGENT_DIR/skills/work-start"
   safe_link "$REPO/claude/agents" "$CLAUDE_DIR/agents" "Claude shared agents"
   install_git_hook
 
-  say "=== done: existing user files were skipped, not overwritten ==="
+  if [ "$DRY_RUN" -eq 1 ]; then
+    say "Claude: dry-run"
+    say "Codex: dry-run"
+    return 0
+  fi
+
+  say "=== Runtime installation summary ==="
+  claude_status="$(runtime_status claude)"
+  codex_status="$(runtime_status codex)"
+  say "Claude: $claude_status"
+  say "Codex: $codex_status"
+  if [ "$claude_status" = "incomplete" ] && [ "$(runtime_hooks_enabled_status claude "$CLAUDE_DIR/settings.json")" = "disabled" ]; then
+    say "      Claude hooks are disabled by $CLAUDE_DIR/settings.json (disableAllHooks=true); preserving the setting"
+  fi
+  if [ "$codex_status" = "incomplete" ] && [ "$(runtime_hooks_enabled_status codex "$CODEX_DIR/hooks.json")" = "disabled" ]; then
+    say "      Codex hooks are disabled by $CODEX_DIR/config.toml ([features] hooks = false); preserving the setting"
+  fi
+  if [ "$claude_status" != "configured" ] || [ "$codex_status" != "configured" ]; then
+    INSTALL_FAILURE=1
+  fi
+  if [ "$INSTALL_FAILURE" -ne 0 ]; then
+    say "=== incomplete: existing user files were preserved; no manual merge was applied automatically ==="
+    return 1
+  fi
+  say "=== done: Runtime hook definitions are configured and work-start was installed without replacing existing directories ==="
+  say "Codex trust: unverified — review the installed hook in Codex /hooks before relying on execution."
 }
 
 init_profile() {

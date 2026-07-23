@@ -249,10 +249,12 @@ recommend, or run any next step automatically.
 
 ```bash
 make doctor            # 읽기 전용. 아무것도 바꾸지 않음
-make install-shared    # 기존 skills/settings/hooks가 있으면 skip. non-destructive
+make install-shared    # 관리 Hook 병합 + work-start 개별 설치. non-destructive
 ```
 
-`make doctor`가 `exists-local`/`exists-symlink`로 표시하는 경로는 `install-shared`가 건드리지 않는다.
+기존 JSON에는 Runtime·이벤트·matcher 의미·oh-my-ai operation이 같은 Hook만 중복 없이 병합한다. 공백, 안전한 double-quote 차이, 이전 direct entrypoint는 같은 관리 operation으로 정리하지만, 단순히 `oh-my-ai`라는 문자열만 포함한 사용자 Hook은 보존한다. 기존 Skill 디렉터리는 보존하고 `work-start`만 개별 설치한다. 같은 이름의 사용자 Skill 또는 손상 JSON은 보존하며 설치는 `conflict`/`incomplete`로 종료된다.
+
+정상 설치의 Runtime 상태는 `configured`다. `disableAllHooks: true`(Claude) 또는 `~/.codex/config.toml`의 `[features] hooks = false`(Codex)는 정의된 Hook을 실행하지 않으므로 `incomplete`와 non-zero로 처리하며, 설치기는 해당 사용자 설정을 자동 변경하지 않는다. Codex는 CLI에서 Hook trust를 신뢰성 있게 읽을 수 없어 `trust: unverified`로 표시한다. 설치 후 Codex `/hooks`에서 Hook을 직접 검토·승인해야 한다.
 
 ### Doctor / Doctor Strict
 
@@ -261,7 +263,7 @@ make doctor          # 읽기 전용 점검, 항상 exit 0
 make doctor-strict   # 위와 동일한 점검을 하되, 문제 발견 시 exit 0이 아님
 ```
 
-`doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
+`doctor-strict`는 CLI, Runtime별 필수 Hook, `work-start`, `harness-event`, 그리고 Hook 활성화 상태를 모두 확인한다. Codex trust 미확인만으로는 strict를 실패시키지 않지만 `/hooks`의 수동 검토는 별도로 필요하다. `doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
 
 ### Release Notes
 
@@ -394,7 +396,7 @@ make install
 make doctor
 ```
 
-공유 core 설치는 opt-in이고 non-destructive다. 기존 `~/.claude/skills`, `~/.agents/skills`, settings, hooks, agents가 있으면 자동으로 덮어쓰지 않고 skip한다. 없는 경로 또는 이미 oh-my-ai가 관리 중인 symlink만 연결한다.
+공유 core 설치는 opt-in이고 non-destructive다. 기존 settings/hooks는 유효 JSON일 때 oh-my-ai 관리 Hook만 additive merge하고, 기존 `~/.claude/skills`·`~/.agents/skills`는 대체하지 않으며 `work-start`만 개별 연결한다. 같은 이름의 사용자 Skill과 손상 JSON은 자동으로 바꾸지 않고 `conflict`로 보고한다.
 
 ```bash
 make install-shared
@@ -430,7 +432,10 @@ make update   # git pull + non-destructive shared install
 
 ## 설치 정책
 
-- shared 설치는 non-destructive다. 기존 스킬·설정·스크립트를 덮어쓰지 않고 `skip`한다.
+- shared 설치는 non-destructive다. 기존 설정에는 관리 Hook만 additive merge하고, 기존 Skill 디렉터리는 보존한 채 `work-start`만 개별 연결한다.
+- Hook 병합은 유효 JSON을 임시 파일에 완성한 뒤 atomic replace한다. 손상 JSON 또는 충돌 경로는 원본을 보존하고 성공으로 처리하지 않는다.
+- 설치와 fixture는 Node 표준 라이브러리만 사용해 macOS와 Linux에서 같은 파일·symlink·byte hash 검사를 수행한다.
+- Codex trust는 자동 검증하거나 우회하지 않는다. `configured` 뒤에도 Codex `/hooks`에서 직접 trust 상태를 확인한다.
 - 런타임 훅은 설정 파일 위치를 레포 위치로 추측하지 않고, `~/.local/bin/oh-my-ai` 진입점을 호출한다.
 - `make doctor`는 현재 링크/로컬 파일 상태를 읽기 전용으로 보여준다.
 - 개인 profile은 opt-in이다. 실제 profile/private script는 `profiles/local/<name>/`에 두고 커밋하지 않는다.
@@ -441,7 +446,7 @@ make update   # git pull + non-destructive shared install
 
 `skills/*`는 이 shared repo에 커밋해도 되는 공유/custom skill 원본으로 간주한다. 개인 장비·회사 계정·비공개 워크플로에 묶인 local skill은 shared repo에 넣지 않고 `~/.claude/skills`, `~/.agents/skills`, 별도 private repo, 또는 private plugin으로 관리한다.
 
-기존 `~/.claude/skills`와 `~/.agents/skills`는 shared skills와 자동 병합하거나 대체하지 않는다. `make doctor`는 충돌 여부와 현재 링크/로컬 파일 상태만 보여주는 읽기 전용 점검이며, 백업·비교·병합·삭제·symlink 전환은 사용자가 명시적으로 선택한다.
+기존 `~/.claude/skills`와 `~/.agents/skills`는 디렉터리 단위로 대체하지 않는다. `make install-shared`는 `work-start`만 개별 연결하고, 같은 이름의 local Skill은 보존한 채 conflict를 보고한다. `make doctor`는 현재 runtime readiness와 충돌을 읽기 전용으로 보여준다.
 
 기존 local skills와 shared skills를 동시에 쓰고 싶다면 자동 병합에 의존하지 말고 다음 중 하나를 수동으로 고른다.
 
@@ -474,7 +479,7 @@ VS Code Settings (JSON)에 한 번만 추가:
 "dotfiles.installCommand": "setup.sh"
 ```
 
-이후 새 devcontainer 뜰 때마다 VS Code가 자동으로 레포 clone + `setup.sh` 실행. 기본 `setup.sh`는 non-destructive shared install이라 기존 `~/.claude/skills`, `~/.agents/skills`, settings, hooks가 있으면 skip하고 안내만 한다.
+이후 새 devcontainer 뜰 때마다 VS Code가 자동으로 레포 clone + `setup.sh` 실행. 기본 `setup.sh`는 non-destructive shared install로 관리 Hook만 additive merge하고 `work-start`만 개별 설치한다. 기존 다른 settings, hooks, skills는 보존한다.
 
 ### devcontainer (심링크 방식)
 
@@ -498,4 +503,4 @@ VS Code Settings (JSON)에 한 번만 추가:
 
 커스텀 스킬은 `SKILL.md` frontmatter에 `source`, `summary`, 필요시 `route`를 한 번만 작성한다. `make instructions`가 라우팅 표와 `MINE.md`를 생성한다.
 
-기존 `~/.claude/skills`나 `~/.agents/skills`가 있으면 자동 병합하지 않는다. shared skills를 쓰려면 `make doctor` 결과를 보고 직접 백업·병합·symlink 여부를 결정한다. 커밋·푸시 전 현재 `remote`, `branch`, `author`, GitHub 인증 계정을 확인한다. 특정 계정 전환 스크립트나 push guard가 필요하면 `profiles/local/` 아래 개인 profile 또는 레포 밖 private script로 분리해서 운영한다.
+기존 `~/.claude/skills`나 `~/.agents/skills`가 있어도 core `work-start`는 개별 설치한다. 그 밖의 shared skill은 자동 병합하지 않으므로, 필요하면 `make doctor` 결과를 보고 직접 연결 방식을 결정한다. 커밋·푸시 전 현재 `remote`, `branch`, `author`, GitHub 인증 계정을 확인한다. 특정 계정 전환 스크립트나 push guard가 필요하면 `profiles/local/` 아래 개인 profile 또는 레포 밖 private script로 분리해서 운영한다.

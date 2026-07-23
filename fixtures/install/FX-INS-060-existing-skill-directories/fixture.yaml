@@ -1,0 +1,3 @@
+id: FX-INS-060
+name: existing skill directories
+purpose: Preserve unrelated Claude and Codex skills while linking only work-start.
