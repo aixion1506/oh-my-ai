@@ -5,6 +5,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { matchSkillCandidatesWithStatus } from "./lib/routing-status.mjs";
+import {
+  hasRecentWorkStartExecution,
+  rememberExplicitWorkStartInvocation,
+  workStartSuggestionStatePath,
+} from "./lib/work-start-execution-state.mjs";
 
 const args = new Set(process.argv.slice(2));
 const format = args.has("--format=routing-json")
@@ -19,7 +24,6 @@ const format = args.has("--format=routing-json")
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const automationCandidatesPath = path.join(repoRoot, ".oh-my-ai", "state", "automation-candidates.log");
-const workStartSuggestionStatePath = path.join(repoRoot, ".oh-my-ai", "state", "work-start-suggestions.json");
 const SKILL_CANDIDATE_LIMIT = 2;
 
 let input = "";
@@ -34,7 +38,8 @@ process.stdin.on("end", () => {
     process.exit(0);
   }
   const runtime = format === "claude-json" ? "claude" : format === "codex-json" ? "codex" : "text";
-  const payload = buildPromptRoutingPayload(prompt, { runtime });
+  const sessionId = String(event.session_id || event.sessionId || "");
+  const payload = buildPromptRoutingPayload(prompt, { runtime, sessionId });
 
   if (format === "routing-json") {
     process.stdout.write(`${JSON.stringify(payload.routing, null, 2)}\n`);
@@ -95,6 +100,27 @@ function isSyntheticPromptEvent(event, prompt) {
 
 function buildPromptRoutingPayload(prompt, options = {}) {
   const normalized = prompt.toLowerCase();
+  const runtime = options.runtime;
+  const sessionId = options.sessionId;
+  const explicitWorkStart = hasExplicitWorkStartInvocation(prompt, runtime);
+  if (explicitWorkStart) {
+    rememberExplicitWorkStartInvocation(
+      process.cwd(),
+      sessionId,
+      workStartTaskFromExplicitInvocation(prompt, runtime),
+    );
+  }
+  const completedWorkStart = hasRecentWorkStartExecution(process.cwd(), sessionId, prompt);
+  const routing = matchSkillCandidatesWithStatus(normalized, { limit: SKILL_CANDIDATE_LIMIT });
+
+  // Claude can remove the slash-command token before a later UserPromptSubmit
+  // event. A target-repository, session-scoped execution marker distinguishes
+  // that event from a new natural-language request without examining
+  // model-generated text.
+  if (explicitWorkStart || completedWorkStart) {
+    return { context: "", systemMessage: "", routing: renderRoutingJson(routing) };
+  }
+
   const notes = [];
   let workStartSuggestion = null;
 
@@ -118,8 +144,7 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   }
 
   if (
-    (options.runtime === "claude" || options.runtime === "codex")
-    && !hasExplicitWorkStartInvocation(prompt, options.runtime)
+    (runtime === "claude" || runtime === "codex")
     && hasWorkStartIntentSignal(prompt, normalized)
   ) {
     workStartSuggestion = buildWorkStartSuggestion(prompt, options.runtime);
@@ -129,22 +154,22 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   }
 
   const excludeSkillNames = legacyHandoffNudged ? ["handoff-prompt"] : [];
-  const routing = matchSkillCandidatesWithStatus(normalized, {
+  const routedCandidates = matchSkillCandidatesWithStatus(normalized, {
     excludeSkillNames,
     limit: SKILL_CANDIDATE_LIMIT,
   });
-  if (routing.status === "unavailable") {
+  if (routedCandidates.status === "unavailable") {
     notes.push(
-      `- Skill routing unavailable: routing_status=unavailable; routing_error_code=${routing.errorCode}; skill_candidates=[]. ${routing.warnings.join(" ")}`,
+      `- Skill routing unavailable: routing_status=unavailable; routing_error_code=${routedCandidates.errorCode}; skill_candidates=[]. ${routedCandidates.warnings.join(" ")}`,
     );
   } else {
-    for (const warning of routing.warnings) {
+    for (const warning of routedCandidates.warnings) {
       notes.push(`- Skill routing warning: ${warning}`);
     }
   }
 
-  if (routing.candidates.length > 0) {
-    const rendered = routing.candidates
+  if (routedCandidates.candidates.length > 0) {
+    const rendered = routedCandidates.candidates
       .map(candidate => `\`${candidate.name}\` (matched: ${candidate.matched.join(", ")})`)
       .join(", ");
     notes.push(
@@ -153,7 +178,7 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   }
 
   if (notes.length === 0 && !workStartSuggestion) {
-    return { context: "", systemMessage: "", routing: renderRoutingJson(routing) };
+    return { context: "", systemMessage: "", routing: renderRoutingJson(routedCandidates) };
   }
 
   const context = notes.length === 0 ? "" : [
@@ -165,7 +190,7 @@ function buildPromptRoutingPayload(prompt, options = {}) {
   return {
     context,
     systemMessage: workStartSuggestion ? workStartSuggestion.systemMessage : "",
-    routing: renderRoutingJson(routing),
+    routing: renderRoutingJson(routedCandidates),
   };
 }
 
@@ -187,11 +212,12 @@ function buildWorkStartSuggestion(prompt, runtime) {
 
   const promptHash = crypto.createHash("sha256").update(normalizedPrompt).digest("hex");
   const promptKeys = workStartSuggestionKeys(runtime, promptHash);
-  if (hasSuggestedWorkStart(promptKeys)) {
+  const statePath = workStartSuggestionStatePath(process.cwd());
+  if (hasSuggestedWorkStart(statePath, promptKeys)) {
     return "";
   }
 
-  rememberSuggestedWorkStart(promptKeys[0]);
+  rememberSuggestedWorkStart(statePath, promptKeys[0]);
   const command = runtime === "codex"
     ? `$work-start ${normalizedPrompt}`
     : `/work-start ${normalizedPrompt}`;
@@ -259,9 +285,10 @@ function appendAutomationCandidate(prompt) {
   }
 }
 
-function hasSuggestedWorkStart(promptHash) {
+function hasSuggestedWorkStart(statePath, promptHash) {
+  if (!statePath) return false;
   try {
-    const parsed = JSON.parse(fs.readFileSync(workStartSuggestionStatePath, "utf8"));
+    const parsed = JSON.parse(fs.readFileSync(statePath, "utf8"));
     return Array.isArray(parsed.suggested_prompt_hashes)
       && [].concat(promptHash).some(hash => parsed.suggested_prompt_hashes.includes(hash));
   } catch {
@@ -269,18 +296,19 @@ function hasSuggestedWorkStart(promptHash) {
   }
 }
 
-function rememberSuggestedWorkStart(promptHash) {
+function rememberSuggestedWorkStart(statePath, promptHash) {
+  if (!statePath) return;
   try {
     let hashes = [];
     try {
-      const parsed = JSON.parse(fs.readFileSync(workStartSuggestionStatePath, "utf8"));
+      const parsed = JSON.parse(fs.readFileSync(statePath, "utf8"));
       if (Array.isArray(parsed.suggested_prompt_hashes)) hashes = parsed.suggested_prompt_hashes;
     } catch {
       hashes = [];
     }
     hashes = [promptHash, ...hashes.filter(hash => hash !== promptHash)].slice(0, 100);
-    fs.mkdirSync(path.dirname(workStartSuggestionStatePath), { recursive: true });
-    fs.writeFileSync(workStartSuggestionStatePath, JSON.stringify({
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(statePath, JSON.stringify({
       updated_at: new Date().toISOString(),
       suggested_prompt_hashes: hashes,
     }, null, 2) + "\n", "utf8");
@@ -308,6 +336,13 @@ function hasExplicitWorkStartInvocation(prompt, runtime) {
     return /^\$work-start(?:\s|$)/.test(trimmed);
   }
   return false;
+}
+
+function workStartTaskFromExplicitInvocation(prompt, runtime) {
+  const trimmed = prompt.trim();
+  if (runtime === "claude") return trimmed.replace(/^\/work-start(?:\s+|$)/, "");
+  if (runtime === "codex") return trimmed.replace(/^\$work-start(?:\s+|$)/, "");
+  return trimmed;
 }
 
 function hasToilSignal(prompt, normalized) {

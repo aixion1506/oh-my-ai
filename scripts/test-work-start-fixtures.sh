@@ -260,6 +260,8 @@ check_runtime_entry_metadata() {
   require_fixed "entry_mode = explicit" "skills/work-start/SKILL.md"
   require_fixed "approval = not_required" "skills/work-start/SKILL.md"
   require_fixed "자연어 Intent는 이 스킬의 실행 트리거가 아니다" "skills/work-start/SKILL.md"
+  require_fixed "Runtime Terminal Boundary (우선 적용)" "skills/work-start/SKILL.md"
+  require_fixed "Artifact를 자동 Read하지 않고" "skills/work-start/SKILL.md"
   require_fixed "stop the current response" "skills/work-start/SKILL.md"
   if [ -f "$HOME/.claude/skills/work-start/SKILL.md" ]; then
     require_fixed "disable-model-invocation: true" "$HOME/.claude/skills/work-start/SKILL.md"
@@ -307,6 +309,8 @@ check_continuation_skill_contract() {
   require_fixed "Direct Handoff를 별도로 명시적으로 선택" "$skill"
   require_fixed "새 Worker Session에 승인된 Candidate 또는 Handoff 내용을 수동으로 전달하세요" "$skill"
   require_fixed "이 안내 후 Main Session은 구현을 시작하지 않고 정지한다" "$skill"
+  require_fixed "다음 사용자 메시지" "$skill"
+  require_fixed "기존 Artifact만 Read하며 Public Entry·Engine을 다시 실행하거나 새 Artifact를 생성하지 않는다" "$skill"
 
   require_fixed "Ready for Handoff 상태" "$skill"
 
