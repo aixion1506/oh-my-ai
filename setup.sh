@@ -79,6 +79,8 @@ entrypoint_status() {
     printf '%s\n' "incomplete"
   elif same_managed_path "$src" "$dest" && [ -x "$dest" ]; then
     printf '%s\n' "ready"
+  elif [ -L "$dest" ] && [ ! -e "$dest" ]; then
+    printf '%s\n' "incomplete"
   elif [ -e "$dest" ] || [ -L "$dest" ]; then
     printf '%s\n' "conflict"
   else
@@ -93,8 +95,45 @@ work_start_skill_status() {
     printf '%s\n' "incomplete"
   elif same_managed_path "$src" "$dest"; then
     printf '%s\n' "ready"
+  elif [ -L "$dest" ] && [ ! -e "$dest" ]; then
+    printf '%s\n' "incomplete"
   elif [ -e "$dest" ] || [ -L "$dest" ]; then
     printf '%s\n' "conflict"
+  else
+    printf '%s\n' "incomplete"
+  fi
+}
+
+work_start_engine_status() {
+  entry_status="$(entrypoint_status "$REPO/scripts/oh-my-ai.mjs" "$LOCAL_BIN/oh-my-ai")"
+  engine="$REPO/scripts/work-start.sh"
+  if [ "$entry_status" != "ready" ] || [ ! -f "$engine" ] || [ ! -x "$engine" ]; then
+    printf '%s\n' "incomplete"
+    return 0
+  fi
+
+  # Read-only behavior probe: a managed entry must reject an empty task with
+  # the documented parser status before it can resolve or execute the Engine.
+  set +e
+  "$LOCAL_BIN/oh-my-ai" work-start >/dev/null 2>&1
+  entry_probe_status=$?
+  set -e
+  if [ "$entry_probe_status" -ne 2 ]; then
+    printf '%s\n' "incomplete"
+  else
+    printf '%s\n' "ready"
+  fi
+}
+
+work_start_runtime_contract_status() {
+  runtime="$1"
+  skill_dir="$2"
+  skill="$skill_dir/SKILL.md"
+  if [ ! -f "$skill" ] || ! command -v node >/dev/null 2>&1 \
+    || [ ! -f "$REPO/scripts/check-work-start-runtime-contract.mjs" ]; then
+    printf '%s\n' "incomplete"
+  elif node "$REPO/scripts/check-work-start-runtime-contract.mjs" --runtime "$runtime" --skill "$skill" >/dev/null 2>&1; then
+    printf '%s\n' "ready"
   else
     printf '%s\n' "incomplete"
   fi
@@ -150,19 +189,22 @@ combined_status() {
 runtime_status() {
   runtime="$1"
   cli_status="$(entrypoint_status "$REPO/scripts/oh-my-ai.mjs" "$LOCAL_BIN/oh-my-ai")"
+  engine_status="$(work_start_engine_status)"
   if [ "$runtime" = "claude" ]; then
     event_status="$(entrypoint_status "$REPO/scripts/harness-event.mjs" "$LOCAL_BIN/harness-event")"
     hook_status="$(runtime_hook_status claude "$REPO/claude/settings.json" "$CLAUDE_DIR/settings.json")"
     activation_status="$(runtime_hooks_enabled_status claude "$CLAUDE_DIR/settings.json")"
     skill_status="$(work_start_skill_status "$CLAUDE_DIR/skills/work-start")"
+    skill_contract_status="$(work_start_runtime_contract_status claude "$CLAUDE_DIR/skills/work-start")"
     [ "$activation_status" = "enabled" ] && activation_status="ready" || activation_status="incomplete"
-    combined_status "$cli_status" "$event_status" "$hook_status" "$skill_status" "$activation_status"
+    combined_status "$cli_status" "$engine_status" "$event_status" "$hook_status" "$skill_status" "$skill_contract_status" "$activation_status"
   else
     hook_status="$(runtime_hook_status codex "$REPO/codex/hooks.json" "$CODEX_DIR/hooks.json")"
     activation_status="$(runtime_hooks_enabled_status codex "$CODEX_DIR/hooks.json")"
     skill_status="$(work_start_skill_status "$AGENT_DIR/skills/work-start")"
+    skill_contract_status="$(work_start_runtime_contract_status codex "$AGENT_DIR/skills/work-start")"
     [ "$activation_status" = "enabled" ] && activation_status="ready" || activation_status="incomplete"
-    combined_status "$cli_status" "$hook_status" "$skill_status" "$activation_status"
+    combined_status "$cli_status" "$engine_status" "$hook_status" "$skill_status" "$skill_contract_status" "$activation_status"
   fi
 }
 
@@ -201,6 +243,13 @@ install_work_start_skill() {
   fi
   if same_managed_path "$source" "$dest"; then
     say "ok: $label already managed"
+    return 0
+  fi
+  if [ -L "$dest" ] && [ ! -e "$dest" ]; then
+    say "stale: $label was $(readlink "$dest") (missing) — relinking to $source"
+    run rm -f "$dest"
+    run ln -s "$source" "$dest"
+    say "linked: $label -> $source"
     return 0
   fi
   if [ -e "$dest" ] || [ -L "$dest" ]; then
@@ -275,7 +324,7 @@ report_runtime_readiness() {
           say "      hook activation could not be verified from the Runtime configuration"
           ;;
         *)
-          say "      required oh-my-ai entrypoint, managed hooks, or work-start skill is missing"
+          say "      required oh-my-ai entrypoint, installed work-start Engine boundary, managed hooks, or work-start skill is missing"
           ;;
       esac
       DOCTOR_FAIL_COUNT=$((DOCTOR_FAIL_COUNT + 1))
@@ -393,6 +442,11 @@ doctor() {
   path_state "$AGENT_DIR/skills" "$REPO/skills"
   path_state "$LOCAL_BIN/oh-my-ai" "$REPO/scripts/oh-my-ai.mjs"
   path_state "$LOCAL_BIN/harness-event" "$REPO/scripts/harness-event.mjs"
+  if [ -f "$REPO/scripts/work-start.sh" ] && [ -x "$REPO/scripts/work-start.sh" ]; then
+    say "work-start engine: $REPO/scripts/work-start.sh (executable)"
+  else
+    say "work-start engine: incomplete ($REPO/scripts/work-start.sh must exist and be executable)"
+  fi
   say ""
   say "=== Runtime readiness ==="
   report_runtime_readiness claude

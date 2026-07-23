@@ -239,6 +239,16 @@ This procedure verifies the P0 Claude Code Runtime Entry without changing the Le
 - `make install-shared` has linked shared skills and Claude settings without overwriting local files.
 - Claude Code can discover user skills from `~/.claude/skills`.
 - `skills/work-start/SKILL.md` contains `disable-model-invocation: true`.
+- `~/.local/bin/oh-my-ai` resolves to this source Repository and `make doctor-strict` reports both Runtimes as configured.
+
+### Installed Public Engine Boundary
+
+Both explicit Skill entries run `"$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"` from the Repository where the session started. The `--` separator and exactly one Task argv are required; the entry passes that argv unchanged. The entry resolves `scripts/work-start.sh` from its own installed realpath, but it does not change cwd: the Artifact must be created only at `<current repository>/.oh-my-ai/work-start/...`.
+
+| Runtime | Explicit Skill token | Public Entry input | Required check |
+| --- | --- | --- | --- |
+| Claude Code | `/work-start <task>` | original `<task>` only | no Engine search under `~/.claude/skills` or the current Repository |
+| Codex | `$work-start <task>` | leading `$work-start` removed; remaining task preserved | task-body occurrences of `work-start` remain unchanged |
 
 ### Explicit `/work-start` Path
 
@@ -247,10 +257,12 @@ This procedure verifies the P0 Claude Code Runtime Entry without changing the Le
 | 1 | Start a new Claude Code session in the repository | Session loads shared settings and skills | Claude starts in safe mode or without skills unintentionally | Session note |
 | 2 | Open slash command or skills discovery and find `/work-start` | Work-start entry is discoverable | `/work-start` is missing | Screenshot or note |
 | 3 | Enter `/work-start <task>` | Work-start is treated as explicit user entry | Product confirmation is requested again before engine entry | Prompt text |
-| 4 | Allow any Runtime-level Shell permission if prompted | `scripts/work-start.sh` runs through normal Runtime approval | Runtime permission is bypassed | Permission prompt note |
+| 4 | Allow any Runtime-level Shell permission if prompted | installed `"$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>"` runs through normal Runtime approval | Runtime permission is bypassed, the Skill searches for an Engine, cwd changes to oh-my-ai source, or the Task is split/reconstructed | Permission prompt note |
 | 5 | Inspect output | Artifact path and generated files are displayed | Output omits artifact path | Output excerpt |
 | 6 | Inspect artifact | `handoff-candidate.md`, `starter-prompt.md`, `context-manifest.yaml`, `sources.md`, `context-gap-report.md` exist | Required artifact missing | Directory listing |
 | 7 | Inspect Human Review section | Direct Handoff, Plan First, Gather Context are visible and unchecked | Next Step is auto-selected | Handoff excerpt |
+
+Verify the Artifact is under the Repository where Claude was started, not the oh-my-ai source Repository or `~/.claude/skills/work-start`. The Public Entry resolves the Engine through its own installed realpath while preserving the caller cwd. Re-run `make install-shared` after relocating the source Repository.
 
 ### Natural Intent Suggestion Path
 

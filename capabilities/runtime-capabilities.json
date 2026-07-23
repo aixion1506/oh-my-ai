@@ -700,7 +700,7 @@
           "required_manual_step": [],
           "source": {
             "type": "manual_fixture",
-            "reference": "scripts/codex-work-start-entry.sh forwards to scripts/work-start.sh, which prints the artifact path on every successful run"
+            "reference": "the installed oh-my-ai work-start public entry resolves scripts/work-start.sh and prints the artifact path on every successful run"
           },
           "evidence_refs": [
             "FX-WSH-001"

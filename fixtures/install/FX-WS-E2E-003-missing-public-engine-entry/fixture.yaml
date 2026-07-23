@@ -1,0 +1,2 @@
+id: FX-WS-E2E-003
+purpose: Missing managed public entry makes runtime readiness incomplete.

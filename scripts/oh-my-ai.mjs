@@ -10,8 +10,41 @@ const command = args[0];
 
 if (command === "hook") {
   runHook(args.slice(1));
+} else if (command === "work-start") {
+  runWorkStart(args.slice(1));
 } else {
   usage(command ? `unknown command: ${command}` : "");
+}
+
+function runWorkStart(args) {
+  if (args.length !== 2 || args[0] !== "--" || !args[1].trim()) {
+    process.stderr.write("usage: oh-my-ai work-start -- <task>\n");
+    process.exit(2);
+  }
+  // The public entry accepts exactly one argv task. Do not reconstruct it:
+  // quoting and shell metacharacters are part of the caller's original task.
+  const task = args[1];
+
+  const repoRoot = findRepoRoot();
+  const engine = path.join(repoRoot, "scripts", "work-start.sh");
+  try {
+    fs.accessSync(engine, fs.constants.X_OK);
+  } catch {
+    process.stderr.write(`work-start engine is unavailable: ${engine}\n`);
+    process.exit(1);
+  }
+
+  // Keep the caller's cwd: work-start resolves the target repository from it.
+  const result = spawnSync(engine, [], {
+    cwd: process.cwd(),
+    env: { ...process.env, TASK: task },
+    stdio: "inherit",
+  });
+  if (result.error) {
+    process.stderr.write(`work-start engine failed to start: ${result.error.message}\n`);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
 }
 
 function runHook(args) {
@@ -133,5 +166,6 @@ function safeRepoRoot() {
 function usage(error) {
   if (error) process.stderr.write(`${error}\n`);
   process.stderr.write("usage: oh-my-ai hook <codex|claude> <UserPromptSubmit>\n");
+  process.stderr.write("       oh-my-ai work-start -- <task>\n");
   process.exit(error ? 2 : 0);
 }

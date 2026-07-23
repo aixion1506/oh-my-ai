@@ -1,0 +1,3 @@
+id: FX-INS-100
+name: work-start runtime contract readiness
+purpose: Require each installed Runtime Skill to declare its own stable public Work-start entry contract.
