@@ -64,7 +64,28 @@ function isWrapperOperation(command, expectedRuntime, event) {
 function isLegacyRoutingOperation(command, expectedRuntime) {
   const value = normaliseCommand(command);
   const format = expectedRuntime === "claude" ? "claude-json" : "text";
-  return new RegExp(`^REPO=.*; node "\\$REPO/scripts/prompt-routing-hook\\.mjs" --format(?:=| )${format} \\|\\| true$`).test(value ?? "");
+  const settingsPath = expectedRuntime === "claude" ? "~/.claude/settings.json" : "~/.codex/hooks.json";
+  const repositoryAssignment = `REPO="$(dirname "$(dirname "$(readlink -f ${settingsPath})")")"`;
+  const commandPrefix = `${repositoryAssignment}; node "$REPO/scripts/prompt-routing-hook.mjs"`;
+
+  // These are the complete command forms emitted by the pre-wrapper installer.
+  // Do not widen this to a prefix match: a command before, after, or inside the
+  // legacy operation is user-owned customization and must remain untouched.
+  return [
+    `${commandPrefix} --format=${format} || true`,
+    `${commandPrefix} --format ${format} || true`,
+    `${commandPrefix} --format=${format}`,
+    `${commandPrefix} --format ${format}`,
+  ].includes(value);
+}
+
+function looksLikeCustomisedLegacyRoutingOperation(command) {
+  const value = normaliseCommand(command) ?? "";
+  // An incidental text mention is not evidence of ownership. Require the
+  // legacy executable shape before treating a non-canonical command as an
+  // ambiguous customization that must be preserved as a conflict.
+  return value.includes("node \"$REPO/scripts/prompt-routing-hook.mjs\"")
+    && value.includes("REPO=");
 }
 
 function isSkillUsageOperation(command) {
@@ -79,7 +100,7 @@ function looksLikeCustomisedManagedOperation(operation, command) {
   }
   if (operation.id.endsWith("user-prompt-routing")) {
     return value.includes(`<oh-my-ai> hook ${operation.runtime} UserPromptSubmit`)
-      || value.includes("prompt-routing-hook.mjs");
+      || looksLikeCustomisedLegacyRoutingOperation(command);
   }
   if (operation.id.endsWith("skill-usage")) {
     return value.includes("<harness-event> emit skill-start");

@@ -447,6 +447,75 @@ check_semantic_hook_dedup() {
   echo "passed: semantic hook dedup variants"
 }
 
+check_legacy_customization_preservation() {
+  local fixture="$FIXTURE_ROOT/FX-INS-050-existing-claude-settings"
+  local clone canonical_home home_dir output status before after scenario
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo legacy-customization-preservation)"
+
+  # The historic official command is accepted and canonicalised to one current
+  # operation. The assertion below is independent of merge-runtime-hooks.mjs.
+  canonical_home="$TEMP_ROOT/legacy-canonical/home"
+  mkdir -p "$canonical_home/.claude"
+  node -e '
+    const fs = require("fs");
+    const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    settings.hooks.UserPromptSubmit[0].hooks[0].command = `REPO="$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"; node "$REPO/scripts/prompt-routing-hook.mjs" --format=claude-json || true`;
+    fs.writeFileSync(process.argv[2], `${JSON.stringify(settings, null, 2)}\n`);
+  ' "$clone/claude/settings.json" "$canonical_home/.claude/settings.json"
+  run_setup "$clone" "$canonical_home" --install-shared >/dev/null
+  assert_managed_hooks_once claude "$canonical_home/.claude/settings.json"
+  [ "$(node "$clone/scripts/merge-runtime-hooks.mjs" --mode check --runtime claude --source "$clone/claude/settings.json" --target "$canonical_home/.claude/settings.json")" = "ready" ] \
+    || fail "official legacy Hook was not canonicalised"
+
+  for scenario in prefix suffix and fallback extra-env; do
+    home_dir="$TEMP_ROOT/legacy-custom-$scenario/home"
+    mkdir -p "$home_dir/.claude"
+    node -e '
+      const fs = require("fs");
+      const scenario = process.argv[3];
+      const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const legacy = `REPO="$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"; node "$REPO/scripts/prompt-routing-hook.mjs" --format=claude-json`;
+      const commands = {
+        prefix: `echo USER_BEFORE; ${legacy}`,
+        suffix: `${legacy}; echo USER_AFTER`,
+        and: `${legacy} && custom-command`,
+        fallback: `${legacy} || fallback-command`,
+        "extra-env": `CUSTOM=value ${legacy}`,
+      };
+      settings.hooks.UserPromptSubmit[0].hooks[0].command = commands[scenario];
+      fs.writeFileSync(process.argv[2], `${JSON.stringify(settings, null, 2)}\n`);
+    ' "$clone/claude/settings.json" "$home_dir/.claude/settings.json" "$scenario"
+    before="$(file_hash "$home_dir/.claude/settings.json")"
+    set +e
+    output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+    status=$?
+    set -e
+    after="$(file_hash "$home_dir/.claude/settings.json")"
+    [ "$status" -eq 1 ] || fail "legacy $scenario install exit code was $status, expected 1"
+    [ "$before" = "$after" ] || fail "legacy $scenario customization was changed"
+    require_fixed "Claude: conflict" "$output"
+    [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "legacy $scenario conflict did not fail strict doctor"
+  done
+
+  # A plain text reference is not a legacy operation and stays alongside the
+  # newly added managed Hook instead of creating a false conflict.
+  home_dir="$TEMP_ROOT/legacy-incidental/home"
+  mkdir -p "$home_dir/.claude"
+  node -e '
+    const fs = require("fs");
+    const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    settings.hooks.UserPromptSubmit[0].hooks[0].command = "echo scripts/prompt-routing-hook.mjs is a user note";
+    fs.writeFileSync(process.argv[2], `${JSON.stringify(settings, null, 2)}\n`);
+  ' "$clone/claude/settings.json" "$home_dir/.claude/settings.json"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  require_fixed "echo scripts/prompt-routing-hook.mjs is a user note" "$(cat "$home_dir/.claude/settings.json")"
+  assert_managed_hooks_once claude "$home_dir/.claude/settings.json"
+
+  echo "passed: legacy customization preservation"
+}
+
 check_disabled_runtime_states() {
   local fixture="$FIXTURE_ROOT/FX-INS-090-runtime-strict-readiness"
   local clone home_dir output status claude_before codex_before
@@ -569,6 +638,7 @@ check_existing_skill_directories
 check_work_start_conflict
 check_invalid_existing_json
 check_semantic_hook_dedup
+check_legacy_customization_preservation
 check_runtime_strict_readiness
 check_disabled_runtime_states
 check_core_requirement_matrix
