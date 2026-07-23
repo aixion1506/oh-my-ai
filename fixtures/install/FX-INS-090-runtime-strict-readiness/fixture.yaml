@@ -1,0 +1,3 @@
+id: FX-INS-090
+name: runtime strict readiness
+purpose: Require core hook, skill, and entrypoint state for strict doctor success.

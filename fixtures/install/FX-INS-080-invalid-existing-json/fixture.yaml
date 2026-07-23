@@ -1,0 +1,3 @@
+id: FX-INS-080
+name: invalid existing JSON
+purpose: Leave malformed existing Claude settings untouched and report a conflict.

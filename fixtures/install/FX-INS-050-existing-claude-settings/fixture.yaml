@@ -1,0 +1,3 @@
+id: FX-INS-050
+name: existing Claude settings merge
+purpose: Preserve user settings and hooks while adding managed Claude hooks exactly once.
