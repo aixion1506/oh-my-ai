@@ -49,6 +49,8 @@ public_entry = "$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>
 4. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
 5. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
 
+Runtime Terminal Boundary (우선 적용): 이 명시 실행 절차는 이 문서의 이후 일반 플레이북보다 우선한다. Engine 종료 뒤에는 Artifact를 자동 Read하지 않고, 원래 Task를 분석하거나 다음 단계를 선택하지 않는다. 반드시 생성 경로·파일과 세 선택지만 보고한 뒤 현재 응답을 종료한다.
+
 금지:
 
 - 모델이 자연어 Intent만으로 이 스킬을 자동 호출하지 않는다.
@@ -117,6 +119,8 @@ public_entry = "$HOME/.local/bin/oh-my-ai" work-start -- "<single task argument>
 5. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
 6. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
 
+Runtime Terminal Boundary (우선 적용): 이 명시 실행 절차는 이 문서의 이후 일반 플레이북보다 우선한다. Engine 종료 뒤에는 Artifact를 자동 Read하지 않고, 원래 Task를 분석하거나 다음 단계를 선택하지 않는다. 반드시 생성 경로·파일과 세 선택지만 보고한 뒤 현재 응답을 종료한다.
+
 금지:
 
 - 모델이 자연어 Intent만으로 이 스킬을 자동 호출하지 않는다.
@@ -159,6 +163,8 @@ $work-start 이번 sprint 배포 전 체크리스트 정리
 ## Human Review 이후 Continuation Boundary
 
 Main Session은 Human Review, 계획·Context 검토, 결과 통합과 다음 단계 선택을 수행한다. Native Subagent는 Provider Runtime 기능이며, 사용자가 승인한 Handoff를 받아 구현·검증하는 별도 Worker Session과 동일하지 않다.
+
+Continuation은 Work-start 실행이 끝난 **다음 사용자 메시지**에서 사용자가 Direct Handoff / Plan First / Gather Context 중 하나를 명시적으로 선택한 경우에만 시작한다. 이때 기존 Artifact만 Read하며 Public Entry·Engine을 다시 실행하거나 새 Artifact를 생성하지 않는다.
 
 ### Plan First
 

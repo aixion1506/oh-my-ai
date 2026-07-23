@@ -1,0 +1,2 @@
+id: FX-WS-E2E-007
+purpose: Explicit Work-start suppresses transformed post-execution prompts until Human Review without crossing repository boundaries.

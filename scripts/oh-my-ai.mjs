@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { rememberWorkStartExecution } from "./lib/work-start-execution-state.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -44,7 +45,27 @@ function runWorkStart(args) {
     process.stderr.write(`work-start engine failed to start: ${result.error.message}\n`);
     process.exit(1);
   }
-  process.exit(result.status ?? 1);
+  const status = result.status ?? 1;
+  if (status === 0) {
+    const execution = workStartExecutionContext();
+    rememberWorkStartExecution(
+      process.cwd(),
+      execution.runtime,
+      execution.sessionId,
+      task,
+    );
+  }
+  process.exit(status);
+}
+
+function workStartExecutionContext() {
+  if (process.env.CLAUDE_CODE_SESSION_ID) {
+    return { runtime: "claude", sessionId: process.env.CLAUDE_CODE_SESSION_ID };
+  }
+  if (process.env.OH_MY_AI_WORK_START_RUNTIME === "codex" && process.env.OH_MY_AI_WORK_START_SESSION_ID) {
+    return { runtime: "codex", sessionId: process.env.OH_MY_AI_WORK_START_SESSION_ID };
+  }
+  return { runtime: "", sessionId: "" };
 }
 
 function runHook(args) {

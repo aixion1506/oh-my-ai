@@ -174,10 +174,53 @@ run_installed_work_start() {
   local entry="$2"
   local task="$3"
   local invocation_log="$4"
+  local runtime="${5:-}"
+  local session_id="${6:-}"
   (
     cd "$target"
-    OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$entry" work-start -- "$task"
+    case "$runtime" in
+      claude)
+        OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" CLAUDE_CODE_SESSION_ID="$session_id" "$entry" work-start -- "$task"
+        ;;
+      codex)
+        OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_RUNTIME=codex OH_MY_AI_WORK_START_SESSION_ID="$session_id" "$entry" work-start -- "$task"
+        ;;
+      "")
+        OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$entry" work-start -- "$task"
+        ;;
+      *) fail "unsupported fixture runtime: $runtime" ;;
+    esac
   )
+}
+
+run_installed_prompt_hook() {
+  local target="$1"
+  local entry="$2"
+  local runtime="$3"
+  local prompt="$4"
+  local session_id="${5:-fixture-session}"
+  local payload
+
+  payload="$(node -e 'const payload = { prompt: process.argv[1] }; if (process.argv[2] !== "__missing__") payload.session_id = process.argv[2]; process.stdout.write(JSON.stringify(payload));' "$prompt" "$session_id")"
+  (
+    cd "$target"
+    printf '%s' "$payload" | "$entry" hook "$runtime" UserPromptSubmit
+  )
+}
+
+assert_post_execution_hook_suppressed() {
+  local output="$1"
+  local runtime="$2"
+
+  [ -z "$output" ] || fail "$runtime post-execution hook emitted routing output: $output"
+}
+
+assert_post_execution_hook_not_suppressed() {
+  local output="$1"
+  local runtime="$2"
+
+  printf '%s\n' "$output" | grep -q -F -- 'Suggested by oh-my-ai: Work-start' \
+    || fail "$runtime hook was incorrectly suppressed: $output"
 }
 
 hash_files() {
@@ -737,7 +780,7 @@ check_runtime_strict_readiness() {
 }
 
 check_installed_work_start_e2e() {
-  local clone home_dir target output task fixture invocation_log
+  local clone home_dir target output task fixture invocation_log status
 
   fixture="$FIXTURE_ROOT/FX-WS-E2E-001-claude-installed-explicit-invocation"
   check_fixture_metadata "$fixture"
@@ -751,9 +794,13 @@ check_installed_work_start_e2e() {
     || fail "installed Claude Skill does not reference the public Work-start entry"
   task='quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start'
   invocation_log="$TEMP_ROOT/work-start-e2e-claude/engine-invocations.log"
-  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" "$task" "$invocation_log")"
+  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" "$task" "$invocation_log" claude claude-installed-e2e)"
   assert_work_start_artifact "$target" "$clone" "$output" "$invocation_log"
   grep -r -q -F -- "$task" "$target/.oh-my-ai/work-start" || fail "Claude public entry changed the single task argument"
+  output="$(run_installed_prompt_hook "$target" "$home_dir/.local/bin/oh-my-ai" claude "$task" claude-installed-e2e)"
+  assert_post_execution_hook_suppressed "$output" "Claude"
+  [ "$(engine_invocation_count "$invocation_log")" = "1" ] || fail "Claude post-execution hook invoked the Engine"
+  [ "$(artifact_directory_count "$target/.oh-my-ai/work-start")" = "1" ] || fail "Claude post-execution hook created an artifact"
   echo "passed: FX-WS-E2E-001 Claude installed explicit invocation"
 
   fixture="$FIXTURE_ROOT/FX-WS-E2E-002-codex-installed-explicit-invocation"
@@ -768,13 +815,17 @@ check_installed_work_start_e2e() {
     || fail "installed Codex Skill does not reference the public Work-start entry"
   task='$work-start quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start'
   invocation_log="$TEMP_ROOT/work-start-e2e-codex/engine-invocations.log"
-  output="$(cd "$target" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$clone/scripts/codex-work-start-entry.sh" "$task")"
+  output="$(cd "$target" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_SESSION_ID=codex-installed-e2e "$clone/scripts/codex-work-start-entry.sh" "$task")"
   assert_work_start_artifact "$target" "$clone" "$output" "$invocation_log"
   if printf '%s\n' "$output" | grep -q -F -- '$work-start quoted'; then
     fail "Codex entry leaked the explicit invocation token into its artifact"
   fi
   grep -r -q -F -- 'quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start' "$target/.oh-my-ai/work-start" \
     || fail "Codex entry changed the task body after removing its explicit token"
+  output="$(run_installed_prompt_hook "$target" "$home_dir/.local/bin/oh-my-ai" codex 'quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start' codex-installed-e2e)"
+  assert_post_execution_hook_suppressed "$output" "Codex"
+  [ "$(engine_invocation_count "$invocation_log")" = "1" ] || fail "Codex post-execution hook invoked the Engine"
+  [ "$(artifact_directory_count "$target/.oh-my-ai/work-start")" = "1" ] || fail "Codex post-execution hook created an artifact"
 
   set +e
   (cd "$target" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$clone/scripts/codex-work-start-entry.sh" '$work-start first' second) >/dev/null 2>&1
@@ -783,6 +834,131 @@ check_installed_work_start_e2e() {
   [ "$status" -eq 2 ] || fail "Codex entry accepted multiple task argv"
   [ "$(engine_invocation_count "$invocation_log")" = "1" ] || fail "Codex multi-argv rejection invoked the Engine"
   echo "passed: FX-WS-E2E-002 Codex installed explicit invocation"
+}
+
+check_work_start_post_execution_boundary() {
+  local fixture="$FIXTURE_ROOT/FX-WS-E2E-007-post-execution-human-review"
+  local clone home_dir target_a target_b target_symlink invocation_log task other_task output continuation_output other_repo_output expired_task expired_output session_a session_b session_codex engine_only_task no_session_task external_state
+
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-post-execution-boundary)"
+  home_dir="$TEMP_ROOT/work-start-post-execution-boundary/home"
+  target_a="$TEMP_ROOT/work-start-post-execution-boundary/target repository a"
+  target_b="$TEMP_ROOT/work-start-post-execution-boundary/target repository b"
+  target_symlink="$TEMP_ROOT/work-start-post-execution-boundary/target repository symlink"
+  invocation_log="$TEMP_ROOT/work-start-post-execution-boundary/engine-invocations.log"
+  task='구현을 시작하기 전에 관련 코드와 영향 범위를 먼저 모아줘. POST-EXECUTION-BOUNDARY'
+  other_task='구현을 시작하기 전에 관련 코드와 영향 범위를 먼저 모아줘. OTHER-POST-EXECUTION-TASK'
+  session_a='claude-session-a'
+  session_b='claude-session-b'
+  session_codex='codex-session-a'
+  make_target_repo "$target_a"
+  make_target_repo "$target_b"
+  make_target_repo "$target_symlink"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+
+  # Two Sessions can invoke an identical Task. An Engine without a verifiable
+  # Session must not infer either Session from invocation order.
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude "/work-start $task" "$session_a")"
+  assert_post_execution_hook_suppressed "$output" "Claude explicit payload"
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude "/work-start $task" "$session_b")"
+  assert_post_execution_hook_suppressed "$output" "Claude second explicit payload"
+
+  output="$(run_installed_work_start "$target_a" "$home_dir/.local/bin/oh-my-ai" "$task" "$invocation_log")"
+  assert_work_start_artifact "$target_a" "$clone" "$output" "$invocation_log"
+  [ ! -e "$target_a/.oh-my-ai/state/work-start-execution-state.json" ] \
+    || fail "missing Engine Session created an execution marker"
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude "$task" "$session_a")"
+  assert_post_execution_hook_not_suppressed "$output" "Claude Session A without Engine Session"
+  rm -f -- "$target_a/.oh-my-ai/state/work-start-suggestions.json"
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude "$task" "$session_b")"
+  assert_post_execution_hook_not_suppressed "$output" "Claude Session B without Engine Session"
+  rm -f -- "$target_a/.oh-my-ai/state/work-start-suggestions.json"
+
+  output="$(run_installed_work_start "$target_a" "$home_dir/.local/bin/oh-my-ai" "$task" "$invocation_log" claude "$session_a")"
+  [ "$(engine_invocation_count "$invocation_log")" = "2" ] || fail "Claude exact-session Engine did not run"
+  [ "$(artifact_directory_count "$target_a/.oh-my-ai/work-start")" = "2" ] || fail "Claude exact-session Engine did not create one artifact"
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude "$task" "$session_a")"
+  assert_post_execution_hook_suppressed "$output" "Claude transformed exact-session payload"
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" codex "$task" "$session_a")"
+  assert_post_execution_hook_not_suppressed "$output" "Codex different Runtime"
+  rm -f -- "$target_a/.oh-my-ai/state/work-start-suggestions.json"
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude "$task" "$session_b")"
+  assert_post_execution_hook_not_suppressed "$output" "Claude different Session"
+  rm -f -- "$target_a/.oh-my-ai/state/work-start-suggestions.json"
+
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude "$other_task" "$session_a")"
+  assert_post_execution_hook_not_suppressed "$output" "Claude different Task"
+  rm -f -- "$target_a/.oh-my-ai/state/work-start-suggestions.json"
+
+  continuation_output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" claude 'Gather Context로 진행해줘.' "$session_a")"
+  if printf '%s\n' "$continuation_output" | grep -q -F -- 'Suggested by oh-my-ai: Work-start'; then
+    fail "explicit continuation prompt was re-routed to Work-start"
+  fi
+  [ "$(engine_invocation_count "$invocation_log")" = "2" ] || fail "continuation prompt invoked the Engine"
+  [ "$(artifact_directory_count "$target_a/.oh-my-ai/work-start")" = "2" ] || fail "continuation prompt created an artifact"
+
+  other_repo_output="$(run_installed_prompt_hook "$target_b" "$home_dir/.local/bin/oh-my-ai" claude "$task" "$session_a")"
+  assert_post_execution_hook_not_suppressed "$other_repo_output" "Claude different Repository"
+
+  engine_only_task='구현을 시작하기 전에 관련 코드와 영향 범위를 먼저 모아줘. ENGINE-ONLY-SESSION'
+  output="$(run_installed_work_start "$target_b" "$home_dir/.local/bin/oh-my-ai" "$engine_only_task" "$invocation_log" claude "$session_a")"
+  output="$(run_installed_prompt_hook "$target_b" "$home_dir/.local/bin/oh-my-ai" claude "$engine_only_task" __missing__)"
+  assert_post_execution_hook_not_suppressed "$output" "Claude missing Hook Session"
+  rm -f -- "$target_b/.oh-my-ai/state/work-start-suggestions.json"
+
+  no_session_task='구현을 시작하기 전에 관련 코드와 영향 범위를 먼저 모아줘. NO-SESSION'
+  output="$(run_installed_work_start "$target_b" "$home_dir/.local/bin/oh-my-ai" "$no_session_task" "$invocation_log")"
+  output="$(run_installed_prompt_hook "$target_b" "$home_dir/.local/bin/oh-my-ai" claude "$no_session_task" __missing__)"
+  assert_post_execution_hook_not_suppressed "$output" "Claude missing Hook and Engine Session"
+  rm -f -- "$target_b/.oh-my-ai/state/work-start-suggestions.json"
+
+  expired_task='구현을 시작하기 전에 관련 코드와 영향 범위를 먼저 모아줘. EXPIRED-POST-EXECUTION-BOUNDARY'
+  node - "$target_b" "$expired_task" <<'NODE'
+const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const [target, task] = process.argv.slice(2);
+const normalized = task.replace(/\s+/g, " ").trim();
+const statePath = path.join(target, ".oh-my-ai", "state", "work-start-execution-state.json");
+fs.writeFileSync(statePath, `${JSON.stringify({
+  version: 3,
+  executions: [{
+    runtime: "claude",
+    task_hash: crypto.createHash("sha256").update(normalized).digest("hex"),
+    session_hash: crypto.createHash("sha256").update("claude-session-a").digest("hex"),
+    executed_at: "2000-01-01T00:00:00.000Z",
+  }],
+})}\n`);
+NODE
+  expired_output="$(run_installed_prompt_hook "$target_b" "$home_dir/.local/bin/oh-my-ai" claude "$expired_task" "$session_a")"
+  assert_post_execution_hook_not_suppressed "$expired_output" "Claude expired marker"
+  rm -f -- "$target_b/.oh-my-ai/state/work-start-suggestions.json"
+
+  printf '%s\n' '{ malformed state' >"$target_b/.oh-my-ai/state/work-start-execution-state.json"
+  output="$(run_installed_prompt_hook "$target_b" "$home_dir/.local/bin/oh-my-ai" claude "$other_task" "$session_a")"
+  assert_post_execution_hook_not_suppressed "$output" "Claude malformed state"
+  rm -f -- "$target_b/.oh-my-ai/state/work-start-suggestions.json"
+  output="$(run_installed_work_start "$target_b" "$home_dir/.local/bin/oh-my-ai" "$other_task" "$invocation_log" claude "$session_a")"
+  [ -s "$target_b/.oh-my-ai/state/work-start-execution-state.json" ] || fail "Engine did not recover malformed execution state"
+
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" codex "\$work-start $task" "$session_codex")"
+  assert_post_execution_hook_suppressed "$output" "Codex explicit payload"
+  output="$(cd "$target_a" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_SESSION_ID="$session_codex" "$clone/scripts/codex-work-start-entry.sh" "\$work-start $task")"
+  [ "$(engine_invocation_count "$invocation_log")" = "6" ] || fail "new explicit Codex invocation was permanently suppressed"
+  [ "$(artifact_directory_count "$target_a/.oh-my-ai/work-start")" = "3" ] || fail "new explicit Codex invocation did not create its own artifact"
+  output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" codex "$task" "$session_codex")"
+  assert_post_execution_hook_suppressed "$output" "Codex transformed explicit payload"
+
+  external_state="$TEMP_ROOT/work-start-post-execution-boundary/external state"
+  mkdir -p "$target_symlink/.oh-my-ai" "$external_state"
+  ln -s "$external_state" "$target_symlink/.oh-my-ai/state"
+  output="$(run_installed_work_start "$target_symlink" "$home_dir/.local/bin/oh-my-ai" "$task" "$invocation_log" claude "$session_a")"
+  [ ! -e "$external_state/work-start-execution-state.json" ] || fail "execution state followed a repository state symlink"
+  output="$(run_installed_prompt_hook "$target_symlink" "$home_dir/.local/bin/oh-my-ai" claude "$task" "$session_a")"
+  assert_post_execution_hook_not_suppressed "$output" "Claude state symlink"
+
+  echo "passed: FX-WS-E2E-007 post-execution Human Review boundary"
 }
 
 check_work_start_public_entry_parser() {
@@ -924,6 +1100,7 @@ check_disabled_runtime_states
 check_core_requirement_matrix
 check_work_start_runtime_contracts
 check_installed_work_start_e2e
+check_work_start_post_execution_boundary
 check_work_start_public_entry_parser
 check_work_start_engine_failure_modes
 check_work_start_source_relocation
