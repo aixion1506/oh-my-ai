@@ -13,9 +13,9 @@
 ## 설치 정책
 - `make doctor` / `setup.sh --doctor`는 현재 symlink·settings·skills 상태만 읽고 충돌 가능성을 출력한다.
 - `make install-shared` / `setup.sh --install-shared`는 shared instruction과 helper를 연결하고, 기존 설정에는 관리 Hook만 additive merge한다. 기존 `~/.claude/skills`, `~/.agents/skills`, agents는 대체하지 않으며 `work-start`만 개별 연결한다.
-- Hook 병합은 유효 JSON을 임시 파일에 완성한 뒤 atomic replace한다. 손상 JSON·충돌하는 `work-start`·누락된 관리 경로는 그대로 보존하고 설치를 성공으로 표시하지 않는다.
+- Hook 병합은 Runtime·이벤트·matcher 의미·oh-my-ai operation으로 identity를 판정한 뒤 유효 JSON을 임시 파일에 완성하고 atomic replace한다. 손상 JSON·충돌하는 `work-start`·누락된 관리 경로는 그대로 보존하고 설치를 성공으로 표시하지 않는다. `disableAllHooks: true` 또는 Codex `[features] hooks = false`는 자동 변경하지 않고 Runtime을 `incomplete`로 보고한다.
 - `make install-profile PROFILE=<name>`은 명시한 profile만 opt-in 설치한다. `profiles/example/`은 템플릿이고, 실제 개인 profile은 커밋하지 않는 `profiles/local/<name>/`에 둔다.
-- Codex CLI 설치와 인증/세션 관리는 instruction 배포와 분리한다.
+- Codex CLI 설치와 인증/세션 관리는 instruction 배포와 분리한다. Codex Hook trust는 CLI에서 신뢰성 있게 읽지 못하므로 `configured` 이후에도 `/hooks`에서 사용자가 직접 검토한다.
 
 ## Portable 경로 (공유 설정 파일 위치 역추적 금지)
 - 머신마다 절대경로가 다르고, `~/.claude/settings.json`·`~/.codex/hooks.json`은 여러 도구가 병합해서 쓰는 공유 설정 파일이 될 수 있다.

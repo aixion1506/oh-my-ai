@@ -252,7 +252,9 @@ make doctor            # 읽기 전용. 아무것도 바꾸지 않음
 make install-shared    # 관리 Hook 병합 + work-start 개별 설치. non-destructive
 ```
 
-기존 JSON에는 oh-my-ai 관리 Hook만 중복 없이 병합한다. 기존 Skill 디렉터리는 보존하고 `work-start`만 개별 설치한다. 같은 이름의 사용자 Skill 또는 손상 JSON은 보존하며 설치는 `conflict`/`incomplete`로 종료된다.
+기존 JSON에는 Runtime·이벤트·matcher 의미·oh-my-ai operation이 같은 Hook만 중복 없이 병합한다. 공백, 안전한 double-quote 차이, 이전 direct entrypoint는 같은 관리 operation으로 정리하지만, 단순히 `oh-my-ai`라는 문자열만 포함한 사용자 Hook은 보존한다. 기존 Skill 디렉터리는 보존하고 `work-start`만 개별 설치한다. 같은 이름의 사용자 Skill 또는 손상 JSON은 보존하며 설치는 `conflict`/`incomplete`로 종료된다.
+
+정상 설치의 Runtime 상태는 `configured`다. `disableAllHooks: true`(Claude) 또는 `~/.codex/config.toml`의 `[features] hooks = false`(Codex)는 정의된 Hook을 실행하지 않으므로 `incomplete`와 non-zero로 처리하며, 설치기는 해당 사용자 설정을 자동 변경하지 않는다. Codex는 CLI에서 Hook trust를 신뢰성 있게 읽을 수 없어 `trust: unverified`로 표시한다. 설치 후 Codex `/hooks`에서 Hook을 직접 검토·승인해야 한다.
 
 ### Doctor / Doctor Strict
 
@@ -261,7 +263,7 @@ make doctor          # 읽기 전용 점검, 항상 exit 0
 make doctor-strict   # 위와 동일한 점검을 하되, 문제 발견 시 exit 0이 아님
 ```
 
-`doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
+`doctor-strict`는 CLI, Runtime별 필수 Hook, `work-start`, `harness-event`, 그리고 Hook 활성화 상태를 모두 확인한다. Codex trust 미확인만으로는 strict를 실패시키지 않지만 `/hooks`의 수동 검토는 별도로 필요하다. `doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
 
 ### Release Notes
 
@@ -432,6 +434,8 @@ make update   # git pull + non-destructive shared install
 
 - shared 설치는 non-destructive다. 기존 설정에는 관리 Hook만 additive merge하고, 기존 Skill 디렉터리는 보존한 채 `work-start`만 개별 연결한다.
 - Hook 병합은 유효 JSON을 임시 파일에 완성한 뒤 atomic replace한다. 손상 JSON 또는 충돌 경로는 원본을 보존하고 성공으로 처리하지 않는다.
+- 설치와 fixture는 Node 표준 라이브러리만 사용해 macOS와 Linux에서 같은 파일·symlink·byte hash 검사를 수행한다.
+- Codex trust는 자동 검증하거나 우회하지 않는다. `configured` 뒤에도 Codex `/hooks`에서 직접 trust 상태를 확인한다.
 - 런타임 훅은 설정 파일 위치를 레포 위치로 추측하지 않고, `~/.local/bin/oh-my-ai` 진입점을 호출한다.
 - `make doctor`는 현재 링크/로컬 파일 상태를 읽기 전용으로 보여준다.
 - 개인 profile은 opt-in이다. 실제 profile/private script는 `profiles/local/<name>/`에 두고 커밋하지 않는다.
