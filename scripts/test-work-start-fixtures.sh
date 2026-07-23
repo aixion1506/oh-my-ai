@@ -114,7 +114,7 @@ run_work_start_output() {
 
 run_codex_work_start_output() {
   local task_file="$1"
-  TASK="$(cat "$task_file")" scripts/codex-work-start-entry.sh 2>&1
+  OH_MY_AI_ENTRY="$REPO/scripts/oh-my-ai.mjs" TASK="$(cat "$task_file")" scripts/codex-work-start-entry.sh 2>&1
 }
 
 check_common_artifact() {
@@ -261,10 +261,10 @@ check_codex_runtime_entry_metadata() {
   require_fixed "runtime = codex-cli" "skills/work-start/SKILL.md"
   require_fixed '선두 명시 호출 토큰인 `$work-start` 뒤의 argument만 `TASK`로 전달한다' "skills/work-start/SKILL.md"
   require_fixed 'Task 본문 안의 일반 문자열 `work-start`는 보존한다' "skills/work-start/SKILL.md"
-  require_fixed "scripts/codex-work-start-entry.sh" "skills/work-start/SKILL.md"
+  require_fixed '"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>' "skills/work-start/SKILL.md"
   require_fixed "Codex의 sandbox·approval·filesystem·network permission은 그대로 유지한다" "skills/work-start/SKILL.md"
   require_fixed "allow_implicit_invocation: false" "skills/work-start/agents/openai.yaml"
-  require_fixed 'pass only <task> through scripts/codex-work-start-entry.sh' "skills/work-start/agents/openai.yaml"
+  require_fixed 'pass only <task> to $HOME/.local/bin/oh-my-ai work-start -- <shell-quoted task>' "skills/work-start/agents/openai.yaml"
 
   [ -L ".agents/skills/work-start" ] || fail "missing repo-local Codex skill symlink: .agents/skills/work-start"
   [ "$(readlink ".agents/skills/work-start")" = "../../skills/work-start" ] \

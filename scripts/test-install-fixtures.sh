@@ -120,6 +120,46 @@ assert_shared_install() {
   assert_resolved_link "$home_dir/.local/bin/harness-event" "$clone/scripts/harness-event.mjs"
 }
 
+assert_work_start_artifact() {
+  local target="$1"
+  local source="$2"
+  local output="$3"
+  local artifact
+
+  artifact="$(printf '%s\n' "$output" | sed -n 's/^work-start artifact created: //p' | tail -1)"
+  [ -n "$artifact" ] || fail "installed public entry did not report an artifact"
+  case "$artifact" in
+    .oh-my-ai/work-start/*) ;;
+    *) fail "installed public entry reported unsafe artifact path: $artifact" ;;
+  esac
+  [ -d "$target/$artifact" ] || fail "artifact was not created in target repository: $target/$artifact"
+  for file in context-manifest.yaml sources.md context-gap-report.md starter-prompt.md handoff-candidate.md; do
+    require_file "$target/$artifact/$file"
+  done
+  [ ! -e "$source/.oh-my-ai/work-start" ] || fail "artifact leaked into oh-my-ai source repository"
+  [ "$(find "$target/.oh-my-ai/work-start" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = "1" ] \
+    || fail "installed public entry did not run the Engine exactly once"
+}
+
+make_target_repo() {
+  local target="$1"
+  mkdir -p "$target"
+  git -C "$target" init --quiet
+  printf '%s\n' '# target repository' >"$target/README.md"
+  git -C "$target" add README.md
+  git -C "$target" -c user.name=fixture -c user.email=fixture@example.invalid commit --quiet -m fixture
+}
+
+run_installed_work_start() {
+  local target="$1"
+  local entry="$2"
+  local task="$3"
+  (
+    cd "$target"
+    "$entry" work-start -- "$task"
+  )
+}
+
 hash_files() {
   node -e '
     const crypto = require("crypto"); const fs = require("fs");
@@ -621,6 +661,122 @@ check_runtime_strict_readiness() {
   echo "passed: FX-INS-090 runtime-strict-readiness"
 }
 
+check_installed_work_start_e2e() {
+  local clone home_dir target output task fixture
+
+  fixture="$FIXTURE_ROOT/FX-WS-E2E-001-claude-installed-explicit-invocation"
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-e2e-claude)"
+  home_dir="$TEMP_ROOT/work-start-e2e-claude/home"
+  target="$TEMP_ROOT/work-start-e2e-claude/target repository"
+  make_target_repo "$target"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  assert_link "$home_dir/.claude/skills/work-start" "$clone/skills/work-start"
+  grep -q -F -- '"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>' "$home_dir/.claude/skills/work-start/SKILL.md" \
+    || fail "installed Claude Skill does not reference the public Work-start entry"
+  task='quoted task: preserve "spaces" and create one candidate'
+  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" "$task")"
+  assert_work_start_artifact "$target" "$clone" "$output"
+  echo "passed: FX-WS-E2E-001 Claude installed explicit invocation"
+
+  fixture="$FIXTURE_ROOT/FX-WS-E2E-002-codex-installed-explicit-invocation"
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-e2e-codex)"
+  home_dir="$TEMP_ROOT/work-start-e2e-codex/home"
+  target="$TEMP_ROOT/work-start-e2e-codex/target repository"
+  make_target_repo "$target"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  assert_link "$home_dir/.agents/skills/work-start" "$clone/skills/work-start"
+  grep -q -F -- '"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>' "$home_dir/.agents/skills/work-start/SKILL.md" \
+    || fail "installed Codex Skill does not reference the public Work-start entry"
+  task='$work-start quoted task: preserve "spaces" and keep body work-start'
+  output="$(cd "$target" && OH_MY_AI_ENTRY="$home_dir/.local/bin/oh-my-ai" TASK="$task" "$clone/scripts/codex-work-start-entry.sh")"
+  assert_work_start_artifact "$target" "$clone" "$output"
+  if printf '%s\n' "$output" | grep -q -F -- '$work-start quoted'; then
+    fail "Codex entry leaked the explicit invocation token into its artifact"
+  fi
+  echo "passed: FX-WS-E2E-002 Codex installed explicit invocation"
+}
+
+check_work_start_engine_failure_modes() {
+  local clone home_dir fixture output status
+
+  fixture="$FIXTURE_ROOT/FX-WS-E2E-003-missing-public-engine-entry"
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-missing-entry)"
+  home_dir="$TEMP_ROOT/work-start-missing-entry/home"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  rm -f -- "$home_dir/.local/bin/oh-my-ai"
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --doctor --strict 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "missing public engine entry did not fail doctor-strict"
+  require_fixed "Claude: incomplete" "$output"
+  require_fixed "Codex: incomplete" "$output"
+  echo "passed: FX-WS-E2E-003 missing public engine entry"
+
+  fixture="$FIXTURE_ROOT/FX-WS-E2E-004-missing-common-engine"
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-missing-engine)"
+  home_dir="$TEMP_ROOT/work-start-missing-engine/home"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  rm -f -- "$clone/scripts/work-start.sh"
+  set +e
+  output="$(run_setup "$clone" "$home_dir" --install-shared 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "missing common Engine did not fail install-shared"
+  require_fixed "Claude: incomplete" "$output"
+  require_fixed "Codex: incomplete" "$output"
+  [ "$(doctor_strict_status "$clone" "$home_dir")" = "1" ] || fail "missing common Engine did not fail doctor-strict"
+  echo "passed: FX-WS-E2E-004 missing common engine"
+}
+
+check_work_start_source_relocation() {
+  local fixture clone relocated home_dir target output before status
+
+  fixture="$FIXTURE_ROOT/FX-WS-E2E-005-source-relocation-reinstall"
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-source-relocation)"
+  relocated="$TEMP_ROOT/work-start-source-relocation/relocated source"
+  home_dir="$TEMP_ROOT/work-start-source-relocation/home"
+  target="$TEMP_ROOT/work-start-source-relocation/target repository"
+  make_target_repo "$target"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  mv "$clone" "$relocated"
+  set +e
+  before="$(run_setup "$relocated" "$home_dir" --doctor --strict 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -eq 1 ] || fail "relocated source did not leave stale managed entry incomplete"
+  require_fixed "Claude: incomplete" "$before"
+  run_setup "$relocated" "$home_dir" --install-shared >/dev/null
+  assert_link "$home_dir/.local/bin/oh-my-ai" "$relocated/scripts/oh-my-ai.mjs"
+  [ "$(doctor_strict_status "$relocated" "$home_dir")" = "0" ] || fail "reinstall did not recover relocated source"
+  output="$(run_installed_work_start "$target" "$home_dir/.local/bin/oh-my-ai" 'relocation recovery')"
+  assert_work_start_artifact "$target" "$relocated" "$output"
+  echo "passed: FX-WS-E2E-005 source relocation/reinstall"
+}
+
+check_work_start_consent_boundary() {
+  local fixture clone home_dir target before after payload
+
+  fixture="$FIXTURE_ROOT/FX-WS-E2E-006-consent-boundary"
+  check_fixture_metadata "$fixture"
+  clone="$(clone_fixture_repo work-start-consent-boundary)"
+  home_dir="$TEMP_ROOT/work-start-consent-boundary/home"
+  target="$TEMP_ROOT/work-start-consent-boundary/target repository"
+  make_target_repo "$target"
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+  before="$(find "$target" -path '*/.oh-my-ai/work-start/*' -type d | wc -l | tr -d ' ')"
+  payload='{"prompt":"구현 전에 관련 코드와 영향 범위를 먼저 모아서 정리해줘."}'
+  (cd "$target" && printf '%s' "$payload" | "$home_dir/.local/bin/oh-my-ai" hook claude UserPromptSubmit) >/dev/null
+  after="$(find "$target" -path '*/.oh-my-ai/work-start/*' -type d | wc -l | tr -d ' ')"
+  [ "$before" = "$after" ] || fail "natural-language suggestion crossed the Work-start consent boundary"
+  echo "passed: FX-WS-E2E-006 consent boundary"
+}
+
 require_file "setup.sh"
 require_file "Makefile"
 for fixture in "$FIXTURE_ROOT"/FX-INS-*; do
@@ -642,5 +798,9 @@ check_legacy_customization_preservation
 check_runtime_strict_readiness
 check_disabled_runtime_states
 check_core_requirement_matrix
+check_installed_work_start_e2e
+check_work_start_engine_failure_modes
+check_work_start_source_relocation
+check_work_start_consent_boundary
 
 echo "all install fixtures passed"

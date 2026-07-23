@@ -98,6 +98,8 @@ Claude Code: /work-start <task>
 Codex:       $work-start <task>
 ```
 
+설치된 Skill은 공통 Engine 파일을 현재 프로젝트에서 찾지 않는다. 대신 `make install-shared`가 관리하는 `"$HOME/.local/bin/oh-my-ai" work-start -- <task>` Public Entry를 호출한다. Engine은 oh-my-ai source에서 해석하지만 실행 cwd는 현재 작업 Repository로 유지하므로 Artifact는 항상 현재 Repository의 `.oh-my-ai/work-start/`에 생성된다. source Repository를 옮긴 뒤에는 `make install-shared`를 다시 실행해 managed entry를 갱신한다.
+
 ### Natural Suggestion과 실행 동의 차이
 
 자연어 요청이 Work-start와 관련 있어 보이면, prompt hook이 **제안(Suggestion)만** 한다. 이 시점에는:
@@ -263,7 +265,7 @@ make doctor          # 읽기 전용 점검, 항상 exit 0
 make doctor-strict   # 위와 동일한 점검을 하되, 문제 발견 시 exit 0이 아님
 ```
 
-`doctor-strict`는 CLI, Runtime별 필수 Hook, `work-start`, `harness-event`, 그리고 Hook 활성화 상태를 모두 확인한다. Codex trust 미확인만으로는 strict를 실패시키지 않지만 `/hooks`의 수동 검토는 별도로 필요하다. `doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
+`doctor-strict`는 CLI, Runtime별 필수 Hook, `work-start` Skill, `harness-event`, Hook 활성화 상태와 설치된 Public Engine Entry를 모두 확인한다. Public Entry가 현재 source의 실행 가능한 `scripts/work-start.sh` 또는 Skill 계약으로 이어지지 않으면 Runtime은 `incomplete`이며 strict는 실패한다. Codex trust 미확인만으로는 strict를 실패시키지 않지만 `/hooks`의 수동 검토는 별도로 필요하다. `doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
 
 ### Release Notes
 

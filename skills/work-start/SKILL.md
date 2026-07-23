@@ -38,7 +38,7 @@ approval = not_required
 실행 절차:
 
 1. `<task>`를 원래 사용자 Task로 보존한다.
-2. 공통 Engine인 `scripts/work-start.sh`를 `TASK="<task>"`로 한 번 실행한다.
+2. 현재 사용자 작업 Repository의 cwd에서 안정적인 Public Entry인 `"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>`를 한 번 실행한다. 설치된 Skill 경로나 현재 Repository에서 Engine 파일을 찾거나, oh-my-ai source Repository로 cwd를 변경하지 않는다.
 3. 생성된 Artifact 경로와 생성 파일을 사용자에게 표시한다.
 4. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
 5. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
@@ -100,7 +100,7 @@ official_explicit_invocation = $work-start <task>
 
 1. `<task>`를 원래 사용자 Task로 보존한다. 사용자의 전체 입력을 `TASK`로 전달하지 말고, 선두 명시 호출 토큰인 `$work-start` 뒤의 argument만 `TASK`로 전달한다.
 2. Codex Entry Boundary에서 선두 `$work-start` 토큰만 제거한다. Task 본문 안의 일반 문자열 `work-start`는 보존한다.
-3. `scripts/codex-work-start-entry.sh`를 통해 공통 Engine인 `scripts/work-start.sh`를 한 번 실행한다.
+3. 현재 사용자 작업 Repository의 cwd에서 안정적인 Public Entry인 `"$HOME/.local/bin/oh-my-ai" work-start -- <shell-quoted task>`를 한 번 실행한다. 설치된 Skill 경로나 현재 Repository에서 Engine 파일을 찾거나, oh-my-ai source Repository로 cwd를 변경하지 않는다.
 4. 생성된 Artifact 경로와 생성 파일을 사용자에게 표시한다.
 5. Human Review에서 Direct Handoff / Plan First / Gather Context 중 하나를 사용자가 직접 선택하도록 안내한다.
 6. 현재 응답을 종료하고 사용자의 다음 선택을 기다린다.
