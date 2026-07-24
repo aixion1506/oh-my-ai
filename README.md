@@ -1,44 +1,10 @@
 # oh-my-ai
 
-**AI Agent Control Plane / Orchestration Harness** shared template.
+**Local, human-reviewed workflow for starting AI coding tasks with better context.**
 
-> 단순 설정 백업이 아니다. **Claude Code, Codex, OpenClone 같은 AI 런타임을 사용자 워크플로에 맞춰 느슨하게 연결하는 하네스 레이어**다. 도구의 유용함은 쓰되, **진화의 방향은 사람이 잡는다.**
+oh-my-ai Public V1은 무료·Local-only·Cloud-independent한 Manual Artifact Workflow다. Task를 설명하면 Claude Code와 Codex가 구현을 시작하기 전에 관련 코드·문서·결정·위험, 그리고 누락된 Context 후보를 찾아 Handoff Candidate를 만든다. 사람이 그 Candidate를 검토해 Worker에게 수동으로 전달하고, Worker가 결과를 Result Basic 형식으로 돌려주면 사람이 다시 검토한다.
 
-## 뭐가 특별한가 (하네스 레이어)
-
-반복되는 업무를 AI가 **감지해 제안**하고, 사용자가 **컨펌하면 도구로 굳힌다.** 자동으로 굴러가는 게 아니라 — **사람이 게이트하며 쌓는다.** 쓸수록 사용자 워크플로에 맞게 진화한다.
-
-oh-my-ai는 하나의 AI agent가 아니라, 여러 런타임과 도구를 붙였다 떼는 **control plane / orchestration harness**다. 원칙·컨텍스트·스킬·안전 정책·작업 라우팅은 oh-my-ai에 남기고, Claude Code/Codex/OpenClone 같은 실행 표면은 adapter로 연결한다.
-
-Jikji, Superpowers, MCP, `rg`/`find`, `rsync` 같은 외부 도구도 필요하면 optional backend/adapter로 붙일 수 있다. 좋은 도구가 나오면 모듈처럼 붙이고, 마음에 안 들면 교체한다. 특정 모델·런타임·도구가 아니라 **사용자 워크플로 레이어**가 본체다.
-
-- **감지 + 컨펌 게이트**: 반복·수작업·실수 잦은 절차가 보이면 AI가 "이거 자동화할까?" 넛지 → **컨펌해야** 커맨드/스킬로 구조화한다 (안 누르면 안 만듦). (`skills/harness-automation`, `automation-backlog.md`)
-- **작업 라우팅**: 작업을 시작하면 그 도메인에 맞는 스킬·커맨드·문서가 자동으로 붙는다. (`instructions/harness.md`의 라우팅 표)
-- **경험 누적 = 커스텀 파생 스킬**: 외부 스킬을 베이스로 사용자 경험·context를 얹어 profile/local workflow에 맞게 키운다.
-- **세션이 끊겨도 이어짐**: 작업 맥락(결정·설계 배경)을 `docs/context/`에 남겨, 새 세션·다른 날에도 이어받는다. (`skills/project-context`)
-- **사용 측정**: 어떤 스킬을 실제 쓰는지 Git 저장소 정보와 함께 **oh-my-ai XDG state**에 기록한다 (`~/.local/state/oh-my-ai/harness-usage.log`). 개인 계정 정책이나 push guard는 profile/private script로 분리한다.
-- **목적 위주 표현 원칙**: 커밋·일일보고·문서를 "무엇을 했나"가 아니라 "왜/무엇을 위해"로 쓴다.
-- **커스텀 산출물 인덱스**: 커스텀 산출물만 모아 한눈에 → [`MINE.md`](MINE.md)
-
-## 핵심 기능
-
-| 기능 | 설명 |
-|------|------|
-| Runtime adapters | Claude Code, Codex 등 런타임별 instruction을 공통 원본에서 생성한다 |
-| Skill routing | 작업 유형에 맞는 스킬·플레이북을 연결하고, 두꺼운 절차는 필요할 때만 로드한다 |
-| Project context | 설계 배경·결정 로그·파일 맵·핸드오프를 `docs/context/`에 축적한다 |
-| Human-gated automation | 반복 작업을 감지하되, 사람이 승인해야 스킬·커맨드·스크립트로 굳힌다 |
-| Profile/local guards | 개인별 계정·커밋 정책은 profile, local hook, private script로 분리하고 기본 설치에서는 활성화하지 않는다 |
-| Execution modes | `suggest-only`, `patch-with-approval`, `auto-apply`로 파일 수정 방식을 선택한다 |
-| Usage observability | 스킬 사용을 저장소 단위로 기록해 죽은 스킬은 정리하고 자주 쓰는 흐름은 강화한다 |
-| Instruction cascade | `SKILL.md` 메타데이터에서 `AGENTS.md`, `CLAUDE.md`, `MINE.md`를 생성한다 |
-| Optional backends | Jikji, Superpowers, MCP, `rg`/`find`, `rsync` 같은 도구를 필요할 때 adapter/backend로 붙인다 |
-
-## Public V1
-
-### 제품 목적
-
-oh-my-ai Public V1은 **무료·Local-only·Cloud-independent**한 Manual Artifact Workflow다. Task를 설명하면 관련 Context 후보를 모아 Handoff Candidate를 만들고, 사람이 검토해 Worker에게 수동 전달하고, Worker가 결과를 Result Basic 형식으로 돌려주면 사람이 다시 검토한다. AI가 대신 결정하지 않는다 — **후보를 만들고, 사람이 확정한다.**
+**AI가 대신 결정하지 않는다 — 후보를 만들고, 사람이 확정한다.** Worker Session을 자동으로 만들거나, 계획을 자동으로 실행하거나, 변경을 자동으로 적용하거나 병합하지 않는다.
 
 ### Public V1 범위
 
@@ -61,7 +27,21 @@ Doctor
 
 비범위(V1 Non-goals)는 [아래](#v1-non-goals)에 별도로 정리했다.
 
-### Quick Start
+## 사용자 흐름
+
+```text
+1. 프로젝트에서 /work-start <task> (Claude Code) 또는 $work-start <task> (Codex) 실행
+2. 관련 코드·문서·결정·위험 후보와 Handoff Artifact 생성 (Needs human review)
+3. 사용자가 다음 단계 선택
+   - Gather Context  — 외부 자료를 더 확인한 뒤 재검토
+   - Plan First       — 영향 범위·순서·검증·Decision Gate 정리
+   - Direct Handoff   — 범위가 충분히 명확하면 바로 Worker에게 전달
+4. 현재 세션 또는 새 Claude/Codex 세션에서 수동으로 진행
+```
+
+이 시점까지 코드는 전혀 수정되지 않는다. 기본 선택지는 없다 — 시스템이 대신 고르지 않는다.
+
+## Quick Start
 
 ```bash
 git clone https://github.com/<owner>/oh-my-ai.git ~/Github/oh-my-ai
@@ -78,9 +58,39 @@ Claude Code: /work-start 로그인 실패 시 에러 메시지를 더 명확하�
 Codex:       $work-start 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
 ```
 
-`Needs human review` 상태의 Candidate가 `.oh-my-ai/work-start/<timestamp>-<slug>/`에 생성된다. 이 시점까지 코드는 전혀 수정되지 않는다.
+`Needs human review` 상태의 Candidate가 `.oh-my-ai/work-start/<timestamp>-<slug>/`에 생성된다.
 
-현재 Public V1의 출시 근거, 검증 상태, Known Limitations, 출시 체크리스트는 [V1.0.0 Release Notes (Draft)](docs/release/v1.0.0.md)를 따른다.
+업데이트:
+
+```bash
+make update
+make doctor-strict
+```
+
+현재 Public V1의 출시 근거, 검증 상태, Known Limitations, 출시 체크리스트는 [V1.0.0 Release Notes (Draft)](docs/release/v1.0.0.md)를 따른다. 설치 세부 정책(기존 설정 보존, Hook 충돌 처리, Codex Trust, 개인 Profile, devcontainer)은 [설치](#설치)에서 다룬다.
+
+## 사용자 기능
+
+| 사용자 기능 | 실제 역할 |
+|---|---|
+| Work-start | 작업 관련 코드·문서·결정·위험 후보 생성 |
+| Gather Context | 부족한 자료와 외부 Context 추가 검토 |
+| Plan First | 영향 범위·순서·검증·Decision Gate 정리 |
+| Direct Handoff | 새 Claude/Codex 세션에 전달할 작업 계약 준비 |
+| Result Basic | 수행한 검증과 수행하지 않은 검증을 구분해 반환 |
+| Human Review | 사용자가 선택하기 전 자동 진행 방지 |
+| Doctor | 설치·Hook·Skill·Public Entry 상태 점검 |
+| Non-destructive install | 기존 설정과 Skill을 무단으로 덮어쓰지 않음 |
+
+## 이게 막아주는 것 (What it prevents)
+
+- 관련 문서를 놓친 채 코드부터 수정하는 것
+- 오래된 문서를 최신 결정으로 오해하는 것
+- 존재하지 않는 API·테이블·서비스를 추정해 설계하는 것
+- 세션이 바뀌면서 목표·범위·금지사항을 잃는 것
+- 사용자의 승인 없이 AI가 다음 단계로 진행하는 것
+
+## Public V1
 
 ### 지원 Runtime
 
@@ -251,17 +261,6 @@ recommend, or run any next step automatically.
 | Notice가 안 보임 | 정상일 수 있음 | Cache가 비어 있으면 표시 없이 Refresh만 수행. 다음 실행부터 표시됨. `node scripts/notice.mjs status`로 상태 확인 |
 | Offline인데 Work-start가 느림/실패함 | Notice Refresh는 2초 Hard Timeout이 있어 정상적으로는 영향 없음 | `node scripts/notice.mjs opt-out`으로 Network 시도 자체를 제거 가능 |
 
-### Fresh Install
-
-```bash
-make doctor            # 읽기 전용. 아무것도 바꾸지 않음
-make install-shared    # 관리 Hook 병합 + work-start 개별 설치. non-destructive
-```
-
-기존 JSON에는 Runtime·이벤트·matcher 의미·oh-my-ai operation이 같은 Hook만 중복 없이 병합한다. 공백, 안전한 double-quote 차이, 이전 direct entrypoint는 같은 관리 operation으로 정리하지만, 단순히 `oh-my-ai`라는 문자열만 포함한 사용자 Hook은 보존한다. 기존 Skill 디렉터리는 보존하고 `work-start`만 개별 설치한다. 같은 이름의 사용자 Skill 또는 손상 JSON은 보존하며 설치는 `conflict`/`incomplete`로 종료된다.
-
-정상 설치의 Runtime 상태는 `configured`다. `disableAllHooks: true`(Claude) 또는 `~/.codex/config.toml`의 `[features] hooks = false`(Codex)는 정의된 Hook을 실행하지 않으므로 `incomplete`와 non-zero로 처리하며, 설치기는 해당 사용자 설정을 자동 변경하지 않는다. Codex는 CLI에서 Hook trust를 신뢰성 있게 읽을 수 없어 `trust: unverified`로 표시한다. 설치 후 Codex `/hooks`에서 Hook을 직접 검토·승인해야 한다.
-
 ### Doctor / Doctor Strict
 
 ```bash
@@ -270,6 +269,8 @@ make doctor-strict   # 위와 동일한 점검을 하되, 문제 발견 시 exit
 ```
 
 `doctor-strict`는 CLI, Runtime별 필수 Hook, `work-start` Skill, `harness-event`, Hook 활성화 상태와 설치된 Public Engine Entry를 모두 확인한다. Public Entry가 현재 source의 실행 가능한 `scripts/work-start.sh` 또는 Skill 계약으로 이어지지 않으면 Runtime은 `incomplete`이며 strict는 실패한다. Codex trust 미확인만으로는 strict를 실패시키지 않지만 `/hooks`의 수동 검토는 별도로 필요하다. `doctor-strict`가 실패해도 원인이 이 레포가 만들지 않은 기존 dangling link라면, 그 실패는 이 레포의 결함이 아니라 Host Pre-existing 상태다. `make doctor`로 원인을 먼저 구분한다.
+
+정상 설치의 Runtime 상태는 `configured`다. `disableAllHooks: true`(Claude) 또는 `~/.codex/config.toml`의 `[features] hooks = false`(Codex)는 정의된 Hook을 실행하지 않으므로 `incomplete`와 non-zero로 처리하며, 설치기는 해당 사용자 설정을 자동 변경하지 않는다. Codex는 CLI에서 Hook trust를 신뢰성 있게 읽을 수 없어 `trust: unverified`로 표시한다. 설치 후 Codex `/hooks`에서 Hook을 직접 검토·승인해야 한다.
 
 ### Release Notes
 
@@ -300,6 +301,36 @@ Telemetry / Analytics / Push Notification
 상주 Daemon / Scheduler / OS Service
 ```
 
+## Architecture Vision (Roadmap)
+
+> Public V1은 위 Manual Artifact Workflow가 전부다. 아래는 장기 방향성이며, 현재 자동 Agent orchestration이나 자동 Worker 실행을 제공한다는 뜻이 아니다.
+
+oh-my-ai는 장기적으로 하나의 AI agent가 아니라, 여러 런타임과 도구를 붙였다 떼는 **control plane / orchestration harness**를 지향한다. 원칙·컨텍스트·스킬·안전 정책·작업 라우팅은 oh-my-ai에 남기고, Claude Code/Codex/OpenClone 같은 실행 표면은 adapter로 연결하는 구조다. Jikji, Superpowers, MCP, `rg`/`find`, `rsync` 같은 외부 도구도 필요하면 optional backend/adapter로 붙일 수 있다. 좋은 도구가 나오면 모듈처럼 붙이고, 마음에 안 들면 교체한다. 특정 모델·런타임·도구가 아니라 **사용자 워크플로 레이어**가 본체라는 게 이 비전의 핵심이다.
+
+이 방향에서 이미 동작 중인 조각들(Public V1과 별개로, oh-my-ai 자신을 관리하는 메타 레이어):
+
+- **감지 + 컨펌 게이트**: 반복·수작업·실수 잦은 절차가 보이면 AI가 "이거 자동화할까?" 넛지 → **컨펌해야** 커맨드/스킬로 구조화한다 (안 누르면 안 만듦). (`skills/harness-automation`, `automation-backlog.md`)
+- **작업 라우팅**: 작업을 시작하면 그 도메인에 맞는 스킬·커맨드·문서가 자동으로 붙는다. (`instructions/harness.md`의 라우팅 표)
+- **경험 누적 = 커스텀 파생 스킬**: 외부 스킬을 베이스로 사용자 경험·context를 얹어 profile/local workflow에 맞게 키운다.
+- **세션이 끊겨도 이어짐**: 작업 맥락(결정·설계 배경)을 `docs/context/`에 남겨, 새 세션·다른 날에도 이어받는다. (`skills/project-context`)
+- **사용 측정**: 어떤 스킬을 실제 쓰는지 Git 저장소 정보와 함께 **oh-my-ai XDG state**에 기록한다 (`~/.local/state/oh-my-ai/harness-usage.log`). 개인 계정 정책이나 push guard는 profile/private script로 분리한다.
+- **목적 위주 표현 원칙**: 커밋·일일보고·문서를 "무엇을 했나"가 아니라 "왜/무엇을 위해"로 쓴다.
+- **커스텀 산출물 인덱스**: 커스텀 산출물만 모아 한눈에 → [`MINE.md`](MINE.md)
+
+이 메타 레이어의 핵심 기능:
+
+| 기능 | 설명 |
+|------|------|
+| Runtime adapters | Claude Code, Codex 등 런타임별 instruction을 공통 원본에서 생성한다 |
+| Skill routing | 작업 유형에 맞는 스킬·플레이북을 연결하고, 두꺼운 절차는 필요할 때만 로드한다 |
+| Project context | 설계 배경·결정 로그·파일 맵·핸드오프를 `docs/context/`에 축적한다 |
+| Human-gated automation | 반복 작업을 감지하되, 사람이 승인해야 스킬·커맨드·스크립트로 굳힌다 |
+| Profile/local guards | 개인별 계정·커밋 정책은 profile, local hook, private script로 분리하고 기본 설치에서는 활성화하지 않는다 |
+| Execution modes | `suggest-only`, `patch-with-approval`, `auto-apply`로 파일 수정 방식을 선택한다 |
+| Usage observability | 스킬 사용을 저장소 단위로 기록해 죽은 스킬은 정리하고 자주 쓰는 흐름은 강화한다 |
+| Instruction cascade | `SKILL.md` 메타데이터에서 `AGENTS.md`, `CLAUDE.md`, `MINE.md`를 생성한다 |
+| Optional backends | Jikji, Superpowers, MCP, `rg`/`find`, `rsync` 같은 도구를 필요할 때 adapter/backend로 붙인다 |
+
 ### 설계 원칙 (다른 dotfiles와 다른 점)
 
 - **런타임 비속박**: 공유 규칙의 근원은 `instructions/harness.md`이고, `CLAUDE.md`, `claude/CLAUDE.md`, `AGENTS.md`는 AI별 adapter로 생성된다. 특정 모델·런타임·도구에 묶이지 않는다. Claude Code/Codex/OpenClone 같은 런타임과 Jikji/Superpowers/MCP/`rg`/`find`/`rsync` 같은 도구는 backend/adapter로 느슨하게 붙이고, 성능·취향·안전 기준에 따라 갈아끼운다. 레이어는 유지한다.
@@ -308,7 +339,7 @@ Telemetry / Analytics / Push Notification
 개념 구조:
 
 ```text
-oh-my-ai (Shared AI Agent Control Plane / Orchestration Harness)
+oh-my-ai (Shared AI Agent Control Plane / Orchestration Harness — Vision)
 ├─ source of truth: instructions / context docs / skills / safety policy / routing
 ├─ implemented adapters: Claude Code, Codex
 ├─ implemented tools: hooks, harness-event, rg/find-based local inspection
@@ -317,7 +348,7 @@ oh-my-ai (Shared AI Agent Control Plane / Orchestration Harness)
 
 > 설계·결정·현황 전체는 [`docs/harness-design.md`](docs/harness-design.md) (단일 기준점).
 
-## 왜 만들었나
+### 왜 만들었나
 
 AI coding tool을 쓰다 보면 사용자별 스타일·자주 쓰는 스킬·커맨드, 그리고 **작업 맥락(결정·설계 배경)** 이 쌓인다. 이게 `~/.claude/` 나 한 세션 안에만 있으면:
 
@@ -330,7 +361,7 @@ AI coding tool을 쓰다 보면 사용자별 스타일·자주 쓰는 스킬·�
 
 근데 단순 동기화에서 멈추지 않는다 — **반복 작업을 AI가 감지해 제안하고, 사용자가 컨펌해 커스텀 도구(스킬·커맨드·스크립트·훅)로 쌓는다.** 다른 dotfiles/설정 모음과 달리, **도구를 제안받아 사람이 게이트하며 사용자 워크플로에 맞춰 쌓이는 레이어**다.
 
-## 뭐가 편해지나
+### 뭐가 편해지나
 
 | 상황 | 기존 | 이후 |
 |------|------|------|
@@ -339,7 +370,7 @@ AI coding tool을 쓰다 보면 사용자별 스타일·자주 쓰는 스킬·�
 | 설정 수정 | 머신별로 따로 | 레포에서 수정 → `git push` → 어디서든 `make update` |
 | 스킬 추가 | 해당 머신에만 존재 | `git push`하면 다른 머신에도 동기화 |
 
-## 구조
+### 구조
 
 ```text
 instructions/
@@ -391,19 +422,13 @@ harness-event report --since-days 30
 
 ### 실제 머신 (심링크 방식)
 
-```bash
-git clone https://github.com/<owner>/oh-my-ai.git ~/Github/oh-my-ai
-cd ~/Github/oh-my-ai
-make install
-```
-
-먼저 현재 환경을 점검한다. 이 명령은 읽기 전용이며 기존 스킬·설정·훅을 바꾸지 않는다.
+Quick Start의 clone + `make install-shared`(`make install`은 동일 동작의 별칭)가 기본 흐름이다. `make doctor`는 읽기 전용이며 기존 스킬·설정·훅을 바꾸지 않는다.
 
 ```bash
 make doctor
 ```
 
-공유 core 설치는 opt-in이고 non-destructive다. 기존 settings/hooks는 유효 JSON일 때 oh-my-ai 관리 Hook만 additive merge하고, 기존 `~/.claude/skills`·`~/.agents/skills`는 대체하지 않으며 `work-start`만 개별 연결한다. 같은 이름의 사용자 Skill과 손상 JSON은 자동으로 바꾸지 않고 `conflict`로 보고한다.
+공유 core 설치는 opt-in이고 **non-destructive**다. 기존 settings/hooks가 유효 JSON이면 oh-my-ai 관리 Hook만 additive merge하고, 기존 `~/.claude/skills`·`~/.agents/skills`는 대체하지 않으며 `work-start`만 개별 연결한다. 공백, 안전한 double-quote 차이, 이전 direct entrypoint는 같은 관리 operation으로 정리하지만, 단순히 `oh-my-ai`라는 문자열만 포함한 사용자 Hook은 보존한다. 같은 이름의 사용자 Skill 또는 손상 JSON은 자동으로 바꾸지 않고 `conflict`/`incomplete`로 종료된다.
 
 ```bash
 make install-shared
@@ -416,12 +441,6 @@ make install-profile PROFILE=<name>
 ```
 
 공유 규칙은 `instructions/harness.md` 또는 `instructions/execution-policy.md`를 수정한 뒤 `make instructions`로 재생성한다. 공유 템플릿 릴리스 기준점은 충돌 방지 정책까지 포함된 `v0.3.0-shared-template` 이후로 본다.
-
-업데이트:
-
-```bash
-make update   # git pull + non-destructive shared install
-```
 
 ### 검색 backend (ripgrep은 optional)
 
@@ -437,7 +456,7 @@ make update   # git pull + non-destructive shared install
 
 `rg` 유무는 `context-manifest.yaml`의 `search:` 블록과 `context-gap-report.md`의 `## Search Backend Status`에서 확인한다. 정밀 검색이 필요하면 `ripgrep`을 직접 설치한다. 이 레포는 `rg` 바이너리를 번들하지 않는다.
 
-## 설치 정책
+### 설치 정책
 
 - shared 설치는 non-destructive다. 기존 설정에는 관리 Hook만 additive merge하고, 기존 Skill 디렉터리는 보존한 채 `work-start`만 개별 연결한다.
 - Hook 병합은 유효 JSON을 임시 파일에 완성한 뒤 atomic replace한다. 손상 JSON 또는 충돌 경로는 원본을 보존하고 성공으로 처리하지 않는다.
@@ -449,7 +468,13 @@ make update   # git pull + non-destructive shared install
 - profile script를 설치하려면 `make install-profile PROFILE=<name>`을 사용한다. profile hook/settings는 자동 활성화하지 않고 직접 병합한다.
 - 선택적 Claude plugin/settings 예시는 `profiles/example/claude-settings.json.example`에서 확인하고, 필요한 항목만 사용자가 직접 opt-in해 병합한다.
 
-## Local skills policy
+업데이트:
+
+```bash
+make update   # git pull + non-destructive shared install
+```
+
+### Local skills policy
 
 `skills/*`는 이 shared repo에 커밋해도 되는 공유/custom skill 원본으로 간주한다. 개인 장비·회사 계정·비공개 워크플로에 묶인 local skill은 shared repo에 넣지 않고 `~/.claude/skills`, `~/.agents/skills`, 별도 private repo, 또는 private plugin으로 관리한다.
 
@@ -461,7 +486,7 @@ make update   # git pull + non-destructive shared install
 - 기존 local skills를 백업한 뒤 shared `skills/` symlink로 전환한다.
 - private repo/plugin에 개인 skill을 두고 런타임별 설정에서 명시적으로 연결한다.
 
-## Execution Mode 선택
+### Execution Mode 선택
 
 기본값은 `patch-with-approval`이다. 전체 정의는 `instructions/execution-policy.md`를 본다.
 
