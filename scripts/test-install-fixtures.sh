@@ -186,6 +186,12 @@ run_installed_work_start() {
         OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_RUNTIME=codex OH_MY_AI_WORK_START_SESSION_ID="$session_id" "$entry" work-start -- "$task"
         ;;
       "")
+        # An ambient agent session (e.g. this fixture running inside Claude
+        # Code itself) must not leak into a Fixture that asserts "no Engine
+        # Session". Strip it explicitly rather than relying on a clean shell.
+        # (Safe to unset here: we are already inside this function's own
+        # subshell, so it cannot affect the caller's environment.)
+        unset CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION OH_MY_AI_WORK_START_SESSION_ID OH_MY_AI_WORK_START_RUNTIME
         OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" "$entry" work-start -- "$task"
         ;;
       *) fail "unsupported fixture runtime: $runtime" ;;
@@ -815,7 +821,9 @@ check_installed_work_start_e2e() {
     || fail "installed Codex Skill does not reference the public Work-start entry"
   task='$work-start quoted task: preserve "spaces" $ dollar ; semicolon * star 한글 work-start'
   invocation_log="$TEMP_ROOT/work-start-e2e-codex/engine-invocations.log"
-  output="$(cd "$target" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_SESSION_ID=codex-installed-e2e "$clone/scripts/codex-work-start-entry.sh" "$task")"
+  # Strip an ambient Claude session (this fixture may itself run inside
+  # Claude Code) so it cannot outrank the Codex runtime this call simulates.
+  output="$(cd "$target" && unset CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_SESSION_ID=codex-installed-e2e "$clone/scripts/codex-work-start-entry.sh" "$task")"
   assert_work_start_artifact "$target" "$clone" "$output" "$invocation_log"
   if printf '%s\n' "$output" | grep -q -F -- '$work-start quoted'; then
     fail "Codex entry leaked the explicit invocation token into its artifact"
@@ -944,7 +952,9 @@ NODE
 
   output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" codex "\$work-start $task" "$session_codex")"
   assert_post_execution_hook_suppressed "$output" "Codex explicit payload"
-  output="$(cd "$target_a" && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_SESSION_ID="$session_codex" "$clone/scripts/codex-work-start-entry.sh" "\$work-start $task")"
+  # Strip an ambient Claude session (this fixture may itself run inside
+  # Claude Code) so it cannot outrank the Codex runtime this call simulates.
+  output="$(cd "$target_a" && unset CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION && HOME="$home_dir" OH_MY_AI_WORK_START_INVOCATION_LOG="$invocation_log" OH_MY_AI_WORK_START_SESSION_ID="$session_codex" "$clone/scripts/codex-work-start-entry.sh" "\$work-start $task")"
   [ "$(engine_invocation_count "$invocation_log")" = "6" ] || fail "new explicit Codex invocation was permanently suppressed"
   [ "$(artifact_directory_count "$target_a/.oh-my-ai/work-start")" = "3" ] || fail "new explicit Codex invocation did not create its own artifact"
   output="$(run_installed_prompt_hook "$target_a" "$home_dir/.local/bin/oh-my-ai" codex "$task" "$session_codex")"

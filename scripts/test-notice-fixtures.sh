@@ -69,6 +69,37 @@ state_file_in() {
   printf '%s/config/oh-my-ai/notice-state.json' "$1"
 }
 
+lock_file_in() {
+  printf '%s/cache/oh-my-ai/notice-refresh.lock' "$1"
+}
+
+# work-start.sh's own end-of-run refresh-if-stale (see
+# run_work_start_capturing_artifact below) spawns a genuinely detached,
+# unref()'d child whenever the sandbox's cache is empty/stale. That child
+# outlives work-start.sh's own exit, so a fixture that immediately follows
+# such a run with its own synchronous do_refresh() in the SAME sandbox can
+# race the leftover child for the shared refresh lock and silently lose:
+# do_refresh() no-ops if it finds the lock still held (see notice.mjs
+# acquireLock()'s "skipped-held" path).
+#
+# Wait on the lock's actual release -- the same signal the product itself
+# uses for mutual exclusion -- rather than guessing a sleep duration. The
+# short settle before polling exists only to give a just-spawned child time
+# to reach its first acquireLock() call; once the lock is observed, this
+# waits for its genuine release (bounded), not a fixed guess.
+wait_for_refresh_lock_clear() {
+  local sandbox="$1"
+  local lock_file waited_ms=0 timeout_ms=3000
+  lock_file="$(lock_file_in "$sandbox")"
+  sleep 0.15
+  while [ -e "$lock_file" ]; do
+    [ "$waited_ms" -lt "$timeout_ms" ] \
+      || fail "notice refresh lock did not clear within ${timeout_ms}ms: $lock_file"
+    sleep 0.02
+    waited_ms=$((waited_ms + 20))
+  done
+}
+
 do_refresh() {
   local sandbox="$1"
   local manifest_rel="$2"
@@ -378,6 +409,10 @@ fx_nt_013() {
   result="$(run_work_start_capturing_artifact "$sandbox" "fx-nt-013 without notice" 1.0.0 "$FIXTURE_ROOT/does-not-exist.json")"
   artifact_plain="$(printf '%s' "$result" | head -1)"
 
+  # That run's own end-of-run refresh-if-stale may have left a detached child
+  # still holding the lock; let it clear before the do_refresh() below claims
+  # the same lock in the same sandbox.
+  wait_for_refresh_lock_clear "$sandbox"
   do_refresh "$sandbox" "$FIXTURE_ROOT/valid-single-notice.json" 1.0.0
   result="$(run_work_start_capturing_artifact "$sandbox" "fx-nt-013 with notice" 1.0.0 "$FIXTURE_ROOT/does-not-exist.json")"
   artifact_notice="$(printf '%s' "$result" | head -1)"
@@ -400,18 +435,23 @@ fx_nt_014_015() {
   local sandbox result artifact1 out1 artifact2 out2
   sandbox="$(new_sandbox)"
 
-  # Run 1: cache starts empty. Point its own end-of-run refresh-if-stale at a
-  # fixture that fails fast (no such file) rather than a fetchable one: this
-  # keeps run 1 from spawning a real detached refresh that could otherwise
-  # race the deterministic do_refresh() call below for the same lock. The
-  # Cache-first / Next-run claim under test is about ordering within THIS
-  # run's own output, not about racing a background child's completion time.
+  # Run 1: cache starts empty, so isCacheStale() is true regardless of which
+  # manifest the end-of-run refresh-if-stale points at -- pointing it at a
+  # nonexistent file only makes that detached child's own fetch fail fast, it
+  # does not stop the child from spawning and briefly holding the refresh
+  # lock. The Cache-first / Next-run claim under test is about ordering
+  # within THIS run's own output, not about racing a background child's
+  # completion time.
   result="$(run_work_start_capturing_artifact "$sandbox" "fx-nt-014 first run" 1.0.0 "$FIXTURE_ROOT/does-not-exist.json")"
   artifact1="$(printf '%s' "$result" | head -1)"
   out1="$(printf '%s' "$result" | tail -n +2)"
   case "$out1" in
     *"a valid single notice"*) fail "FX-NT-014: Remote result leaked into the run that triggered the refresh" ;;
   esac
+
+  # Let that leftover detached child release the lock before the deterministic
+  # do_refresh() below claims it in the same sandbox.
+  wait_for_refresh_lock_clear "$sandbox"
 
   # Deterministically materialize "the eventual detached refresh completed"
   # instead of racing the real detached child on process-scheduling timing.
