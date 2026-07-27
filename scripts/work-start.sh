@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$REPO"
+WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ENGINE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$WORKSPACE_ROOT"
 
 TASK_INPUT="${TASK:-}"
 TASK_FILE_INPUT="${TASK_FILE:-}"
@@ -26,9 +27,9 @@ fi
 # code or Candidate generation, so all output is discarded on error.
 NOTICE_VERSION=""
 NOTICE_TEXT=""
-if command -v node >/dev/null 2>&1 && [ -f "$REPO/scripts/notice.mjs" ]; then
-  NOTICE_VERSION="$(cat "$REPO/VERSION" 2>/dev/null || true)"
-  NOTICE_TEXT="$(node "$REPO/scripts/notice.mjs" render --version "$NOTICE_VERSION" 2>/dev/null || true)"
+if command -v node >/dev/null 2>&1 && [ -f "$ENGINE_ROOT/scripts/notice.mjs" ]; then
+  NOTICE_VERSION="$(cat "$ENGINE_ROOT/VERSION" 2>/dev/null || true)"
+  NOTICE_TEXT="$(node "$ENGINE_ROOT/scripts/notice.mjs" render --version "$NOTICE_VERSION" 2>/dev/null || true)"
 fi
 
 is_denied_path() {
@@ -402,7 +403,7 @@ write_related_files_md() {
   echo ""
 }
 
-skill_match_script="$REPO/scripts/work-start-skill-match.mjs"
+skill_match_script="$ENGINE_ROOT/scripts/work-start-skill-match.mjs"
 skill_unavailable_md=$'## Skill candidates\n\n- routing_status: unavailable\n- routing_error_code: consumer_error\n- primary: none\n- secondary: none\n- warning: Skill routing unavailable; generic Work-start output generated.\n'
 skill_unavailable_yaml=$'routing_status: unavailable\nrouting_error_code: consumer_error\nrouting_warnings:\n  - '\''Skill routing unavailable; generic Work-start output generated.'\''\nskill_candidates:\n  status: unavailable\n  primary: []\n  secondary: []\n'
 skill_md="$skill_unavailable_md"
@@ -533,7 +534,7 @@ fi
   echo "  mode: basic"
   echo "  created_at: '$timestamp'"
   echo "repo:"
-  echo "  root: '$(yaml_escape "$REPO")'"
+  echo "  root: '$(yaml_escape "$WORKSPACE_ROOT")'"
   echo "  branch: '$(yaml_escape "$branch")'"
   if [ -n "$changed_files" ]; then
     echo "  dirty_worktree_reference_only:"
@@ -683,7 +684,7 @@ printf '\n%s\n' "$skill_md" >> "$OUT_DIR/starter-prompt.md"
   fi
   echo ""
   echo "## Scope"
-  echo "- repository: \`$REPO\`"
+  echo "- repository: \`$WORKSPACE_ROOT\`"
   echo "- branch: \`$branch\`"
   echo "- in_scope:"
   echo "  - Needs human review: use \`sources.md\` and \`context-manifest.yaml\` to confirm exact files, directories, and features."
@@ -703,7 +704,7 @@ printf '\n%s\n' "$skill_md" >> "$OUT_DIR/starter-prompt.md"
   echo "- Preserve denied/private paths excluded by Work-start search policy."
   echo ""
   echo "## Confirmed Facts"
-  echo "- Observed repository root: \`$REPO\`"
+  echo "- Observed repository root: \`$WORKSPACE_ROOT\`"
   echo "- Observed branch: \`$branch\`"
   echo "- Work-start artifact: \`$OUT_DIR\`"
   echo ""
@@ -809,6 +810,6 @@ fi
 # user has not opted out. Spawns a short detached process and returns
 # immediately; its result becomes visible starting with the next explicit
 # Work-start run, never this one.
-if command -v node >/dev/null 2>&1 && [ -f "$REPO/scripts/notice.mjs" ]; then
-  node "$REPO/scripts/notice.mjs" refresh-if-stale --version "$NOTICE_VERSION" >/dev/null 2>&1 || true
+if command -v node >/dev/null 2>&1 && [ -f "$ENGINE_ROOT/scripts/notice.mjs" ]; then
+  node "$ENGINE_ROOT/scripts/notice.mjs" refresh-if-stale --version "$NOTICE_VERSION" >/dev/null 2>&1 || true
 fi
