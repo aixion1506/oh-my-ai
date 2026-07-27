@@ -282,6 +282,12 @@ VERSION      = 현재 제품 Runtime Version Source (Network 없이 읽음)
 
 Public Stable Release Tag는 `v1.0.0`처럼 SemVer-clean 형식을 쓴다. 설명은 Tag 접미사가 아니라 GitHub Release Title/Notes에 적는다.
 
+### License
+
+Community V1 Repository의 코드와 문서는 [Apache License 2.0](LICENSE)(`Apache-2.0`)으로 배포된다. Copyright 2026 박성환.
+
+이 License는 이 Repository에 공개된 Community V1 Work에 적용된다. 별도 V2 Hosted Service의 가격·운영·상용 제공 조건을 정의하지 않는다.
+
 ### V2 Boundary
 
 V2는 독립 CLI + Login + Device 인증 + Cloud Control Plane이다. V1에는 전혀 포함되지 않는다. V1 사용자는 V2가 출시된 뒤에도 로그인 없이 V1 무료 기능을 계속 쓸 수 있다.
