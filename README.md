@@ -1,94 +1,143 @@
 # oh-my-ai
 
-**Local, human-reviewed workflow for starting AI coding tasks with better context.**
+Claude Code나 Codex에서 새 작업을 시작할 때마다 프로젝트 배경과 주의사항을 다시 설명하는 일을 줄입니다.
 
-oh-my-ai Public V1은 무료·Local-only·Cloud-independent한 Manual Artifact Workflow다. Task를 설명하면 Claude Code와 Codex가 구현을 시작하기 전에 관련 코드·문서·결정·위험, 그리고 누락된 Context 후보를 찾아 Handoff Candidate를 만든다. 사람이 그 Candidate를 검토해 Worker에게 수동으로 전달하고, Worker가 결과를 Result Basic 형식으로 돌려주면 사람이 다시 검토한다.
+oh-my-ai는 작업을 시작하기 전에 현재 Git Repository의 관련 코드, 문서, 기존 결정, 위험과 누락된 Context 후보를 찾아 사람이 검토할 수 있는 작업 Context 초안을 만듭니다.
 
-**AI가 대신 결정하지 않는다 — 후보를 만들고, 사람이 확정한다.** Worker Session을 자동으로 만들거나, 계획을 자동으로 실행하거나, 변경을 자동으로 적용하거나 병합하지 않는다.
+**Local-only · Human-reviewed · Claude Code + Codex**
 
-### Public V1 범위
+코드를 바로 수정하지 않습니다. 사용자가 초안을 검토하기 전에 다음 작업으로 진행하지 않으며, Worker 생성·실행이나 Merge도 자동으로 수행하지 않습니다.
 
-포함:
+## 해결하는 문제
 
-```text
-Local Installation
-Instruction Cascade
-Skill Registry / Routing
-Explicit Work-start Entry
-Structured Handoff Candidate
-Manual Copy/Paste
-Result Basic 수동 Template
-Human Review
-Local Product Notice Channel
-최소 Positive/Negative Fixture
-Manual E2E
-Doctor
-```
+- 새 AI 세션마다 프로젝트 배경과 주의사항을 다시 설명해야 합니다.
+- 관련 문서나 기존 결정을 놓친 채 코드부터 수정하기 쉽습니다.
+- AI가 요청 범위를 넘어 작업하거나 다음 단계를 대신 선택할 수 있습니다.
+- 실행한 검증과 실행하지 않은 검증이 섞이면 결과를 신뢰하기 어렵습니다.
 
-비범위(V1 Non-goals)는 [아래](#v1-non-goals)에 별도로 정리했다.
+## 30초 동작 예시
 
-## 사용자 흐름
+Claude Code:
 
 ```text
-1. 프로젝트에서 /work-start <task> (Claude Code) 또는 $work-start <task> (Codex) 실행
-2. 관련 코드·문서·결정·위험 후보와 Handoff Artifact 생성 (Needs human review)
-3. 사용자가 다음 단계 선택
-   - Gather Context  — 외부 자료를 더 확인한 뒤 재검토
-   - Plan First       — 영향 범위·순서·검증·Decision Gate 정리
-   - Direct Handoff   — 범위가 충분히 명확하면 바로 Worker에게 전달
-4. 현재 세션 또는 새 Claude/Codex 세션에서 수동으로 진행
+/work-start 로그인 실패 메시지를 더 명확하게 바꾸고 싶어
 ```
 
-이 시점까지 코드는 전혀 수정되지 않는다. 기본 선택지는 없다 — 시스템이 대신 고르지 않는다.
+Codex:
+
+```text
+$work-start 로그인 실패 메시지를 더 명확하게 바꾸고 싶어
+```
+
+명시적으로 위 명령을 실행하면:
+
+1. 관련 코드·문서·결정·위험 후보를 탐색합니다.
+2. 현재 Repository의 `.oh-my-ai/work-start/...` 아래에 검토용 Candidate를 만듭니다.
+3. `Needs human review` 상태에서 멈춥니다.
+4. 사용자가 `Gather Context`, `Plan First`, `Direct Handoff` 중 다음 단계를 직접 선택합니다.
+
+이 단계까지 제품 코드는 수정되지 않으며 기본 선택지도 없습니다.
+
+## Requirements
+
+- macOS 또는 Linux
+- Git
+- Make
+- Node.js
+- Claude Code 또는 Codex
+
+Windows는 Public V1 검증 범위에 포함되지 않습니다. `ripgrep`은 선택 사항이며, 없어도 `grep`으로 제한된 검색을 수행합니다.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/<owner>/oh-my-ai.git ~/Github/oh-my-ai
+git clone --branch v1.0.0 \
+  https://github.com/aixion1506/oh-my-ai.git \
+  ~/Github/oh-my-ai
+
 cd ~/Github/oh-my-ai
-make doctor            # 읽기 전용 사전 점검
-make install-shared    # non-destructive 설치
-make doctor-strict     # 설치된 Public Entry와 Runtime 경계 검증
-```
 
-설치 검증 후 Runtime에 맞는 명시 호출을 사용한다.
-
-```text
-Claude Code: /work-start 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
-Codex:       $work-start 로그인 실패 시 에러 메시지를 더 명확하게 바꾸고 싶어
-```
-
-`Needs human review` 상태의 Candidate가 `.oh-my-ai/work-start/<timestamp>-<slug>/`에 생성된다.
-
-업데이트:
-
-```bash
-make update
+make doctor
+make install-shared
 make doctor-strict
 ```
 
-현재 Public V1의 출시 근거, 검증 상태, Known Limitations, 출시 체크리스트는 [V1.0.0 Release Notes (Draft)](docs/release/v1.0.0.md)를 따른다. 설치 세부 정책(기존 설정 보존, Hook 충돌 처리, Codex Trust, 개인 Profile, devcontainer)은 [설치](#설치)에서 다룬다.
+- `make doctor`: 기존 설정·Hook·Skill 충돌 가능성을 읽기 전용으로 점검합니다.
+- `make install-shared`: 기존 설정을 무단으로 덮어쓰지 않고 공유 Runtime Entry와 Work-start Skill을 설치합니다.
+- `make doctor-strict`: 설치된 Runtime Entry, 필수 Hook과 Skill 경계를 엄격하게 검증합니다.
 
-## 사용자 기능
+설치는 non-destructive 방식입니다. 같은 이름의 사용자 Skill이나 손상된 설정처럼 자동으로 해결할 수 없는 충돌은 원본을 보존하고 실패로 보고합니다.
 
-| 사용자 기능 | 실제 역할 |
-|---|---|
-| Work-start | 작업 관련 코드·문서·결정·위험 후보 생성 |
-| Gather Context | 부족한 자료와 외부 Context 추가 검토 |
-| Plan First | 영향 범위·순서·검증·Decision Gate 정리 |
-| Direct Handoff | 새 Claude/Codex 세션에 전달할 작업 계약 준비 |
-| Result Basic | 수행한 검증과 수행하지 않은 검증을 구분해 반환 |
-| Human Review | 사용자가 선택하기 전 자동 진행 방지 |
-| Doctor | 설치·Hook·Skill·Public Entry 상태 점검 |
-| Non-destructive install | 기존 설정과 Skill을 무단으로 덮어쓰지 않음 |
+## 첫 실행
 
-## 이게 막아주는 것 (What it prevents)
+설치가 끝나면 **oh-my-ai Source Repository가 아니라 실제로 작업하려는 Git Repository**로 이동합니다.
 
-- 관련 문서를 놓친 채 코드부터 수정하는 것
-- 오래된 문서를 최신 결정으로 오해하는 것
-- 존재하지 않는 API·테이블·서비스를 추정해 설계하는 것
-- 세션이 바뀌면서 목표·범위·금지사항을 잃는 것
-- 사용자의 승인 없이 AI가 다음 단계로 진행하는 것
+```bash
+cd ~/Github/my-project
+```
+
+Claude Code에서:
+
+```text
+/work-start 로그인 실패 메시지를 개선해줘
+```
+
+Codex에서:
+
+```text
+$work-start 로그인 실패 메시지를 개선해줘
+```
+
+Work-start는 이처럼 사용자가 명시적으로 호출할 때만 실행됩니다. 자연어 요청만으로 Engine이나 Artifact가 자동 실행·생성되지는 않습니다.
+
+## 생성되는 파일
+
+```text
+.oh-my-ai/work-start/<timestamp>-<slug>/
+├── handoff-candidate.md
+├── starter-prompt.md
+├── context-manifest.yaml
+├── sources.md
+└── context-gap-report.md
+```
+
+- `handoff-candidate.md`: 목표·범위·금지사항·위험을 정리한 검토용 작업 계약 초안
+- `starter-prompt.md`: 관련 후보와 확인 질문을 담은 검토용 시작 Prompt
+- `context-manifest.yaml`: Repository, 검색 상태와 Context 후보를 구조화한 Manifest
+- `sources.md`: 탐색에서 참고한 코드·문서 후보 목록
+- `context-gap-report.md`: 아직 확인하지 못했거나 추가 입력이 필요한 Context
+
+모든 Candidate는 `Needs human review`로 시작합니다. 검토 후 다른 Claude Code나 Codex 세션에 전달하더라도 복사·붙여넣기와 실행은 사용자가 직접 수행합니다.
+
+## Public V1이 하지 않는 것
+
+- 자동 코드 수정
+- 자동 Worker Session 생성·실행
+- 자동 Worktree 생성
+- 자동 Result 회수
+- 자동 승인·Apply·Merge
+- 자동 Update·설치·Login
+- Prompt, Repository Context나 사용자 코드의 Cloud 전송
+
+전체 범위는 [V1 Non-goals](#v1-non-goals)에서 확인할 수 있습니다.
+
+## Privacy와 Network 요약
+
+- Prompt, Task, Repository 이름·경로, Git Remote, Candidate, Artifact와 사용자 코드는 외부로 전송하지 않습니다.
+- 기본 Network 예외는 명시적 Work-start 실행 시 stale Product Notice Manifest를 읽는 비차단 요청입니다.
+- Product Notice는 cache-first·next-run·fail-open이며 자동 Update가 아닙니다.
+- 원격 Notice 확인은 [opt-out](#notice-opt-outdismiss)할 수 있습니다.
+
+## 상세 문서
+
+- [설치 및 충돌 정책](#설치)
+- [Troubleshooting](#troubleshooting)
+- [Runtime 검증 범위](#지원-runtime)
+- [V1.0.0 Release Notes](docs/release/v1.0.0.md)
+- [Latest Release](https://github.com/aixion1506/oh-my-ai/releases/tag/v1.0.0)
+- [Architecture / Design](docs/harness-design.md)
+- [V1 Non-goals](#v1-non-goals)
+- [License](LICENSE)
 
 ## Public V1
 
@@ -175,7 +224,7 @@ Notice는 자동 Update·자동 설치·자동 Login이 **아니다.**
 ```text
 명시적 Work-start 실행 시
 → Notice Cache가 stale이면
-→ https://raw.githubusercontent.com/<owner>/oh-my-ai/master/notices/manifest.json 에
+→ https://raw.githubusercontent.com/aixion1506/oh-my-ai/master/notices/manifest.json 에
 → 비차단 one-shot 요청 (최대 2초 Hard Timeout)
 ```
 
@@ -282,6 +331,9 @@ VERSION      = 현재 제품 Runtime Version Source (Network 없이 읽음)
 
 Public Stable Release Tag는 `v1.0.0`처럼 SemVer-clean 형식을 쓴다. 설명은 Tag 접미사가 아니라 GitHub Release Title/Notes에 적는다.
 
+- [V1.0.0 Release Notes](docs/release/v1.0.0.md)
+- [Latest Release](https://github.com/aixion1506/oh-my-ai/releases/tag/v1.0.0)
+
 ### License
 
 Community V1 Repository의 코드와 문서는 [Apache License 2.0](LICENSE)(`Apache-2.0`)으로 배포된다. Copyright 2026 박성환.
@@ -306,6 +358,9 @@ Organization Governance
 Telemetry / Analytics / Push Notification
 상주 Daemon / Scheduler / OS Service
 ```
+
+<details>
+<summary><strong>Architecture Vision과 Repository 내부 구조 (Roadmap)</strong></summary>
 
 ## Architecture Vision (Roadmap)
 
@@ -413,6 +468,8 @@ docs/
   devcontainer-workflow.md ← oh-my-ai/심링크 워크플로 상세
 ```
 
+</details>
+
 ## 스킬 사용량 조회
 
 공용 로그는 Git에 커밋하지 않고 `${XDG_STATE_HOME:-$HOME/.local/state}/oh-my-ai/harness-usage.log`에 JSONL로 저장한다. Codex sandbox 등에서 global state 기록이 막히면 `.oh-my-ai/state/harness-usage.log`에 repo-local ignored state로 fallback한다.
@@ -420,7 +477,7 @@ docs/
 ```bash
 harness-event report                                      # 현재 Git 저장소
 harness-event report --all                                # 전체 저장소
-harness-event report --repo github.com/<owner>/oh-my-ai
+harness-event report --repo github.com/aixion1506/oh-my-ai
 harness-event report --since-days 30
 ```
 
@@ -513,7 +570,7 @@ HARNESS_EXECUTION_MODE=patch-with-approval
 VS Code Settings (JSON)에 한 번만 추가:
 
 ```json
-"dotfiles.repository": "https://github.com/<owner>/oh-my-ai",
+"dotfiles.repository": "https://github.com/aixion1506/oh-my-ai",
 "dotfiles.installCommand": "setup.sh"
 ```
 
