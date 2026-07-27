@@ -41,6 +41,7 @@ $work-start 로그인 실패 메시지를 더 명확하게 바꾸고 싶어
 ## Requirements
 
 - macOS 또는 Linux
+- Bash
 - Git
 - Make
 - Node.js
@@ -67,6 +68,37 @@ make doctor-strict
 - `make doctor-strict`: 설치된 Runtime Entry, 필수 Hook과 Skill 경계를 엄격하게 검증합니다.
 
 설치는 non-destructive 방식입니다. 같은 이름의 사용자 Skill이나 손상된 설정처럼 자동으로 해결할 수 없는 충돌은 원본을 보존하고 실패로 보고합니다.
+
+이 Quick Start는 `v1.0.0` Stable Tag에 설치를 고정합니다. Git에는 branch 이름 대신 `HEAD (no branch)`가 표시되는데, 이는 현재 설치가 특정 Release Version에 고정되어 `master`의 이후 변경을 자동으로 받지 않는 정상 상태입니다. 새 버전은 자동으로 설치되지 않으며, 이 설치 방식에서는 `make update`를 사용하지 않습니다.
+
+## 업데이트
+
+### Stable Tag 설치
+
+[GitHub Releases](https://github.com/aixion1506/oh-my-ai/releases)에서 새 Stable Tag를 확인한 뒤 해당 버전으로 직접 이동합니다.
+
+```bash
+cd ~/Github/oh-my-ai
+
+git fetch --tags --prune
+git switch --detach <new-version-tag>
+
+make install-shared
+make doctor-strict
+```
+
+`<new-version-tag>`는 GitHub Releases에서 확인한 새 Release 번호를 넣는 문법 자리입니다. 이 절차는 자동 Update가 아니며, Tag 이동 후 설치와 엄격 검증을 다시 수행합니다. 기존 사용자 설정은 non-destructive 설치 정책에 따라 보존됩니다.
+
+### Branch-tracking 설치
+
+`make update`는 `master` 같은 Git Branch를 추적하는 개발·검증용 Clone에서만 사용할 수 있습니다. Stable Tag 설치본에서는 사용하지 않습니다.
+
+```bash
+make update
+make doctor-strict
+```
+
+Branch-tracking 설치는 최신 branch 변경을 추적하는 개발용 방식이며, Public Stable Release에 고정된 기본 설치가 아닙니다.
 
 ## 첫 실행
 
@@ -133,8 +165,8 @@ Work-start는 이처럼 사용자가 명시적으로 호출할 때만 실행됩�
 - [설치 및 충돌 정책](#설치)
 - [Troubleshooting](#troubleshooting)
 - [Runtime 검증 범위](#지원-runtime)
-- [V1.0.0 Release Notes](docs/release/v1.0.0.md)
-- [Latest Release](https://github.com/aixion1506/oh-my-ai/releases/tag/v1.0.0)
+- [V1.0.0 Release](https://github.com/aixion1506/oh-my-ai/releases/tag/v1.0.0)
+- [V1.0.0 Release verification record](docs/release/v1.0.0.md)
 - [Architecture / Design](docs/harness-design.md)
 - [V1 Non-goals](#v1-non-goals)
 - [License](LICENSE)
@@ -331,8 +363,8 @@ VERSION      = 현재 제품 Runtime Version Source (Network 없이 읽음)
 
 Public Stable Release Tag는 `v1.0.0`처럼 SemVer-clean 형식을 쓴다. 설명은 Tag 접미사가 아니라 GitHub Release Title/Notes에 적는다.
 
-- [V1.0.0 Release Notes](docs/release/v1.0.0.md)
-- [Latest Release](https://github.com/aixion1506/oh-my-ai/releases/tag/v1.0.0)
+- [V1.0.0 Release](https://github.com/aixion1506/oh-my-ai/releases/tag/v1.0.0)
+- [V1.0.0 Release verification record](docs/release/v1.0.0.md)
 
 ### License
 
@@ -428,7 +460,7 @@ AI coding tool을 쓰다 보면 사용자별 스타일·자주 쓰는 스킬·�
 |------|------|------|
 | 새 컴 세팅 | AI별 설정 수동 세팅 | `make doctor`로 충돌 확인 후 `make install-shared` |
 | devcontainer | AI별 설정 없음 | VS Code Dotfiles로 자동 적용 |
-| 설정 수정 | 머신별로 따로 | 레포에서 수정 → `git push` → 어디서든 `make update` |
+| 설정 수정 | 머신별로 따로 | Branch-tracking 개발 Clone에서 수정 → `git push` → `make update` |
 | 스킬 추가 | 해당 머신에만 존재 | `git push`하면 다른 머신에도 동기화 |
 
 ### 구조
@@ -531,11 +563,7 @@ make install-profile PROFILE=<name>
 - profile script를 설치하려면 `make install-profile PROFILE=<name>`을 사용한다. profile hook/settings는 자동 활성화하지 않고 직접 병합한다.
 - 선택적 Claude plugin/settings 예시는 `profiles/example/claude-settings.json.example`에서 확인하고, 필요한 항목만 사용자가 직접 opt-in해 병합한다.
 
-업데이트:
-
-```bash
-make update   # git pull + non-destructive shared install
-```
+업데이트 방식은 설치 유형에 따라 다르다. Stable Tag 설치는 새 Tag로 직접 이동하고, `make update`는 Branch-tracking 개발 Clone에서만 사용한다. 자세한 명령은 [업데이트](#업데이트)를 따른다.
 
 ### Local skills policy
 
