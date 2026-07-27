@@ -844,6 +844,92 @@ check_installed_work_start_e2e() {
   echo "passed: FX-WS-E2E-002 Codex installed explicit invocation"
 }
 
+check_installed_external_repository_notice_e2e() {
+  local clone home_dir target cache_dir config_dir manifest output first_artifact second_artifact
+  local cache_file lock_file waited_ms=0
+
+  clone="$(clone_fixture_repo work-start-external-repository-notice)"
+  home_dir="$TEMP_ROOT/work-start-external-repository-notice/home"
+  target="$TEMP_ROOT/work-start-external-repository-notice/user-project"
+  cache_dir="$TEMP_ROOT/work-start-external-repository-notice/xdg-cache"
+  config_dir="$TEMP_ROOT/work-start-external-repository-notice/xdg-config"
+  manifest="$TEMP_ROOT/work-start-external-repository-notice/manifest.json"
+  cache_file="$cache_dir/oh-my-ai/notice-manifest.json"
+  lock_file="$cache_dir/oh-my-ai/notice-refresh.lock"
+
+  make_target_repo "$target"
+  mkdir -p "$cache_dir" "$config_dir"
+  cat >"$manifest" <<'JSON'
+{
+  "schema_version": 1,
+  "notices": [
+    {
+      "notice_id": "fx-external-repository-v1-1-0",
+      "message": "fixture: v1.1.0 update available.",
+      "action_url": "https://github.com/aixion1506/oh-my-ai/releases/tag/v1.1.0",
+      "min_version": "1.0.0",
+      "max_version": "1.1.0"
+    }
+  ]
+}
+JSON
+
+  run_setup "$clone" "$home_dir" --install-shared >/dev/null
+
+  output="$(
+    cd "$target"
+    HOME="$home_dir" XDG_CACHE_HOME="$cache_dir" XDG_CONFIG_HOME="$config_dir" \
+      NOTICE_MANIFEST_URL="file://$manifest" \
+      "$home_dir/.local/bin/oh-my-ai" work-start -- "first notice run"
+  )"
+  printf '%s\n' "$output" | grep -q -F -- "oh-my-ai notice:" \
+    && fail "external repository first Work-start displayed a newly refreshed Notice"
+  first_artifact="$(printf '%s\n' "$output" | sed -n 's/^work-start artifact created: //p' | tail -1)"
+  [ -n "$first_artifact" ] || fail "external repository first Work-start did not report an artifact"
+  [ -f "$target/$first_artifact/handoff-candidate.md" ] \
+    || fail "external repository first Candidate was not created under the user project"
+  [ ! -e "$clone/.oh-my-ai/work-start" ] \
+    || fail "external repository first Candidate leaked into the Engine source"
+
+  while [ ! -s "$cache_file" ] && [ "$waited_ms" -lt 3000 ]; do
+    sleep 0.02
+    waited_ms=$((waited_ms + 20))
+  done
+  [ -s "$cache_file" ] || fail "external repository first Work-start did not refresh the Notice cache"
+  while [ -e "$lock_file" ] && [ "$waited_ms" -lt 6000 ]; do
+    sleep 0.02
+    waited_ms=$((waited_ms + 20))
+  done
+  [ ! -e "$lock_file" ] || fail "external repository Notice refresh lock did not clear"
+
+  output="$(
+    cd "$target"
+    HOME="$home_dir" XDG_CACHE_HOME="$cache_dir" XDG_CONFIG_HOME="$config_dir" \
+      NOTICE_MANIFEST_URL="file://$manifest" \
+      "$home_dir/.local/bin/oh-my-ai" work-start -- "second notice run"
+  )"
+  printf '%s\n' "$output" | grep -q -F -- "oh-my-ai notice:" \
+    || fail "external repository second Work-start did not display the cached Notice"
+  printf '%s\n' "$output" | grep -q -F -- "fixture: v1.1.0 update available." \
+    || fail "external repository second Work-start omitted the Notice message"
+  printf '%s\n' "$output" | grep -q -F -- "https://github.com/aixion1506/oh-my-ai/releases/tag/v1.1.0" \
+    || fail "external repository second Work-start omitted the Notice action URL"
+  [ "$(printf '%s\n' "$output" | tail -4 | sed -n '1p')" = "oh-my-ai notice:" ] \
+    || fail "external repository Notice was not emitted at the Work-start output tail"
+
+  second_artifact="$(printf '%s\n' "$output" | sed -n 's/^work-start artifact created: //p' | tail -1)"
+  [ -f "$target/$second_artifact/handoff-candidate.md" ] \
+    || fail "external repository second Candidate was not created under the user project"
+  if grep -r -q -F -- "fixture: v1.1.0 update available." \
+    "$target/$first_artifact" "$target/$second_artifact"; then
+    fail "external repository Notice text leaked into a Candidate Artifact"
+  fi
+  [ ! -e "$target/VERSION" ] || fail "fixture unexpectedly placed VERSION in the user project"
+  [ ! -e "$target/scripts/notice.mjs" ] || fail "fixture unexpectedly placed notice.mjs in the user project"
+
+  echo "passed: FX-WS-E2E-008 external repository installed Product Notice"
+}
+
 check_work_start_post_execution_boundary() {
   local fixture="$FIXTURE_ROOT/FX-WS-E2E-007-post-execution-human-review"
   local clone home_dir target_a target_b target_symlink invocation_log task other_task output continuation_output other_repo_output expired_task expired_output session_a session_b session_codex engine_only_task no_session_task external_state
@@ -1110,6 +1196,7 @@ check_disabled_runtime_states
 check_core_requirement_matrix
 check_work_start_runtime_contracts
 check_installed_work_start_e2e
+check_installed_external_repository_notice_e2e
 check_work_start_post_execution_boundary
 check_work_start_public_entry_parser
 check_work_start_engine_failure_modes
