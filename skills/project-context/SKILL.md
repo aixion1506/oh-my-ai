@@ -173,6 +173,16 @@ branch: <현재 브랜치>
    - Promotion Source
 5. `last_updated` 갱신
 6. 사용자 확인 후 Durable Context로 저장
+7. Durable Context 저장이 성공한 뒤에만 Guard 상태를 해결:
+
+```bash
+oh-my-ai context-checkpoint resolve checkpointed \
+  --promotion-source context-checkpoint-<YYYYMMDD>-<short-slug>
+```
+
+`promotion-source`는 절대 경로, URL, Secret·Token·Credential이 아닌 opaque local identifier
+또는 sanitized local reference만 사용한다. 명령이 실패하면 `checkpointed`로 보고하지 않고
+Guard 상태를 unresolved로 유지한다.
 
 `CONTEXT CHECKPOINT`는 장기 맥락 갱신이며 Worker 실행 지시문이 아니다. 현재 Task를 다음 Worker Session에 전달해야 하면 최신 Context를 준비한 뒤 `handoff-prompt`로 Structured Handoff Candidate를 별도 생성한다.
 
