@@ -136,13 +136,13 @@ const expectedScenarios = {
   "telemetry-execution-failure": { gate_result: "READY", blocking: false, allowed_next_step: "PLAN_ONLY", mutation: 0 },
 };
 
-const sourcePriority = [
-  "Accepted Decision",
-  "Canonical Repository Product and Architecture Documents",
-  "Confluence Specification",
-  "Jira Ticket",
-  "Handoff Candidate",
-  "Current Conversation",
+const expectedSourceList = [
+  { number: 1, item: "Accepted Decision" },
+  { number: 2, item: "Canonical Repository Product and Architecture Documents" },
+  { number: 3, item: "Confluence Specification" },
+  { number: 4, item: "Jira Ticket" },
+  { number: 5, item: "Handoff Candidate" },
+  { number: 6, item: "Current Conversation" },
 ];
 
 const normalize = (text) => text.replace(/\s+/g, " ").trim();
@@ -151,14 +151,47 @@ function invariant(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-function assertOrderedAfter(text, anchor, values, label) {
-  let cursor = text.indexOf(anchor);
-  invariant(cursor >= 0, `${label}: missing anchor '${anchor}'`);
-  for (const value of values) {
-    const next = text.indexOf(value, cursor + 1);
-    invariant(next >= 0, `${label}: missing ordered value '${value}'`);
-    cursor = next;
+function assertExactSourceSection(text, sectionHeading, label) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const sectionStarts = lines
+    .map((line, index) => line === sectionHeading ? index : -1)
+    .filter((index) => index >= 0);
+  invariant(sectionStarts.length === 1, `${label}: expected one '${sectionHeading}' heading`);
+
+  const headingMatch = sectionHeading.match(/^(#+)\s+\S/);
+  invariant(headingMatch, `${label}: invalid section heading '${sectionHeading}'`);
+  const sameLevelHeading = new RegExp(`^${headingMatch[1]}\\s+\\S`);
+  const sectionStart = sectionStarts[0];
+  const nextSectionOffset = lines
+    .slice(sectionStart + 1)
+    .findIndex((line) => sameLevelHeading.test(line));
+  const sectionEnd = nextSectionOffset < 0
+    ? lines.length
+    : sectionStart + 1 + nextSectionOffset;
+  const sectionLines = lines.slice(sectionStart + 1, sectionEnd);
+
+  const numberedLines = sectionLines
+    .map((line, index) => {
+      const match = line.match(/^(\d+)\.\s+(.+?)\s*$/);
+      return match
+        ? { lineIndex: index, number: Number(match[1]), item: match[2] }
+        : null;
+    })
+    .filter(Boolean);
+
+  invariant(numberedLines.length > 0, `${label}: missing numbered source list`);
+  for (let index = 1; index < numberedLines.length; index += 1) {
+    invariant(
+      numberedLines[index].lineIndex === numberedLines[index - 1].lineIndex + 1,
+      `${label}: numbered source list must be contiguous`
+    );
   }
+
+  const actualSourceList = numberedLines.map(({ number, item }) => ({ number, item }));
+  invariant(
+    JSON.stringify(actualSourceList) === JSON.stringify(expectedSourceList),
+    `${label}: source list mismatch; got ${JSON.stringify(actualSourceList)}`
+  );
 }
 
 function assertExactScenario(actual, expected, id) {
@@ -197,8 +230,8 @@ function validateContract(input) {
     assertExactScenario(scenario, expectedScenarios[scenario.id], scenario.id);
   }
 
-  assertOrderedAfter(skill, "Validate sources in this order:", sourcePriority, "Skill source priority");
-  assertOrderedAfter(report, "## Source of Truth Validation", sourcePriority, "Report source priority");
+  assertExactSourceSection(skill, "## Source of Truth Gate", "Skill source priority");
+  assertExactSourceSection(report, "## Source of Truth Validation", "Report source priority");
 
   const normalizedSkill = normalize(skill);
   invariant(
@@ -260,7 +293,10 @@ function expectMutationRejected(name, mutate) {
     rejected = true;
   }
   invariant(rejected, `mutation was not detected: ${name}`);
+  mutationChecks += 1;
 }
+
+let mutationChecks = 0;
 
 expectMutationRejected("network key deleted", ({ fixture }) => { delete fixture.network; });
 expectMutationRejected("network true", ({ fixture }) => { fixture.network = true; });
@@ -295,7 +331,40 @@ expectMutationRejected("unsupported invocation field added", (candidate) => {
   candidate.descriptor += "\ndisable-model-invocation: true\n";
 });
 
-console.log("jira-work semantic mutation checks passed: 11/11");
+function swapAdjacentSourceItems(text, leftIndex) {
+  const left = expectedSourceList[leftIndex];
+  const right = expectedSourceList[leftIndex + 1];
+  const originalPair = `${left.number}. ${left.item}\n${right.number}. ${right.item}`;
+  const swappedPair = `${left.number}. ${right.item}\n${right.number}. ${left.item}`;
+  const mutated = text.replace(originalPair, swappedPair);
+  invariant(mutated !== text, `source mutation setup failed for items ${left.number}<->${right.number}`);
+  return mutated;
+}
+
+for (const target of ["skill", "report"]) {
+  for (let leftIndex = 0; leftIndex < expectedSourceList.length - 1; leftIndex += 1) {
+    const leftNumber = leftIndex + 1;
+    const rightNumber = leftNumber + 1;
+    expectMutationRejected(`${target} source items ${leftNumber}<->${rightNumber} swapped`, (candidate) => {
+      candidate[target] = swapAdjacentSourceItems(candidate[target], leftIndex);
+    });
+  }
+}
+
+expectMutationRejected("Skill source item missing", (candidate) => {
+  candidate.skill = candidate.skill.replace("6. Current Conversation\n", "");
+});
+expectMutationRejected("Skill source item duplicated", (candidate) => {
+  candidate.skill = candidate.skill.replace("4. Jira Ticket", "4. Confluence Specification");
+});
+expectMutationRejected("Skill source item added", (candidate) => {
+  candidate.skill = candidate.skill.replace("6. Current Conversation", "6. Current Conversation\n7. Unexpected Source");
+});
+expectMutationRejected("Skill source numbering discontinuous", (candidate) => {
+  candidate.skill = candidate.skill.replace("4. Jira Ticket", "7. Jira Ticket");
+});
+
+console.log(`jira-work semantic mutation checks passed: ${mutationChecks}`);
 NODE
 
 echo "jira-work pure contract fixtures passed"
