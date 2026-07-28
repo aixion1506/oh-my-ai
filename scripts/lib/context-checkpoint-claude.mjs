@@ -37,8 +37,8 @@ export function handleClaudeCheckpointHook(eventName, rawInput, options = {}) {
     }
     if (!notification.notify) return {};
     return {
-      systemMessage: unresolvedMessage(),
-      additionalContext: unresolvedMessage(),
+      systemMessage: unresolvedMessage(notification.prior_unresolved_count),
+      additionalContext: unresolvedMessage(notification.prior_unresolved_count),
     };
   }
   return unavailableOutput(eventName, "unsupported_hook_event");
@@ -95,9 +95,12 @@ function unavailableOutput(eventName, reasonCode) {
   };
 }
 
-function unresolvedMessage() {
+function unresolvedMessage(unresolvedCount) {
   return [
     "이전 작업 구간에서 Project Context 검토가 완료되지 않았습니다.",
+    Number.isInteger(unresolvedCount)
+      ? `미해결 Context Checkpoint: ${unresolvedCount}개`
+      : "",
     "",
     "선택:",
     "- Context Checkpoint 진행",
@@ -105,5 +108,5 @@ function unresolvedMessage() {
     "- 현재 작업을 계속하고 나중에 검토",
     "",
     "기본 선택은 없습니다. 마지막 선택은 해결 상태가 아니며 review_needed가 유지됩니다.",
-  ].join("\n");
+  ].filter((line, index, lines) => line || lines[index - 1] !== "").join("\n");
 }

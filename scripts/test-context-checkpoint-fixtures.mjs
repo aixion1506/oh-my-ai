@@ -33,6 +33,118 @@ try {
   assert.equal(noActivity.checkpoint_state, "clean");
   pass("FX-CCG-002 activity 없음은 clean");
 
+  const unavailableStorageRepo = makeRepository("missing-state-unavailable-storage");
+  const unavailableXdg = path.join(sandbox, "unavailable-xdg");
+  fs.writeFileSync(unavailableXdg, "not a directory\n", "utf8");
+  fs.writeFileSync(path.join(unavailableStorageRepo, ".oh-my-ai"), "not a directory\n", "utf8");
+  const unavailableStorage = checkpointStatus({
+    cwd: unavailableStorageRepo,
+    env: {
+      ...fixtureEnv,
+      HOME: "",
+      XDG_STATE_HOME: unavailableXdg,
+    },
+  });
+  assert.equal(unavailableStorage.availability, "unavailable");
+  assert.notEqual(unavailableStorage.checkpoint_state, "clean");
+  assert.equal(unavailableStorage.manual_checkpoint_required, true);
+  const unavailableStorageEnv = {
+    ...fixtureEnv,
+    HOME: "",
+    XDG_STATE_HOME: unavailableXdg,
+  };
+  const unavailablePreflight = checkpointHandoffPreflight({
+    cwd: unavailableStorageRepo,
+    env: unavailableStorageEnv,
+  });
+  assert.equal(unavailablePreflight.availability, "unavailable");
+  assert.notEqual(unavailablePreflight.checkpoint_state, "clean");
+  assert.equal(unavailablePreflight.manual_checkpoint_required, true);
+  for (const args of [
+    ["context-checkpoint", "status", "--json"],
+    ["context-checkpoint", "handoff-preflight", "--json"],
+    ["context-checkpoint", "resolve", "no-update", "--json"],
+  ]) {
+    const command = runEntry(unavailableStorageRepo, unavailableStorageEnv, args);
+    assert.equal(command.status, 1);
+    const output = JSON.parse(command.stdout);
+    assert.equal(output.availability, "unavailable");
+    assert.notEqual(output.checkpoint_state, "clean");
+    assert.equal(output.manual_checkpoint_required, true);
+  }
+  const unavailableSessionStart = runEntry(
+    unavailableStorageRepo,
+    unavailableStorageEnv,
+    ["hook", "claude", "SessionStart"],
+    {
+      session_id: "unavailable-storage-session",
+      cwd: unavailableStorageRepo,
+      hook_event_name: "SessionStart",
+      source: "startup",
+    },
+  );
+  assert.equal(unavailableSessionStart.status, 0);
+  const unavailableSessionStartOutput = JSON.parse(unavailableSessionStart.stdout);
+  assert.match(unavailableSessionStartOutput.systemMessage, /availability: unavailable/);
+  assert.match(
+    unavailableSessionStartOutput.hookSpecificOutput.additionalContext,
+    /Manual Context Checkpoint/,
+  );
+  pass("FX-CCG-002 missing State의 모든 저장소가 불가하면 clean으로 판정하지 않음");
+
+  const fallbackRepo = makeRepository("missing-state-repo-fallback");
+  const fallbackXdg = path.join(sandbox, "fallback-xdg-unavailable");
+  fs.writeFileSync(fallbackXdg, "not a directory\n", "utf8");
+  const fallbackEnv = {
+    ...fixtureEnv,
+    HOME: "",
+    XDG_STATE_HOME: fallbackXdg,
+  };
+  const fallbackStatus = checkpointStatus({ cwd: fallbackRepo, env: fallbackEnv });
+  assert.equal(fallbackStatus.availability, "available");
+  assert.equal(fallbackStatus.checkpoint_state, "clean");
+  assert.equal(
+    allFiles(fallbackRepo).some(file => file.includes("capability-probe")),
+    false,
+  );
+  const fallbackActivity = recordCheckpointActivity({
+    cwd: fallbackRepo,
+    runtime: "claude",
+    sessionId: "fallback-session",
+    eventId: "fallback-event",
+    signalKind: "file_mutation",
+    env: fallbackEnv,
+  });
+  assert.equal(fallbackActivity.availability, "available");
+  assert.equal(fallbackActivity.checkpoint_state, "review_needed");
+  assert.ok(
+    allFiles(path.join(fallbackRepo, ".oh-my-ai", "state"))
+      .some(file => file.endsWith("context-checkpoint-state.json")),
+  );
+  pass("FX-CCG-007 XDG가 불가하면 writable Repo fallback을 선택");
+
+  for (const [faultName, fixtureName] of [
+    ["probeWrite", "write"],
+    ["probeRename", "rename"],
+  ]) {
+    const probeFailureRepo = makeRepository(`missing-state-probe-${fixtureName}-failure`);
+    const probeFailure = checkpointStatus({
+      cwd: probeFailureRepo,
+      env: {
+        ...fixtureEnv,
+        XDG_STATE_HOME: path.join(sandbox, `probe-${fixtureName}-failure-state`),
+      },
+      faults: { [faultName]: true },
+    });
+    assert.equal(probeFailure.availability, "unavailable");
+    assert.notEqual(probeFailure.checkpoint_state, "clean");
+  }
+  assert.equal(
+    allFiles(sandbox).some(file => file.includes("capability-probe")),
+    false,
+  );
+  pass("FX-CCG-007 capability probe write/rename 실패는 unavailable이며 Evidence를 정리");
+
   const firstActivity = recordCheckpointActivity({
     cwd: primary,
     runtime: "claude",
@@ -361,6 +473,246 @@ try {
   assert.ok(concurrentResults.every(result => result.status === 0));
   assert.equal(checkpointStatus({ cwd: concurrentRepo, env: concurrentEnv }).activity_revision, 8);
   pass("FX-CCG-007 실패·동시 Event는 non-blocking unavailable 또는 직렬화");
+
+  const existingStateRepo = makeRepository("existing-state-write-failure");
+  const existingStateEnv = {
+    ...fixtureEnv,
+    XDG_STATE_HOME: path.join(sandbox, "existing-state-write-failure-state"),
+  };
+  const existingStateActivity = recordCheckpointActivity({
+    cwd: existingStateRepo,
+    runtime: "claude",
+    sessionId: "existing-state-session",
+    eventId: "existing-state-event-one",
+    signalKind: "file_mutation",
+    env: existingStateEnv,
+  });
+  assert.equal(existingStateActivity.availability, "available");
+  const existingStateFile = findStateFileForHash(
+    existingStateEnv.XDG_STATE_HOME,
+    existingStateActivity.repository_hash,
+  );
+  const existingStateWriteFailure = recordCheckpointActivity({
+    cwd: existingStateRepo,
+    runtime: "claude",
+    sessionId: "existing-state-session",
+    eventId: "existing-state-event-two",
+    signalKind: "validation_run",
+    env: existingStateEnv,
+    faults: { write: true },
+  });
+  assert.equal(existingStateWriteFailure.availability, "unavailable");
+  assert.notEqual(existingStateWriteFailure.checkpoint_state, "clean");
+  assert.equal(
+    JSON.parse(fs.readFileSync(existingStateFile, "utf8"))
+      .unresolved_epochs[0].activity_revision,
+    1,
+  );
+  assert.equal(
+    fs.existsSync(path.join(existingStateRepo, ".oh-my-ai", "state", "context-checkpoint-state.json")),
+    false,
+  );
+  pass("FX-CCG-007 기존 State write 실패는 Repo fallback으로 split-brain을 만들지 않음");
+
+  const sessionScopeRepo = makeRepository("session-scope");
+  const sessionScopeEnv = {
+    ...fixtureEnv,
+    XDG_STATE_HOME: path.join(sandbox, "session-scope-state"),
+  };
+  const sessionA = recordCheckpointActivity({
+    cwd: sessionScopeRepo,
+    runtime: "claude",
+    sessionId: "scope-session-a",
+    eventId: "scope-event-a",
+    signalKind: "file_mutation",
+    env: sessionScopeEnv,
+  });
+  const sessionB = recordCheckpointActivity({
+    cwd: sessionScopeRepo,
+    runtime: "claude",
+    sessionId: "scope-session-b",
+    eventId: "scope-event-b",
+    signalKind: "validation_run",
+    env: sessionScopeEnv,
+  });
+  assert.notEqual(sessionA.epoch_id, sessionB.epoch_id);
+  assert.notEqual(sessionA.session_hash, sessionB.session_hash);
+  assert.equal(sessionB.unresolved_count, 2);
+  assert.deepEqual(
+    sessionB.unresolved_epochs.map(epoch => epoch.activity_revision),
+    [1, 1],
+  );
+  assert.deepEqual(
+    sessionB.unresolved_epochs.map(epoch => epoch.activity_signal_kinds),
+    [["file_mutation"], ["validation_run"]],
+  );
+  const multiSessionStatus = checkpointStatus({
+    cwd: sessionScopeRepo,
+    env: sessionScopeEnv,
+  });
+  assert.equal(multiSessionStatus.epoch_id, null);
+  assert.equal(multiSessionStatus.session_hash, null);
+
+  const sessionCNotification = notifyUnresolvedCheckpoint({
+    cwd: sessionScopeRepo,
+    runtime: "claude",
+    sessionId: "scope-session-c",
+    boundaryKind: "SessionStart",
+    env: sessionScopeEnv,
+  });
+  assert.equal(sessionCNotification.notify, true);
+  assert.equal(sessionCNotification.prior_unresolved_count, 2);
+  const sessionCSuppressed = notifyUnresolvedCheckpoint({
+    cwd: sessionScopeRepo,
+    runtime: "claude",
+    sessionId: "scope-session-c",
+    boundaryKind: "SessionStart",
+    env: sessionScopeEnv,
+  });
+  assert.equal(sessionCSuppressed.notify, false);
+  const sessionANotification = notifyUnresolvedCheckpoint({
+    cwd: sessionScopeRepo,
+    runtime: "claude",
+    sessionId: "scope-session-a",
+    boundaryKind: "SessionStart",
+    env: sessionScopeEnv,
+  });
+  assert.equal(sessionANotification.notify, true);
+  assert.equal(sessionANotification.prior_unresolved_count, 1);
+
+  const ambiguousResolution = resolveCheckpoint({
+    cwd: sessionScopeRepo,
+    resolution: "no_update",
+    env: sessionScopeEnv,
+  });
+  assert.equal(ambiguousResolution.availability, "unavailable");
+  assert.equal(ambiguousResolution.reason_code, "multiple_unresolved_checkpoints");
+  assert.equal(checkpointStatus({ cwd: sessionScopeRepo, env: sessionScopeEnv }).unresolved_count, 2);
+
+  const resolvedACli = runEntry(
+    sessionScopeRepo,
+    sessionScopeEnv,
+    [
+      "context-checkpoint",
+      "resolve",
+      "no-update",
+      "--epoch",
+      sessionA.epoch_id,
+      "--json",
+    ],
+  );
+  assert.equal(resolvedACli.status, 0);
+  const resolvedA = JSON.parse(resolvedACli.stdout);
+  assert.equal(resolvedA.availability, "available");
+  assert.equal(resolvedA.resolution, "no_update");
+  assert.equal(resolvedA.unresolved_count, 1);
+  assert.equal(resolvedA.unresolved_epochs[0].epoch_id, sessionB.epoch_id);
+  pass("FX-CCG-006 Session source Epoch와 one-time 진단 및 resolve 격리");
+
+  const concurrentSessionRepo = makeRepository("concurrent-session-scope");
+  const concurrentSessionEnv = {
+    ...fixtureEnv,
+    XDG_STATE_HOME: path.join(sandbox, "concurrent-session-scope-state"),
+  };
+  const concurrentSessions = await Promise.all([
+    runEntryAsync(
+      concurrentSessionRepo,
+      concurrentSessionEnv,
+      ["hook", "claude", "PostToolUse"],
+      {
+        session_id: "concurrent-scope-a",
+        cwd: concurrentSessionRepo,
+        hook_event_name: "PostToolUse",
+        tool_name: "Write",
+        tool_input: { file_path: path.join(concurrentSessionRepo, "a.txt"), content: "private" },
+        tool_response: { success: true },
+        tool_use_id: "concurrent-scope-event-a",
+      },
+    ),
+    runEntryAsync(
+      concurrentSessionRepo,
+      concurrentSessionEnv,
+      ["hook", "claude", "PostToolUse"],
+      {
+        session_id: "concurrent-scope-b",
+        cwd: concurrentSessionRepo,
+        hook_event_name: "PostToolUse",
+        tool_name: "Bash",
+        tool_input: { command: "make test-context-checkpoint-fixtures" },
+        tool_response: { stdout: "private", stderr: "" },
+        tool_use_id: "concurrent-scope-event-b",
+      },
+    ),
+  ]);
+  assert.ok(concurrentSessions.every(result => result.status === 0));
+  const concurrentSessionStatus = checkpointStatus({
+    cwd: concurrentSessionRepo,
+    env: concurrentSessionEnv,
+  });
+  assert.equal(concurrentSessionStatus.unresolved_count, 2);
+  assert.deepEqual(
+    concurrentSessionStatus.unresolved_epochs.map(epoch => epoch.activity_revision),
+    [1, 1],
+  );
+  pass("FX-CCG-007 독립 Process의 동시 Session Activity를 source Epoch별 직렬화");
+
+  const migrationRepo = makeRepository("schema-v1-migration");
+  const migrationEnv = {
+    ...fixtureEnv,
+    XDG_STATE_HOME: path.join(sandbox, "schema-v1-migration-state"),
+  };
+  const migrationActivity = recordCheckpointActivity({
+    cwd: migrationRepo,
+    runtime: "claude",
+    sessionId: "migration-session",
+    eventId: "migration-event-one",
+    signalKind: "file_mutation",
+    env: migrationEnv,
+  });
+  const migrationStateFile = findStateFileForHash(
+    migrationEnv.XDG_STATE_HOME,
+    migrationActivity.repository_hash,
+  );
+  const migrationV2 = JSON.parse(fs.readFileSync(migrationStateFile, "utf8"));
+  const migrationEpoch = migrationV2.unresolved_epochs[0];
+  fs.writeFileSync(migrationStateFile, `${JSON.stringify({
+    schema_version: 1,
+    repository_hash: migrationV2.repository_hash,
+    worktree_hash: migrationV2.worktree_hash,
+    runtime: migrationEpoch.runtime,
+    session_hash: migrationEpoch.session_hash,
+    epoch_id: migrationEpoch.epoch_id,
+    activity_signal_kinds: migrationEpoch.activity_signal_kinds,
+    activity_revision: migrationEpoch.activity_revision,
+    seen_event_hashes: migrationEpoch.seen_event_hashes,
+    first_activity_at: migrationEpoch.first_activity_at,
+    last_activity_at: migrationEpoch.last_activity_at,
+    checkpoint_state: "review_needed",
+    last_notified_boundary: null,
+    last_notified_revision: null,
+    last_notified_at: null,
+    resolution: null,
+    resolved_at: null,
+    promotion_source_ref: null,
+    availability: "available",
+    created_at: migrationV2.created_at,
+  }, null, 2)}\n`, "utf8");
+  const migratedStatus = checkpointStatus({ cwd: migrationRepo, env: migrationEnv });
+  assert.equal(migratedStatus.schema_version, 2);
+  assert.equal(migratedStatus.unresolved_count, 1);
+  assert.equal(migratedStatus.unresolved_epochs[0].epoch_id, migrationEpoch.epoch_id);
+  assert.equal(JSON.parse(fs.readFileSync(migrationStateFile, "utf8")).schema_version, 1);
+  const migratedActivity = recordCheckpointActivity({
+    cwd: migrationRepo,
+    runtime: "claude",
+    sessionId: "migration-session",
+    eventId: "migration-event-two",
+    signalKind: "validation_run",
+    env: migrationEnv,
+  });
+  assert.equal(migratedActivity.activity_revision, 2);
+  assert.equal(JSON.parse(fs.readFileSync(migrationStateFile, "utf8")).schema_version, 2);
+  pass("FX-CCG-007 schema v1은 조회 시 보존하고 다음 mutation에서 v2로 전환");
 
   const unsupported = recordCheckpointActivity({
     cwd: lifecycle,

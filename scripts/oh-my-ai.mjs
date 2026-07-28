@@ -178,13 +178,16 @@ function runContextCheckpoint(args) {
     const resolution = args[1] || "";
     const sourceIndex = args.indexOf("--promotion-source");
     const promotionSourceRef = sourceIndex === -1 ? "" : args[sourceIndex + 1] || "";
+    const epochIndex = args.indexOf("--epoch");
+    const epochId = epochIndex === -1 ? "" : args[epochIndex + 1] || "";
     const allowed = resolution.replace("-", "_") === "checkpointed"
-      ? ["--json", "--promotion-source", promotionSourceRef]
-      : ["--json"];
+      ? ["--json", "--promotion-source", promotionSourceRef, "--epoch", epochId]
+      : ["--json", "--epoch", epochId];
     if (
       !["checkpointed", "no-update", "no_update"].includes(resolution)
       || !onlyOptions(args.slice(2), allowed)
       || (sourceIndex !== -1 && !promotionSourceRef)
+      || (epochIndex !== -1 && !epochId)
     ) {
       contextCheckpointUsage();
     }
@@ -192,6 +195,7 @@ function runContextCheckpoint(args) {
       cwd: process.cwd(),
       resolution,
       promotionSourceRef,
+      epochId,
       env: process.env,
     });
   } else {
@@ -211,7 +215,7 @@ function onlyOptions(values, allowed) {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (!allowedSet.has(value)) return false;
-    if (value === "--promotion-source") index += 1;
+    if (value === "--promotion-source" || value === "--epoch") index += 1;
   }
   return true;
 }
@@ -219,6 +223,14 @@ function onlyOptions(values, allowed) {
 function writeContextCheckpointText(action, result) {
   process.stdout.write(`availability: ${result.availability}\n`);
   process.stdout.write(`checkpoint_state: ${result.checkpoint_state ?? "unknown"}\n`);
+  if (Number.isInteger(result.unresolved_count)) {
+    process.stdout.write(`unresolved_count: ${result.unresolved_count}\n`);
+  }
+  if (result.unresolved_count > 1) {
+    for (const epoch of result.unresolved_epochs || []) {
+      process.stdout.write(`unresolved_epoch: ${epoch.epoch_id}\n`);
+    }
+  }
   if (result.resolution) process.stdout.write(`resolution: ${result.resolution}\n`);
   if (action === "handoff-preflight") {
     process.stdout.write(`context_checkpoint: ${result.context_checkpoint}\n`);
@@ -235,8 +247,8 @@ function writeContextCheckpointText(action, result) {
 function contextCheckpointUsage() {
   process.stderr.write("usage: oh-my-ai context-checkpoint status [--json]\n");
   process.stderr.write("       oh-my-ai context-checkpoint handoff-preflight [--json]\n");
-  process.stderr.write("       oh-my-ai context-checkpoint resolve checkpointed --promotion-source <sanitized-ref> [--json]\n");
-  process.stderr.write("       oh-my-ai context-checkpoint resolve no-update [--json]\n");
+  process.stderr.write("       oh-my-ai context-checkpoint resolve checkpointed --promotion-source <sanitized-ref> [--epoch <opaque-epoch-id>] [--json]\n");
+  process.stderr.write("       oh-my-ai context-checkpoint resolve no-update [--epoch <opaque-epoch-id>] [--json]\n");
   process.exit(2);
 }
 

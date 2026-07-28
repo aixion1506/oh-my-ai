@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
+const LEGACY_SCHEMA_VERSION = 1;
 const STATE_FILE = "context-checkpoint-state.json";
 const SUPPORTED_RUNTIMES = new Set(["claude"]);
 const SUPPORTED_SIGNALS = new Set(["file_mutation", "validation_run", "explicit_handoff_boundary"]);
@@ -16,9 +17,11 @@ export function checkpointStatus(options = {}) {
   const scope = resolveScope(options);
   if (!scope.ok) return unavailable(scope.reason);
 
-  const loaded = loadCurrentState(scope, options);
-  if (loaded.kind === "error") return unavailable(loaded.reason, scope);
-  const state = loaded.kind === "missing" ? freshState(scope, nowIso(options)) : loaded.state;
+  const selected = selectStateLocation(scope, options);
+  if (selected.kind === "error") return unavailable(selected.reason, scope);
+  const state = selected.kind === "missing"
+    ? freshState(scope, nowIso(options))
+    : selected.state;
   return publicState(state, { changed: false });
 }
 
@@ -39,25 +42,48 @@ export function recordCheckpointActivity(options = {}) {
   const sessionHash = hashValue("session", runtime, sessionId);
 
   return mutateState(scope, options, (state) => {
-    if (state.seen_event_hashes.includes(eventHash)) {
-      return { state, changed: false };
+    const epochIndex = state.unresolved_epochs.findIndex(
+      epoch => epoch.runtime === runtime && epoch.session_hash === sessionHash,
+    );
+    const currentEpoch = epochIndex === -1 ? null : state.unresolved_epochs[epochIndex];
+    if (currentEpoch?.seen_event_hashes.includes(eventHash)) {
+      return {
+        state,
+        changed: false,
+        focusEpochId: currentEpoch.epoch_id,
+      };
     }
 
-    const seen = [...state.seen_event_hashes, eventHash].slice(-MAX_EVENT_HASHES);
-    const kinds = [...new Set([...state.activity_signal_kinds, signalKind])].sort();
+    const epoch = currentEpoch
+      ? {
+          ...currentEpoch,
+          activity_signal_kinds: [...new Set([
+            ...currentEpoch.activity_signal_kinds,
+            signalKind,
+          ])].sort(),
+          activity_revision: currentEpoch.activity_revision + 1,
+          seen_event_hashes: [...currentEpoch.seen_event_hashes, eventHash]
+            .slice(-MAX_EVENT_HASHES),
+          last_activity_at: timestamp,
+        }
+      : freshEpoch({
+          epochId: state.next_epoch_id,
+          runtime,
+          sessionHash,
+          eventHash,
+          signalKind,
+          timestamp,
+        });
+    const unresolvedEpochs = [...state.unresolved_epochs];
+    if (epochIndex === -1) unresolvedEpochs.push(epoch);
+    else unresolvedEpochs[epochIndex] = epoch;
     return {
       changed: true,
+      focusEpochId: epoch.epoch_id,
       state: {
         ...state,
-        runtime,
-        session_hash: sessionHash,
-        checkpoint_state: "review_needed",
-        activity_signal_kinds: kinds,
-        activity_revision: state.activity_revision + 1,
-        seen_event_hashes: seen,
-        first_activity_at: state.first_activity_at || timestamp,
-        last_activity_at: timestamp,
-        availability: "available",
+        next_epoch_id: epochIndex === -1 ? crypto.randomUUID() : state.next_epoch_id,
+        unresolved_epochs: unresolvedEpochs,
       },
     };
   });
@@ -77,37 +103,52 @@ export function notifyUnresolvedCheckpoint(options = {}) {
   const timestamp = nowIso(options);
 
   const result = mutateState(scope, options, (state) => {
-    if (state.checkpoint_state !== "review_needed") {
-      return { state, changed: false, notify: false };
-    }
-    if (!state.session_hash || state.session_hash === currentSessionHash) {
-      return { state, changed: false, notify: false };
-    }
-
-    const notificationBoundary = hashValue(
-      "notification",
-      scope.repositoryHash,
-      scope.worktreeHash,
-      runtime,
-      currentSessionHash,
-      state.epoch_id,
-      boundaryKind,
+    const eligibleEpochs = state.unresolved_epochs.filter(
+      epoch => epoch.runtime === runtime && epoch.session_hash !== currentSessionHash,
     );
-    if (
-      state.last_notified_boundary === notificationBoundary
-      && state.last_notified_revision === state.activity_revision
-    ) {
+    if (eligibleEpochs.length === 0) {
       return { state, changed: false, notify: false };
     }
 
+    let notify = false;
+    const unresolvedEpochs = state.unresolved_epochs.map((epoch) => {
+      if (epoch.runtime !== runtime || epoch.session_hash === currentSessionHash) return epoch;
+      const notificationBoundary = hashValue(
+        "notification",
+        scope.repositoryHash,
+        scope.worktreeHash,
+        runtime,
+        currentSessionHash,
+        epoch.epoch_id,
+        boundaryKind,
+      );
+      const existing = epoch.notification_boundaries.find(
+        notification => notification.boundary_hash === notificationBoundary,
+      );
+      if (existing?.activity_revision === epoch.activity_revision) return epoch;
+      notify = true;
+      const notification = {
+        boundary_hash: notificationBoundary,
+        activity_revision: epoch.activity_revision,
+        notified_at: timestamp,
+      };
+      return {
+        ...epoch,
+        notification_boundaries: [
+          ...epoch.notification_boundaries.filter(
+            candidate => candidate.boundary_hash !== notificationBoundary,
+          ),
+          notification,
+        ],
+      };
+    });
     return {
-      changed: true,
-      notify: true,
+      changed: notify,
+      notify,
+      prior_unresolved_count: eligibleEpochs.length,
       state: {
         ...state,
-        last_notified_boundary: notificationBoundary,
-        last_notified_revision: state.activity_revision,
-        last_notified_at: timestamp,
+        unresolved_epochs: unresolvedEpochs,
       },
     };
   });
@@ -127,16 +168,19 @@ export function resolveCheckpoint(options = {}) {
     resolution,
   );
   if (!promotionSourceRef.ok) return unavailable(promotionSourceRef.reason);
+  const epochId = normalizeOptionalEpochId(options.epochId);
+  if (!epochId.ok) return unavailable(epochId.reason);
 
   const scope = resolveScope(options);
   if (!scope.ok) return unavailable(scope.reason);
   const timestamp = nowIso(options);
 
   return mutateState(scope, options, (state) => {
-    if (state.checkpoint_state === "clean") {
+    if (state.unresolved_epochs.length === 0) {
       if (
-        state.resolution === resolution
-        && state.promotion_source_ref === promotionSourceRef.value
+        state.last_resolution?.resolution === resolution
+        && state.last_resolution?.promotion_source_ref === promotionSourceRef.value
+        && (!epochId.value || state.last_resolution?.epoch_id === epochId.value)
       ) {
         return { state, changed: false };
       }
@@ -145,13 +189,28 @@ export function resolveCheckpoint(options = {}) {
       };
     }
 
+    if (state.unresolved_epochs.length > 1 && !epochId.value) {
+      return { error: "multiple_unresolved_checkpoints" };
+    }
+    const targetIndex = epochId.value
+      ? state.unresolved_epochs.findIndex(epoch => epoch.epoch_id === epochId.value)
+      : 0;
+    if (targetIndex === -1) return { error: "checkpoint_epoch_not_found" };
+    const target = state.unresolved_epochs[targetIndex];
+    const unresolvedEpochs = state.unresolved_epochs.filter((_, index) => index !== targetIndex);
+
     return {
       changed: true,
+      resolved_epoch_id: target.epoch_id,
       state: {
-        ...freshState(scope, timestamp),
-        resolution,
-        resolved_at: timestamp,
-        promotion_source_ref: promotionSourceRef.value,
+        ...state,
+        unresolved_epochs: unresolvedEpochs,
+        last_resolution: {
+          epoch_id: target.epoch_id,
+          resolution,
+          resolved_at: timestamp,
+          promotion_source_ref: promotionSourceRef.value,
+        },
       },
     };
   });
@@ -163,6 +222,7 @@ export function checkpointHandoffPreflight(options = {}) {
     return {
       availability: "unavailable",
       checkpoint_state: null,
+      unresolved_count: null,
       context_checkpoint: "unavailable / manual review required",
       allow_handoff: true,
       hard_block: false,
@@ -178,12 +238,14 @@ export function checkpointHandoffPreflight(options = {}) {
       allow_handoff: true,
       hard_block: false,
       manual_checkpoint_required: false,
+      unresolved_count: status.unresolved_count,
       choices: ["checkpoint", "no_update", "continue_unresolved"],
     };
   }
   return {
     availability: "available",
     checkpoint_state: "clean",
+    unresolved_count: 0,
     context_checkpoint: "clean",
     allow_handoff: true,
     hard_block: false,
@@ -193,38 +255,38 @@ export function checkpointHandoffPreflight(options = {}) {
 }
 
 function mutateState(scope, options, transform) {
-  const loaded = loadCurrentState(scope, options);
-  if (loaded.kind === "error") return unavailable(loaded.reason, scope);
-  const candidates = loaded.kind === "present"
-    ? [loaded.location]
-    : stateLocations(scope, options.env || process.env);
+  const selected = selectStateLocation(scope, options);
+  if (selected.kind === "error") return unavailable(selected.reason, scope);
+  try {
+    const outcome = withStateLock(selected.location, options, () => {
+      const current = readStateAt(selected.location, scope, options);
+      if (current.kind === "error") return { error: current.reason };
+      const state = current.kind === "missing"
+        ? freshState(scope, nowIso(options))
+        : current.state;
+      const transformed = transform(state);
+      if (transformed.error) return transformed;
+      if (transformed.changed) writeStateAt(selected.location, transformed.state, options);
+      return transformed;
+    });
 
-  let lastReason = "state_write_failed";
-  for (const location of candidates) {
-    try {
-      const outcome = withStateLock(location, options, () => {
-        const current = readStateAt(location, scope, options);
-        if (current.kind === "error") return { error: current.reason };
-        const state = current.kind === "missing"
-          ? freshState(scope, nowIso(options))
-          : current.state;
-        const transformed = transform(state);
-        if (transformed.error) return transformed;
-        if (transformed.changed) writeStateAt(location, transformed.state, options);
-        return transformed;
-      });
-
-      if (outcome.error) return unavailable(outcome.error, scope);
-      return {
-        ...publicState(outcome.state, { changed: Boolean(outcome.changed) }),
-        ...(Object.hasOwn(outcome, "notify") ? { notify: outcome.notify } : {}),
-      };
-    } catch (error) {
-      lastReason = reasonForStorageError(error);
-      if (loaded.kind === "present") break;
-    }
+    if (outcome.error) return unavailable(outcome.error, scope);
+    const {
+      state,
+      changed,
+      focusEpochId,
+      ...outcomeExtras
+    } = outcome;
+    return {
+      ...publicState(state, {
+        changed: Boolean(changed),
+        focusEpochId,
+      }),
+      ...outcomeExtras,
+    };
+  } catch (error) {
+    return unavailable(reasonForStorageError(error), scope);
   }
-  return unavailable(lastReason, scope);
 }
 
 function resolveScope(options) {
@@ -303,14 +365,36 @@ function loadCurrentState(scope, options) {
   return { kind: "missing" };
 }
 
+function selectStateLocation(scope, options) {
+  const loaded = loadCurrentState(scope, options);
+  if (loaded.kind === "error") return loaded;
+  const candidates = loaded.kind === "present"
+    ? [loaded.location]
+    : stateLocations(scope, options.env || process.env);
+  let lastReason = "state_write_failed";
+  for (const location of candidates) {
+    try {
+      probeStateLocation(location, options);
+      return loaded.kind === "present"
+        ? loaded
+        : { kind: "missing", location };
+    } catch (error) {
+      lastReason = reasonForStorageError(error);
+      if (loaded.kind === "present") break;
+    }
+  }
+  return { kind: "error", reason: lastReason };
+}
+
 function readStateAt(location, scope, options) {
   try {
     if (options.faults?.read) throw fault("state_read_failed");
     if (!fs.existsSync(location)) return { kind: "missing" };
     ensureSafeLocation(location);
     const parsed = JSON.parse(fs.readFileSync(location, "utf8"));
-    if (!validState(parsed, scope)) return { kind: "error", reason: "state_schema_mismatch" };
-    return { kind: "present", state: parsed };
+    const state = normalizeState(parsed, scope);
+    if (!state) return { kind: "error", reason: "state_schema_mismatch" };
+    return { kind: "present", state };
   } catch (error) {
     if (error.code === "ENOENT") return { kind: "missing" };
     return {
@@ -320,14 +404,35 @@ function readStateAt(location, scope, options) {
   }
 }
 
+function normalizeState(state, scope) {
+  if (validState(state, scope)) return state;
+  if (!validLegacyState(state, scope)) return null;
+  const migrated = migrateLegacyState(state, scope);
+  return validState(migrated, scope) ? migrated : null;
+}
+
 function validState(state, scope) {
   return state
     && state.schema_version === SCHEMA_VERSION
     && state.repository_hash === scope.repositoryHash
     && state.worktree_hash === scope.worktreeHash
+    && state.availability === "available"
+    && isOpaqueEpochId(state.next_epoch_id)
+    && Array.isArray(state.unresolved_epochs)
+    && state.unresolved_epochs.every(validEpoch)
+    && new Set(state.unresolved_epochs.map(epoch => epoch.epoch_id)).size
+      === state.unresolved_epochs.length
+    && validLastResolution(state.last_resolution);
+}
+
+function validLegacyState(state, scope) {
+  return state
+    && state.schema_version === LEGACY_SCHEMA_VERSION
+    && state.repository_hash === scope.repositoryHash
+    && state.worktree_hash === scope.worktreeHash
     && ["clean", "review_needed"].includes(state.checkpoint_state)
     && state.availability === "available"
-    && typeof state.epoch_id === "string"
+    && isOpaqueEpochId(state.epoch_id)
     && Array.isArray(state.activity_signal_kinds)
     && state.activity_signal_kinds.every(kind => SUPPORTED_SIGNALS.has(kind))
     && Number.isInteger(state.activity_revision)
@@ -340,29 +445,148 @@ function validState(state, scope) {
     && (state.promotion_source_ref === null || isSanitizedReference(state.promotion_source_ref));
 }
 
+function validEpoch(epoch) {
+  return epoch
+    && isOpaqueEpochId(epoch.epoch_id)
+    && SUPPORTED_RUNTIMES.has(epoch.runtime)
+    && isHash(epoch.session_hash)
+    && Array.isArray(epoch.activity_signal_kinds)
+    && epoch.activity_signal_kinds.every(kind => SUPPORTED_SIGNALS.has(kind))
+    && Number.isInteger(epoch.activity_revision)
+    && epoch.activity_revision >= 1
+    && Array.isArray(epoch.seen_event_hashes)
+    && epoch.seen_event_hashes.every(isHash)
+    && typeof epoch.first_activity_at === "string"
+    && typeof epoch.last_activity_at === "string"
+    && Array.isArray(epoch.notification_boundaries)
+    && epoch.notification_boundaries.every(validNotificationBoundary);
+}
+
+function validNotificationBoundary(notification) {
+  return notification
+    && isHash(notification.boundary_hash)
+    && Number.isInteger(notification.activity_revision)
+    && notification.activity_revision >= 1
+    && typeof notification.notified_at === "string";
+}
+
+function validLastResolution(resolution) {
+  return resolution === null || (
+    resolution
+    && (resolution.epoch_id === null || isOpaqueEpochId(resolution.epoch_id))
+    && SUPPORTED_RESOLUTIONS.has(resolution.resolution)
+    && typeof resolution.resolved_at === "string"
+    && (
+      resolution.promotion_source_ref === null
+      || isSanitizedReference(resolution.promotion_source_ref)
+    )
+  );
+}
+
 function freshState(scope, timestamp) {
   return {
     schema_version: SCHEMA_VERSION,
     repository_hash: scope.repositoryHash,
     worktree_hash: scope.worktreeHash,
-    runtime: null,
-    session_hash: null,
-    epoch_id: crypto.randomUUID(),
-    activity_signal_kinds: [],
-    activity_revision: 0,
-    seen_event_hashes: [],
-    first_activity_at: null,
-    last_activity_at: null,
-    checkpoint_state: "clean",
-    last_notified_boundary: null,
-    last_notified_revision: null,
-    last_notified_at: null,
-    resolution: null,
-    resolved_at: null,
-    promotion_source_ref: null,
+    next_epoch_id: crypto.randomUUID(),
+    unresolved_epochs: [],
+    last_resolution: null,
     availability: "available",
     created_at: timestamp,
   };
+}
+
+function freshEpoch({
+  epochId,
+  runtime,
+  sessionHash,
+  eventHash,
+  signalKind,
+  timestamp,
+}) {
+  return {
+    epoch_id: epochId,
+    runtime,
+    session_hash: sessionHash,
+    activity_signal_kinds: [signalKind],
+    activity_revision: 1,
+    seen_event_hashes: [eventHash],
+    first_activity_at: timestamp,
+    last_activity_at: timestamp,
+    notification_boundaries: [],
+  };
+}
+
+function migrateLegacyState(state, scope) {
+  const timestamp = state.created_at || state.first_activity_at || nowIso({});
+  const migrated = freshState(scope, timestamp);
+  if (state.checkpoint_state === "review_needed" && state.runtime && state.session_hash) {
+    migrated.unresolved_epochs = [{
+      epoch_id: state.epoch_id,
+      runtime: state.runtime,
+      session_hash: state.session_hash,
+      activity_signal_kinds: [...state.activity_signal_kinds],
+      activity_revision: state.activity_revision,
+      seen_event_hashes: [...state.seen_event_hashes],
+      first_activity_at: state.first_activity_at || timestamp,
+      last_activity_at: state.last_activity_at || timestamp,
+      notification_boundaries: (
+        isHash(state.last_notified_boundary)
+        && Number.isInteger(state.last_notified_revision)
+        && typeof state.last_notified_at === "string"
+      )
+        ? [{
+            boundary_hash: state.last_notified_boundary,
+            activity_revision: state.last_notified_revision,
+            notified_at: state.last_notified_at,
+          }]
+        : [],
+    }];
+  } else {
+    migrated.next_epoch_id = state.epoch_id;
+  }
+  if (state.resolution) {
+    migrated.last_resolution = {
+      epoch_id: null,
+      resolution: state.resolution,
+      resolved_at: state.resolved_at || timestamp,
+      promotion_source_ref: state.promotion_source_ref,
+    };
+  }
+  return migrated;
+}
+
+function probeStateLocation(location, options) {
+  fs.mkdirSync(path.dirname(location), { recursive: true, mode: 0o700 });
+  ensureSafeLocation(location);
+  const suffix = `${process.pid}.${crypto.randomUUID()}`;
+  const temporary = path.join(
+    path.dirname(location),
+    `.${path.basename(location)}.${suffix}.capability-probe.tmp`,
+  );
+  const renamed = path.join(
+    path.dirname(location),
+    `.${path.basename(location)}.${suffix}.capability-probe.ready`,
+  );
+  let descriptor;
+  try {
+    if (options.faults?.probeWrite) throw fault("state_write_failed");
+    descriptor = fs.openSync(temporary, "wx", 0o600);
+    fs.writeFileSync(descriptor, "context-checkpoint-capability-probe\n", "utf8");
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    if (options.faults?.probeRename) throw fault("atomic_rename_failed");
+    fs.renameSync(temporary, renamed);
+    fs.unlinkSync(renamed);
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch { /* already closed */ }
+    }
+    try { fs.unlinkSync(temporary); } catch { /* no temporary probe */ }
+    try { fs.unlinkSync(renamed); } catch { /* no renamed probe */ }
+    throw error;
+  }
 }
 
 function withStateLock(location, options, callback) {
@@ -438,26 +662,54 @@ function ensureSafeLocation(location) {
 }
 
 function publicState(state, extras = {}) {
+  const focusEpoch = extras.focusEpochId
+    ? state.unresolved_epochs.find(epoch => epoch.epoch_id === extras.focusEpochId) || null
+    : state.unresolved_epochs.length === 1
+      ? state.unresolved_epochs[0]
+      : null;
+  const lastNotification = focusEpoch?.notification_boundaries.at(-1) || null;
+  const {
+    focusEpochId: _focusEpochId,
+    ...publicExtras
+  } = extras;
   return {
     schema_version: state.schema_version,
     repository_hash: state.repository_hash,
     worktree_hash: state.worktree_hash,
-    runtime: state.runtime,
-    session_hash: state.session_hash,
-    epoch_id: state.epoch_id,
-    activity_signal_kinds: [...state.activity_signal_kinds],
-    activity_revision: state.activity_revision,
-    first_activity_at: state.first_activity_at,
-    last_activity_at: state.last_activity_at,
-    checkpoint_state: state.checkpoint_state,
-    last_notified_boundary: state.last_notified_boundary,
-    last_notified_at: state.last_notified_at,
-    resolution: state.resolution,
-    resolved_at: state.resolved_at,
-    promotion_source_ref: state.promotion_source_ref,
+    runtime: focusEpoch?.runtime || null,
+    session_hash: focusEpoch?.session_hash || null,
+    epoch_id: focusEpoch?.epoch_id
+      || (state.unresolved_epochs.length === 0 ? state.next_epoch_id : null),
+    activity_signal_kinds: focusEpoch ? [...focusEpoch.activity_signal_kinds] : [],
+    activity_revision: focusEpoch?.activity_revision ?? 0,
+    first_activity_at: focusEpoch?.first_activity_at || null,
+    last_activity_at: focusEpoch?.last_activity_at || null,
+    checkpoint_state: state.unresolved_epochs.length > 0 ? "review_needed" : "clean",
+    unresolved_count: state.unresolved_epochs.length,
+    unresolved_epochs: state.unresolved_epochs.map(publicEpoch),
+    last_notified_boundary: lastNotification?.boundary_hash || null,
+    last_notified_at: lastNotification?.notified_at || null,
+    resolution: state.last_resolution?.resolution || null,
+    resolved_at: state.last_resolution?.resolved_at || null,
+    promotion_source_ref: state.last_resolution?.promotion_source_ref || null,
     availability: state.availability,
     manual_checkpoint_required: false,
-    ...extras,
+    ...publicExtras,
+  };
+}
+
+function publicEpoch(epoch) {
+  const lastNotification = epoch.notification_boundaries.at(-1) || null;
+  return {
+    epoch_id: epoch.epoch_id,
+    runtime: epoch.runtime,
+    session_hash: epoch.session_hash,
+    activity_signal_kinds: [...epoch.activity_signal_kinds],
+    activity_revision: epoch.activity_revision,
+    first_activity_at: epoch.first_activity_at,
+    last_activity_at: epoch.last_activity_at,
+    last_notified_boundary: lastNotification?.boundary_hash || null,
+    last_notified_at: lastNotification?.notified_at || null,
   };
 }
 
@@ -466,6 +718,8 @@ function unavailable(reason, scope = {}) {
     repository_hash: scope.repositoryHash || null,
     worktree_hash: scope.worktreeHash || null,
     checkpoint_state: null,
+    unresolved_count: null,
+    unresolved_epochs: [],
     resolution: null,
     availability: "unavailable",
     manual_checkpoint_required: true,
@@ -493,6 +747,16 @@ function normalizeBoundary(value) {
   return /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(boundary) ? boundary : "";
 }
 
+function normalizeOptionalEpochId(value) {
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: null };
+  }
+  const epochId = String(value).trim();
+  return isOpaqueEpochId(epochId)
+    ? { ok: true, value: epochId }
+    : { ok: false, reason: "invalid_checkpoint_epoch" };
+}
+
 function normalizePromotionSource(value, resolution) {
   if (resolution === "no_update") {
     return value ? { ok: false, reason: "promotion_source_not_allowed" } : { ok: true, value: null };
@@ -514,6 +778,12 @@ function isSanitizedReference(value) {
 
 function isHash(value) {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function isOpaqueEpochId(value) {
+  return typeof value === "string"
+    && value.length <= 160
+    && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value);
 }
 
 function hashValue(...parts) {
