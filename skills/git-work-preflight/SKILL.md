@@ -80,6 +80,11 @@ Repository and ref input are usable:
 The Runtime reports executed Evidence separately from supplied Evidence. An
 unexecuted query is `NOT_CHECKED`, not a successful absence result.
 
+For a feature Branch, Local Base SHA is the merge base between current HEAD and
+verified `origin/<base>`. This detects a stale integration point without
+misclassifying a Feature Branch that already merged the latest Base merely
+because a separate local base ref has not moved.
+
 ## Result model
 
 | Result | Required conclusion |

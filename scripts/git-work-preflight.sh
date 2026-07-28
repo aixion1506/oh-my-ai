@@ -170,8 +170,8 @@ repository="$repo_root"
 repository_verification='VERIFIED'
 current_branch="$(git -C "$repository" rev-parse --abbrev-ref HEAD 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Current Branch cannot be verified'
 current_head="$(git -C "$repository" rev-parse HEAD 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Current HEAD cannot be verified'
-local_base_sha="$(git -C "$repository" rev-parse --verify "${expected_base_branch}^{commit}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Expected Base Branch cannot be resolved locally'
 remote_base_sha="$(git -C "$repository" rev-parse --verify "origin/${expected_base_branch}^{commit}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Expected Base Branch cannot be resolved from origin'
+local_base_sha="$(git -C "$repository" merge-base HEAD "origin/${expected_base_branch}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Current HEAD and expected Base have no verified merge base'
 remote_verification='VERIFIED'
 
 if [ -n "$expected_base_sha" ] && { [ "$expected_base_sha" != "$local_base_sha" ] || [ "$expected_base_sha" != "$remote_base_sha" ]; }; then
@@ -179,7 +179,7 @@ if [ -n "$expected_base_sha" ] && { [ "$expected_base_sha" != "$local_base_sha" 
   hard_stop BLOCKED_BASE_MISMATCH 'Expected Base SHA does not match local and remote Base'
 fi
 
-base_counts="$(git -C "$repository" rev-list --left-right --count "${expected_base_branch}...origin/${expected_base_branch}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Base ancestry cannot be verified'
+base_counts="$(git -C "$repository" rev-list --left-right --count "${local_base_sha}...${remote_base_sha}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Base ancestry cannot be verified'
 read -r local_ahead remote_ahead <<< "$base_counts"
 if [ "$local_ahead" != 0 ] || [ "$remote_ahead" != 0 ]; then
   if [ "$local_ahead" != 0 ] && [ "$remote_ahead" != 0 ]; then
