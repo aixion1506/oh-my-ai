@@ -105,6 +105,12 @@ function looksLikeCustomisedManagedOperation(operation, command) {
   if (operation.id.endsWith("skill-usage")) {
     return value.includes("<harness-event> emit skill-start");
   }
+  if (operation.id.endsWith("context-checkpoint-activity")) {
+    return value.includes("<oh-my-ai> hook claude PostToolUse");
+  }
+  if (operation.id.endsWith("context-checkpoint-session-end")) {
+    return value.includes("<oh-my-ai> hook claude SessionEnd");
+  }
   return false;
 }
 
@@ -142,6 +148,20 @@ const operationSpecs = [
     event: "PostToolUse",
     matcher: "Skill",
     matches: (hook) => hook?.type === "command" && isSkillUsageOperation(hook.command),
+  },
+  {
+    id: "claude.context-checkpoint-activity",
+    runtime: "claude",
+    event: "PostToolUse",
+    matcher: "literal:Write|Edit|MultiEdit|NotebookEdit|Bash",
+    matches: (hook) => hook?.type === "command" && isWrapperOperation(hook.command, "claude", "PostToolUse"),
+  },
+  {
+    id: "claude.context-checkpoint-session-end",
+    runtime: "claude",
+    event: "SessionEnd",
+    matcher: "no_matcher",
+    matches: (hook) => hook?.type === "command" && isWrapperOperation(hook.command, "claude", "SessionEnd"),
   },
 ];
 

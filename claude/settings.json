@@ -29,12 +29,33 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x \"$HOME/.local/bin/oh-my-ai\" ]; then \"$HOME/.local/bin/oh-my-ai\" hook claude PostToolUse; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Skill",
         "hooks": [
           {
             "type": "command",
             "command": "S=$(jq -r '.tool_input.skill // empty' 2>/dev/null); [ -n \"$S\" ] && \"$HOME/.local/bin/harness-event\" emit skill-start --skill \"$S\" --runtime claude; true",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x \"$HOME/.local/bin/oh-my-ai\" ]; then \"$HOME/.local/bin/oh-my-ai\" hook claude SessionEnd; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 1
           }
         ]
       }
