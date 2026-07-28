@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jira Ticket Preview"
+  short_description: "Jira 티켓 계약과 Backlog Preview를 안전하게 계획"
+  default_prompt: "Use $jira-ticket to draft a validated Jira ticket or backlog preview without creating issues."

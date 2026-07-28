@@ -1,0 +1,83 @@
+{
+  "contract": "jira-ticket-pure-contract-preview-v1",
+  "network": false,
+  "external_write": false,
+  "artifact_write": false,
+  "scenarios": [
+    {
+      "id": "single-technical-task",
+      "input_class": "explicit technical planning request",
+      "expected": "Task Candidate preview"
+    },
+    {
+      "id": "user-feature",
+      "input_class": "explicit user-facing feature request",
+      "expected": "Story or Feature Candidate preview"
+    },
+    {
+      "id": "existing-defect",
+      "input_class": "explicit existing behavior defect",
+      "expected": "Bug Candidate preview"
+    },
+    {
+      "id": "pre-implementation-research",
+      "input_class": "explicit investigation request",
+      "expected": "Research Candidate preview"
+    },
+    {
+      "id": "structural-improvement",
+      "input_class": "explicit structural debt request",
+      "expected": "Tech Debt Candidate preview"
+    },
+    {
+      "id": "multi-repository-specification",
+      "input_class": "large specification across repositories",
+      "expected": "Epic plus repository-separated Child Ticket Candidates"
+    },
+    {
+      "id": "before-approval",
+      "input_class": "valid preview before user approval",
+      "expected": "Jira Write 0"
+    },
+    {
+      "id": "connector-unavailable",
+      "input_class": "Confluence URL candidate without supplied content",
+      "expected": "Preview remains Not Verifiable and Jira creation claim is absent"
+    },
+    {
+      "id": "ambiguous-intent",
+      "input_class": "Jira possibility question",
+      "expected": "suggestion-only with Preview and Write 0"
+    },
+    {
+      "id": "canonical-source-conflict",
+      "input_class": "lower-priority request conflicts with accepted decision",
+      "expected": "Hard Stop"
+    },
+    {
+      "id": "repository-required",
+      "input_class": "contract without repository",
+      "expected": "Repository Required and not executable"
+    },
+    {
+      "id": "blank-or-whitespace-field",
+      "input_class": "required field is empty or whitespace-only",
+      "expected": "Contract Validation Failure"
+    },
+    {
+      "id": "scope-conflict",
+      "input_class": "In Scope overlaps Out of Scope",
+      "expected": "Contract Validation Failure"
+    },
+    {
+      "id": "secret-bearing-input",
+      "input_class": "secret-bearing input redacted before preview",
+      "expected": "no Artifact or Fixture Output persistence"
+    },
+    {
+      "id": "before-jira-key",
+      "input_class": "preview before external creation",
+      "expected": "<ISSUE-KEY> placeholder remains"
+    }
+  ]
+}
