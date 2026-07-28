@@ -34,6 +34,7 @@ for field in \
   "Acceptance Criteria" "Repository" "Base Branch" "Expected Branch Name" \
   "Dependencies" "Verification" "Do Not Touch" "Definition of Done"; do
   require_text "$CONTRACT" "## $field"
+  require_text "$BACKLOG" "### $field"
 done
 
 for sentinel in "Decision Required" "Repository Required" "Base Branch Required" "Not Verifiable"; do
@@ -54,7 +55,8 @@ done
 
 for text in \
   "Contract Validation Failure" \
-  "External Write Status: Unavailable in this implementation phase" \
+  "External Write Status:" \
+  "Unavailable in this implementation phase" \
   "이 구성으로 Jira에 생성할까요?" \
   "Jira, Atlassian Connector, Confluence Connector" \
   "branch, code, commit, push, PR" \
@@ -63,9 +65,39 @@ for text in \
   require_text "$SKILL" "$text"
 done
 
-for heading in "## Source Status" "## Mode" "## Epic Candidate" "## Ticket Candidates" "## External Write Status"; do
+for heading in \
+  "## Source Status" \
+  "## Mode" \
+  "## Epic Candidate" \
+  "## Child Ticket Index Summary" \
+  "## Complete Child Ticket Contracts" \
+  "## External Write Status" \
+  "## Approval Boundary"; do
   require_text "$BACKLOG" "$heading"
 done
+
+require_text "$BACKLOG" "does not replace a"
+require_text "$BACKLOG" "complete Child Ticket Contract"
+require_text "$BACKLOG" "Contracts must be Valid"
+require_text "$BACKLOG" "do not show the Jira creation approval"
+
+external_line="$(rg -n -m 1 '^## External Write Status$' "$BACKLOG" | cut -d: -f1)"
+approval_line="$(rg -n -m 1 '^## Approval Boundary$' "$BACKLOG" | cut -d: -f1)"
+[ -n "$external_line" ] || fail "missing External Write Status heading"
+[ -n "$approval_line" ] || fail "missing Approval Boundary heading"
+[ "$external_line" -lt "$approval_line" ] \
+  || fail "External Write Status must appear before Approval Boundary"
+
+skill_external_line="$(rg -n -m 1 -F 'External Write Status:' "$SKILL" | cut -d: -f1)"
+skill_approval_line="$(rg -n -m 1 -F '이 구성으로 Jira에 생성할까요?' "$SKILL" | cut -d: -f1)"
+[ -n "$skill_external_line" ] || fail "missing Skill External Write Status workflow"
+[ -n "$skill_approval_line" ] || fail "missing Skill approval question workflow"
+[ "$skill_external_line" -lt "$skill_approval_line" ] \
+  || fail "Skill must show External Write Status before the approval question"
+
+require_text "$SKILL" '[ -x "$HOME/.local/bin/harness-event" ]'
+require_text "$SKILL" "|| true"
+require_text "$SKILL" "Binary가 없거나 실행이 실패해도 Preview를 계속한다"
 
 node - "$FIXTURE" <<'NODE'
 const fs = require("fs");
