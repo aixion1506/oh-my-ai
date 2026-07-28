@@ -100,7 +100,7 @@ fx_validation_not_performed() {
 fx_files_read_changed_separation() {
   expect_valid "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md" "Files-Read-Changed-positive"
   local heading_count
-  heading_count="$(grep -c '^## Files Read$\|^## Files Changed$' "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md")"
+  heading_count="$(grep -Ec '^## Files (Read|Changed)$' "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md")"
   [ "$heading_count" = "2" ] || fail "Files-Read-Changed: expected exactly 2 distinct headings, got $heading_count"
 
   local d out
