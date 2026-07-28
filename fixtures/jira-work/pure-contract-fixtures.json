@@ -1,0 +1,32 @@
+{
+  "contract": "jira-work-pure-contract-gate-v1",
+  "network": false,
+  "git_mutation": false,
+  "jira_write": false,
+  "artifact_write": false,
+  "scenarios": [
+    { "id": "valid-ticket-contract", "expected": "READY planning result" },
+    { "id": "missing-repository", "expected": "BLOCKED" },
+    { "id": "missing-base-branch", "expected": "BLOCKED" },
+    { "id": "decision-required", "expected": "BLOCKED" },
+    { "id": "not-verifiable-source", "expected": "NOT_VERIFIABLE" },
+    { "id": "canonical-jira-conflict", "expected": "CONFLICTED" },
+    { "id": "multiple-repositories", "expected": "BLOCKED" },
+    { "id": "blocking-dependency", "expected": "BLOCKED" },
+    { "id": "scope-conflict", "expected": "BLOCKED" },
+    { "id": "acceptance-verification-conflict", "expected": "BLOCKED" },
+    { "id": "existing-normal-branch", "expected": "resume planning" },
+    { "id": "local-only-branch", "expected": "recovery planning only" },
+    { "id": "remote-only-branch", "expected": "recovery planning only" },
+    { "id": "local-remote-divergence", "expected": "CONFLICTED" },
+    { "id": "existing-draft-pr", "expected": "resume; duplicate PR forbidden" },
+    { "id": "already-merged", "expected": "implementation forbidden" },
+    { "id": "unknown-custom-issue-type", "expected": "Decision Required" },
+    { "id": "ambiguous-intent", "expected": "read-only or suggestion-only" },
+    { "id": "suggest-only", "expected": "Mutation 0" },
+    { "id": "patch-with-approval", "expected": "approval required; Mutation 0" },
+    { "id": "auto-apply-without-runtime", "expected": "capability unavailable; Mutation 0" },
+    { "id": "telemetry-binary-missing", "expected": "Gate continues" },
+    { "id": "telemetry-execution-failure", "expected": "Gate continues" }
+  ]
+}
