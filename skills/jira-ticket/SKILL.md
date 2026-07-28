@@ -49,8 +49,17 @@ workspace, project, Cloud ID, account ID, credential를 사용하거나 기록�
 시작 시 사용 로그만 best-effort로 남긴다.
 
 ```bash
-"$HOME/.local/bin/harness-event" emit skill-start --skill jira-ticket --runtime "${HARNESS_RUNTIME:-codex}"
+if [ -x "$HOME/.local/bin/harness-event" ]; then
+  "$HOME/.local/bin/harness-event" emit \
+    skill-start \
+    --skill jira-ticket \
+    --runtime "${HARNESS_RUNTIME:-codex}" \
+    || true
+fi
 ```
+
+Binary가 없거나 실행이 실패해도 Preview를 계속한다. Telemetry는 best-effort이며
+실패가 Preview 생성을 막지 않는다.
 
 ## Intent boundary
 
@@ -123,9 +132,19 @@ Integration을 사용하도록 안내한다. 내용을 추측해 Contract를 완
    Child Ticket Candidate를 작성한다.
 4. Contract Validation을 실행한다. 실패하면 Blocked Preview를 출력하고 승인
    질문을 표시하지 않는다.
-5. 검증된 Source와 완전한 Contract일 때만 `이 구성으로 Jira에 생성할까요?`를
-   표시한다.
-6. 사용자가 승인해도 conversation에 approval만 기록한다. `External Write Status: Unavailable in this implementation phase`를 보고하고 종료한다.
+5. 승인 질문 전에 아래 상태를 표시한다.
+
+   ```text
+   External Write Status:
+   Unavailable in this implementation phase
+   ```
+
+6. 검증된 Source와 완전한 Contract일 때만 `이 구성으로 Jira에 생성할까요?`를
+   표시한다. 이 질문은 Ticket 구성을 승인할 의사를 확인할 뿐이며, 현재
+   Runtime에서 Jira Issue를 실제 생성한다는 뜻이 아니다.
+7. 사용자가 승인해도 conversation에 구성 승인 의사만 기록한다.
+8. Jira Write가 구현되지 않았고 실제 외부 Write를 수행하지 않았음을 다시
+   확인한 뒤 종료한다.
 
 Jira Write Integration은 후속 PR의 책임이다. 이 단계에서 가상의 Issue Key나
 Jira URL을 만들지 않는다.
@@ -203,6 +222,33 @@ Integration의 책임이다.
 실제 Jira Epic, Parent Link, Jira Sub-task는 만들지 않는다. logical parent와
 dependency candidate만 Preview에 기록한다.
 
+- Backlog에 표시하는 Type, Summary, Repository, Goal, Dependencies, Contract
+  Validation, Blocking Items의 7개 항목은 탐색용 Child Ticket Index Summary일
+  뿐이며 Ticket Contract를 대체하지 않는다.
+- 각 Child Ticket Candidate는 `templates/ticket-contract.md`와 동일한 아래
+  14개 필드의 완전한 공통 Ticket Contract를 별도로 작성한다.
+
+  ```text
+  Summary
+  Context
+  Goal
+  Source of Truth
+  In Scope
+  Out of Scope
+  Acceptance Criteria
+  Repository
+  Base Branch
+  Expected Branch Name
+  Dependencies
+  Verification
+  Do Not Touch
+  Definition of Done
+  ```
+
+- 하나라도 필드가 누락되면 해당 Child는 Contract Validation Failure다.
+- 모든 Child Contract가 Valid여야 전체 Backlog가 Valid다. Invalid이거나
+  Blocking Sentinel이 남은 Child가 하나라도 있으면 Jira 생성 승인 질문을
+  표시하지 않는다.
 - Repository가 다르면 Ticket을 분리한다.
 - 한 Ticket은 한 Repository, 독립 Branch 하나, Draft PR 하나로 처리 가능한
   크기여야 한다.
