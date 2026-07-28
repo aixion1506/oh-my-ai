@@ -206,6 +206,60 @@
       }
     },
     {
+      "name": "jira-ticket",
+      "path": "skills/jira-ticket/SKILL.md",
+      "description": "Optional Jira planning skill for drafting and validating a single Ticket Contract or an Epic-and-child backlog preview from explicit user requests or supplied specifications. Use for clear requests to prepare Jira tickets or break a specification into a Jira backlog. Preview only: do not create Jira issues, call Atlassian or Confluence, create Git branches, or start implementation.",
+      "summary": "Jira 생성 전 Source·Ticket Contract·Backlog Preview를 검증하는 optional planning workflow",
+      "routing": {
+        "visibility": "optional",
+        "risk_level": "medium",
+        "task_types": [
+          "jira_ticket_planning",
+          "jira_backlog_planning"
+        ],
+        "triggers": [
+          {
+            "kind": "keyword",
+            "values": [
+              "jira ticket",
+              "jira backlog",
+              "Jira 티켓",
+              "Jira 백로그",
+              "Confluence 명세"
+            ]
+          },
+          {
+            "kind": "intent",
+            "values": [
+              "plan_jira_ticket",
+              "plan_jira_backlog"
+            ]
+          }
+        ],
+        "keywords": {
+          "ko": [
+            "Jira 티켓",
+            "Jira 백로그",
+            "티켓으로 정리"
+          ],
+          "en": [
+            "jira ticket",
+            "jira backlog",
+            "ticket preview"
+          ]
+        },
+        "use_when": [
+          "명시적으로 Jira Ticket Preview 또는 Jira Backlog 분해를 요청한 경우"
+        ],
+        "do_not_use_when": [
+          "Jira 연동 방식 설명, 가능성 상담, 또는 실제 Jira Write만 요구한 경우"
+        ],
+        "requires": [
+          "explicit_jira_planning_intent"
+        ]
+      }
+    },
+    {
       "name": "kotlin-coroutines-flows",
       "path": "skills/kotlin-coroutines-flows/SKILL.md",
       "description": "Kotlin Coroutines and Flow patterns for Android and KMP — structured concurrency, Flow operators, StateFlow, error handling, and testing.",
