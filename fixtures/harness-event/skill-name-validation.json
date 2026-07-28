@@ -1,0 +1,62 @@
+{
+  "valid": [
+    "jira-work",
+    "jira-ticket",
+    "work-start",
+    "atlassian-rovo:spec-to-backlog",
+    "github:gh-fix-ci",
+    "plugin:skill",
+    "plugin-name:skill-name"
+  ],
+  "invalid": [
+    {
+      "label": "empty",
+      "value": ""
+    },
+    {
+      "label": "leading colon",
+      "value": ":skill"
+    },
+    {
+      "label": "leading hyphen",
+      "value": "-plugin"
+    },
+    {
+      "label": "space",
+      "value": "plugin skill"
+    },
+    {
+      "label": "uppercase",
+      "value": "Plugin:skill"
+    },
+    {
+      "label": "slash",
+      "value": "plugin/skill"
+    },
+    {
+      "label": "backslash",
+      "value": "plugin\\skill"
+    },
+    {
+      "label": "dot",
+      "value": "plugin.skill"
+    },
+    {
+      "label": "newline control character",
+      "value": "plugin\nskill"
+    },
+    {
+      "label": "tab control character",
+      "value": "plugin\tskill"
+    }
+  ],
+  "continuousSeparators": {
+    "expected": "allowed",
+    "values": [
+      "plugin::skill",
+      "plugin--skill",
+      "plugin:-skill",
+      "plugin-:skill"
+    ]
+  }
+}

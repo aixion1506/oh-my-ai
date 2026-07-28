@@ -114,7 +114,7 @@ function emit(args) {
   const runtime = option(args, "--runtime");
 
   if (event !== "skill-start") fail("supported event: skill-start");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(skill || "")) fail("invalid --skill");
+  if (!/^[a-z0-9][a-z0-9:-]*$/.test(skill || "")) fail("invalid --skill");
   if (!/^[a-z0-9][a-z0-9-]*$/.test(runtime || "")) fail("invalid --runtime");
 
   const record = {
