@@ -1,9 +1,11 @@
 # Architecture Clarification: Shared Git Preflight and Jira Execution Boundary
 
-**Status:** Accepted architecture clarification
+**Status:** Accepted architecture clarification — adopted by PM Product
+Decision; canonical repository context only after merge to `master`.
 **Date:** 2026-07-28
 **Scope:** Future implementation boundaries only. No runtime, hook, Connector,
-installer, or telemetry behavior is changed by this document.
+installer, or telemetry behavior is changed by this document. This PR does not
+release a Skill or Runtime feature.
 
 This clarification records the implementation boundary for the product decision in
 [Jira-driven Work Lifecycle](jira-driven-work-lifecycle.md) without changing
@@ -45,9 +47,9 @@ The contract reports, at minimum:
 
 The preflight is a gate, not a repair tool. It must surface a dirty tree,
 diverged branch, unexpected remote, duplicate PR, or `Do Not Touch` conflict;
-it must not reset, stash, clean, force-push, rebase, delete branches, or
-silently select another Ticket or branch. A failure remains evidence for human
-review.
+it must not reset, stash, clean, force checkout, force-push, rebase, delete
+branches, perform any form of history rewrite, or silently select another
+Ticket or branch. A failure remains evidence for human review.
 
 Extracting this common contract must not change `work-start`'s external
 behavior: it still creates a Candidate and ends at Human Review. Function
