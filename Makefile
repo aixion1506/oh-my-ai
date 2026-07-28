@@ -44,6 +44,7 @@ test-install-fixtures:
 
 test-context-checkpoint-fixtures:
 	node ./scripts/test-context-checkpoint-fixtures.mjs
+	node ./scripts/test-context-checkpoint-codex-fixtures.mjs
 
 test-v1-fixtures: test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures
 

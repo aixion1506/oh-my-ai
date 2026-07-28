@@ -716,9 +716,9 @@ try {
 
   const unsupported = recordCheckpointActivity({
     cwd: lifecycle,
-    runtime: "codex",
-    sessionId: "codex-session",
-    eventId: "codex-event",
+    runtime: "unsupported-runtime",
+    sessionId: "unsupported-session",
+    eventId: "unsupported-event",
     signalKind: "file_mutation",
     env: lifecycleEnv,
   });
