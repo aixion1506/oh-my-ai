@@ -1,9 +1,11 @@
 # Product Decision: Jira-driven Work Lifecycle
 
-**Status:** Accepted design decision
+**Status:** Accepted design decision — adopted by PM Product Decision; canonical
+repository context only after merge to `master`.
 **Date:** 2026-07-28
 **Scope:** Product contract only. This document does not ship a Jira connector,
-skills, hooks, installer behavior, or Git mutation runtime.
+skills, hooks, installer behavior, or Git mutation runtime. This PR does not
+release a Skill or Runtime feature.
 
 ## Decision
 
@@ -114,8 +116,8 @@ Jira does not have a dedicated native field for it.
 | Do Not Touch | Paths, systems, data, and operation classes prohibited for this Ticket. |
 | Definition of Done | Required implementation, verification, Git, PR, and Jira evidence conditions. |
 
-The following values are blocking sentinels, not placeholders that may be
-ignored:
+The following values are Contract Validation Failures, not placeholders that
+may be ignored:
 
 ```text
 Decision Required
@@ -124,8 +126,18 @@ Base Branch Required
 Not Verifiable
 ```
 
-If any sentinel remains, `jira-work` cannot create a branch. It must report the
-missing decision or information and stop before Git mutation.
+The following are also Contract Validation Failures:
+
+- a required field is missing, an empty string, or whitespace-only;
+- an unresolved or unknown placeholder remains;
+- fields in the same Ticket contradict each other; or
+- Source of Truth, Repository, Base Branch, In Scope, or Verification conflict
+  with one another.
+
+If any Contract Validation Failure exists, `jira-work` fails the Ticket Gate.
+It must not create a branch, perform any Git mutation, or transition Jira
+status. It reports the missing or contradictory content and stops. The Ticket
+Contract must be corrected before a new execution attempt.
 
 ## Execution Policy
 
@@ -143,11 +155,23 @@ approvals even in `auto-apply`.
 
 ## Branch and commit identity
 
+Repository-enforced branch naming, protection, and base-branch rules always
+take precedence over a Ticket's `Expected Branch Name`. They differ from a
+repository's general naming preference: a general convention applies only when
+the Ticket does not supply an expected name that already satisfies enforced
+rules.
+
 Branch selection is deterministic in this order:
 
-1. `Expected Branch Name` in the Ticket Contract
-2. Repository convention
-3. Common fallback
+1. Confirm repository-enforced naming, protection, and base-branch constraints.
+2. Use `Expected Branch Name` when it conforms to those enforced constraints.
+3. When it is absent, apply the repository's general convention.
+4. When neither supplies a name, apply the common fallback.
+
+If `Expected Branch Name` conflicts with a repository-enforced rule,
+`jira-work` must not automatically fall back or invent a replacement name. It
+must not create a branch, must stop with `Decision Required`, and requires the
+Ticket Contract to be corrected and explicitly reapproved before retrying.
 
 | Issue type | Common fallback |
 |---|---|
