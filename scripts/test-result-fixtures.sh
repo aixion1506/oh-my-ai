@@ -64,6 +64,18 @@ mutate_result() {
   ' "$src" "$out" "$find_str" "$replace_str"
 }
 
+has_exact_files_read_changed_headings() {
+  local file="$1"
+  local files_read_count files_changed_count heading_count
+  files_read_count="$(grep -c '^## Files Read$' "$file" || true)"
+  files_changed_count="$(grep -c '^## Files Changed$' "$file" || true)"
+  heading_count=$((files_read_count + files_changed_count))
+
+  [ "$files_read_count" = "1" ] &&
+    [ "$files_changed_count" = "1" ] &&
+    [ "$heading_count" = "2" ]
+}
+
 # --- 1. Validation Performed ------------------------------------------------
 
 fx_validation_performed() {
@@ -99,16 +111,26 @@ fx_validation_not_performed() {
 
 fx_files_read_changed_separation() {
   expect_valid "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md" "Files-Read-Changed-positive"
-  local heading_count
-  heading_count="$(grep -c '^## Files Read$\|^## Files Changed$' "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md")"
-  [ "$heading_count" = "2" ] || fail "Files-Read-Changed: expected exactly 2 distinct headings, got $heading_count"
+  has_exact_files_read_changed_headings "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md" ||
+    fail "Files-Read-Changed: expected exactly one Files Read and one Files Changed heading"
 
-  local d out
+  local d out duplicate_out
   d="$(sandbox)"; out="$d/bad.md"
   mutate_result "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md" "$out" \
     "## Files Changed" \
     "## Files Read2renamed"
+  if has_exact_files_read_changed_headings "$out"; then
+    fail "Files-Read-Changed-negative: accepted a missing Files Changed heading"
+  fi
   expect_invalid "$out" "Files-Read-Changed-negative" "missing required heading: ## Files Changed"
+
+  duplicate_out="$d/duplicate.md"
+  mutate_result "$FIXTURE_ROOT/FX-RS-good-complete-validation-performed.md" "$duplicate_out" \
+    "## Files Read" \
+    $'## Files Read\n## Files Read'
+  if has_exact_files_read_changed_headings "$duplicate_out"; then
+    fail "Files-Read-Changed-negative: accepted a duplicate Files Read heading"
+  fi
   echo "passed: FX-RS-files-read-changed-separation"
 }
 
