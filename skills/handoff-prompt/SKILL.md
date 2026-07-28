@@ -112,11 +112,32 @@ Structured Handoff Candidate를 만들기 전에 Durable Context의 존재와 �
 위 Preflight에 따라 Durable Context를 확인한 뒤 CLI로 현재 상태를 직접 확인한다.
 
 ```bash
+oh-my-ai context-checkpoint handoff-preflight
 git remote -v         # remote 확인 (credential 제거)
 git branch            # 현재 브랜치
 git status            # worktree 상태
 git log --oneline -3  # 최근 커밋
 gh pr list            # 열린 PR 목록
+```
+
+Context Checkpoint 결과는 advisory다.
+
+- `clean`: 기존 Handoff 흐름을 계속한다.
+- `review_needed`: 사용자에게 Context Checkpoint 진행, `no_update` 확인, unresolved 상태로
+  Manual Handoff 계속 중 하나를 직접 선택하게 한다. 기본 선택은 없다.
+- `unavailable`: Handoff를 차단하지 않고 Manual Context Checkpoint 검토가 필요함을 표시한다.
+
+사용자가 unresolved 상태로 계속하면 Candidate에 다음 canonical 동등 표현을 반드시 남긴다.
+
+```text
+Context checkpoint: review_needed / unresolved
+```
+
+`review_needed` 또는 `unavailable`을 Context 최신·Review 완료로 표현하지 않는다.
+`no_update`는 사용자가 직접 확인한 뒤 다음 명령으로만 해결한다.
+
+```bash
+oh-my-ai context-checkpoint resolve no-update
 ```
 
 ### 2. 사람이 직접 확인해야 할 항목

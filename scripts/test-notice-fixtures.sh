@@ -33,6 +33,21 @@ fail() {
   exit 1
 }
 
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  node -e '
+    const { spawnSync } = require("node:child_process");
+    const [seconds, command, ...args] = process.argv.slice(1);
+    const result = spawnSync(command, args, {
+      stdio: "inherit",
+      timeout: Number(seconds) * 1000,
+    });
+    if (result.error?.code === "ETIMEDOUT") process.exit(124);
+    process.exit(result.status ?? 1);
+  ' "$seconds" "$@"
+}
+
 require_file() {
   local path="$1"
   [ -f "$path" ] || fail "missing file: $path"
@@ -163,7 +178,7 @@ fx_nt_003() {
   # decisive proof (a spawn actually happened) is covered by FX-NT-014/015,
   # which drive the same code path through work-start.sh end to end.
   XDG_CACHE_HOME="$sandbox/cache" XDG_CONFIG_HOME="$sandbox/config" \
-    timeout 5 node "$NOTICE" refresh-if-stale --version 1.0.0 \
+    run_with_timeout 5 node "$NOTICE" refresh-if-stale --version 1.0.0 \
     || fail "FX-NT-003: refresh-if-stale did not return promptly"
   echo "passed: FX-NT-003-stale-cache"
 }

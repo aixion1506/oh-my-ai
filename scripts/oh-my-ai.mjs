@@ -4,6 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { handleClaudeCheckpointHook } from "./lib/context-checkpoint-claude.mjs";
+import {
+  checkpointHandoffPreflight,
+  checkpointStatus,
+  resolveCheckpoint,
+} from "./lib/context-checkpoint-state.mjs";
 import { rememberWorkStartExecution } from "./lib/work-start-execution-state.mjs";
 
 const args = process.argv.slice(2);
@@ -11,6 +17,8 @@ const command = args[0];
 
 if (command === "hook") {
   runHook(args.slice(1));
+} else if (command === "context-checkpoint") {
+  runContextCheckpoint(args.slice(1));
 } else if (command === "work-start") {
   runWorkStart(args.slice(1));
 } else {
@@ -73,8 +81,18 @@ function runHook(args) {
   const eventName = args[1] || "";
   const input = readStdin();
 
-  if (eventName === "SessionStart") {
-    runSessionStart(runtime);
+  if (
+    runtime === "claude"
+    && ["PostToolUse", "SessionEnd", "SessionStart"].includes(eventName)
+  ) {
+    const output = handleClaudeCheckpointHook(eventName, input, { env: process.env });
+    if (eventName === "SessionStart") {
+      const backlog = sessionStartBacklog();
+      if (backlog) {
+        output.additionalContext = [output.additionalContext, backlog].filter(Boolean).join("\n\n");
+      }
+    }
+    writeClaudeHookOutput(eventName, output);
     process.exit(0);
   }
 
@@ -120,18 +138,118 @@ function runHook(args) {
   process.exit(0);
 }
 
-function runSessionStart(runtime) {
-  if (runtime !== "claude") return;
-
+function sessionStartBacklog() {
   const repoRoot = findRepoRoot();
   const backlog = path.join(repoRoot, "automation-backlog.md");
   try {
-    if (fs.existsSync(backlog)) {
-      process.stdout.write(fs.readFileSync(backlog, "utf8"));
-    }
+    return fs.existsSync(backlog) ? fs.readFileSync(backlog, "utf8") : "";
   } catch (error) {
-    logHookFailure({ runtime, eventName: "SessionStart", reason: error.message });
+    logHookFailure({ runtime: "claude", eventName: "SessionStart", reason: error.message });
+    return "";
   }
+}
+
+function writeClaudeHookOutput(eventName, output) {
+  if (!output.systemMessage && !output.additionalContext) return;
+  const payload = {};
+  if (output.systemMessage) payload.systemMessage = output.systemMessage;
+  if (output.additionalContext) {
+    payload.hookSpecificOutput = {
+      hookEventName: eventName,
+      additionalContext: output.additionalContext,
+    };
+  }
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
+}
+
+function runContextCheckpoint(args) {
+  const action = args[0] || "";
+  const wantsJson = args.includes("--json");
+  let result;
+
+  if (action === "status" && onlyOptions(args.slice(1), ["--json"])) {
+    result = checkpointStatus({ cwd: process.cwd(), env: process.env });
+  } else if (
+    action === "handoff-preflight"
+    && onlyOptions(args.slice(1), ["--json"])
+  ) {
+    result = checkpointHandoffPreflight({ cwd: process.cwd(), env: process.env });
+  } else if (action === "resolve") {
+    const resolution = args[1] || "";
+    const sourceIndex = args.indexOf("--promotion-source");
+    const promotionSourceRef = sourceIndex === -1 ? "" : args[sourceIndex + 1] || "";
+    const epochIndex = args.indexOf("--epoch");
+    const epochId = epochIndex === -1 ? "" : args[epochIndex + 1] || "";
+    const allowed = resolution.replace("-", "_") === "checkpointed"
+      ? ["--json", "--promotion-source", promotionSourceRef, "--epoch", epochId]
+      : ["--json", "--epoch", epochId];
+    if (
+      !["checkpointed", "no-update", "no_update"].includes(resolution)
+      || !onlyOptions(args.slice(2), allowed)
+      || (sourceIndex !== -1 && !promotionSourceRef)
+      || (epochIndex !== -1 && !epochId)
+    ) {
+      contextCheckpointUsage();
+    }
+    result = resolveCheckpoint({
+      cwd: process.cwd(),
+      resolution,
+      promotionSourceRef,
+      epochId,
+      env: process.env,
+    });
+  } else {
+    contextCheckpointUsage();
+  }
+
+  if (wantsJson) {
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+  } else {
+    writeContextCheckpointText(action, result);
+  }
+  process.exit(result.availability === "available" ? 0 : 1);
+}
+
+function onlyOptions(values, allowed) {
+  const allowedSet = new Set(allowed);
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (!allowedSet.has(value)) return false;
+    if (value === "--promotion-source" || value === "--epoch") index += 1;
+  }
+  return true;
+}
+
+function writeContextCheckpointText(action, result) {
+  process.stdout.write(`availability: ${result.availability}\n`);
+  process.stdout.write(`checkpoint_state: ${result.checkpoint_state ?? "unknown"}\n`);
+  if (Number.isInteger(result.unresolved_count)) {
+    process.stdout.write(`unresolved_count: ${result.unresolved_count}\n`);
+  }
+  if (result.unresolved_count > 1) {
+    for (const epoch of result.unresolved_epochs || []) {
+      process.stdout.write(`unresolved_epoch: ${epoch.epoch_id}\n`);
+    }
+  }
+  if (result.resolution) process.stdout.write(`resolution: ${result.resolution}\n`);
+  if (action === "handoff-preflight") {
+    process.stdout.write(`context_checkpoint: ${result.context_checkpoint}\n`);
+    process.stdout.write("handoff: allowed (advisory; not a hard block)\n");
+    if (result.checkpoint_state === "review_needed") {
+      process.stdout.write("choices: checkpoint | no_update | continue_unresolved\n");
+    }
+  }
+  if (result.manual_checkpoint_required) {
+    process.stdout.write("manual_action: run a Manual Context Checkpoint review\n");
+  }
+}
+
+function contextCheckpointUsage() {
+  process.stderr.write("usage: oh-my-ai context-checkpoint status [--json]\n");
+  process.stderr.write("       oh-my-ai context-checkpoint handoff-preflight [--json]\n");
+  process.stderr.write("       oh-my-ai context-checkpoint resolve checkpointed --promotion-source <sanitized-ref> [--epoch <opaque-epoch-id>] [--json]\n");
+  process.stderr.write("       oh-my-ai context-checkpoint resolve no-update [--epoch <opaque-epoch-id>] [--json]\n");
+  process.exit(2);
 }
 
 function readStdin() {
@@ -186,7 +304,8 @@ function safeRepoRoot() {
 
 function usage(error) {
   if (error) process.stderr.write(`${error}\n`);
-  process.stderr.write("usage: oh-my-ai hook <codex|claude> <UserPromptSubmit>\n");
+  process.stderr.write("usage: oh-my-ai hook <codex|claude> <event>\n");
+  process.stderr.write("       oh-my-ai context-checkpoint <status|handoff-preflight|resolve> ...\n");
   process.stderr.write("       oh-my-ai work-start -- <task>\n");
   process.exit(error ? 2 : 0);
 }

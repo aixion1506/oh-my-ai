@@ -5,12 +5,20 @@ REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO"
 
 FIXTURE_ROOT="fixtures/install"
-TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/oh-my-ai-install-fixtures.XXXXXX")"
+FIXTURE_TEMP_PARENT="${TMPDIR:-/tmp}"
+TEMP_ROOT="$(mktemp -d "${FIXTURE_TEMP_PARENT%/}/oh-my-ai-install-fixtures.XXXXXX")"
 
 cleanup() {
   [ "${KEEP_INSTALL_FIXTURE_ARTIFACTS:-}" = "1" ] || rm -rf -- "$TEMP_ROOT"
 }
 trap cleanup EXIT
+
+run_isolated_check() {
+  "$@"
+  if [ "${KEEP_INSTALL_FIXTURE_ARTIFACTS:-}" != "1" ]; then
+    find "$TEMP_ROOT" -mindepth 1 -depth -delete
+  fi
+}
 
 fail() {
   echo "fixture failure: $*" >&2
@@ -84,13 +92,22 @@ assert_managed_hooks_once() {
       .replace(/"\$(?:HOME|\{HOME\})\/\.local\/bin\/oh-my-ai"|\$(?:HOME|\{HOME\})\/\.local\/bin\/oh-my-ai/g, "<oh>")
       .replace(/"\$(?:HOME|\{HOME\})\/\.local\/bin\/harness-event"|\$(?:HOME|\{HOME\})\/\.local\/bin\/harness-event/g, "<event>")
       .replace(/\s+/g, " ");
-    const matcher = (group) => group.matcher === undefined ? "none" : (typeof group.matcher === "string" && ["Skill", "^Skill$"].includes(group.matcher.trim()) ? "skill" : "other");
+    const matcher = (group) => {
+      if (group.matcher === undefined) return "none";
+      if (typeof group.matcher !== "string") return "other";
+      const value = group.matcher.trim();
+      if (["Skill", "^Skill$"].includes(value)) return "skill";
+      if (value === "Write|Edit|MultiEdit|NotebookEdit|Bash") return "context-activity";
+      return "other";
+    };
     const count = (event, requiredMatcher, predicate) => (installed.hooks[event] || []).flatMap((group) => matcher(group) === requiredMatcher ? (group.hooks || []) : []).filter(predicate).length;
     const wrapper = (event) => (hook) => hook.type === "command" && normalise(hook.command) === `if [ -x <oh> ]; then <oh> hook ${runtime} ${event}; else cat >/dev/null 2>&1 || :; fi`;
     if (runtime === "claude") {
       if (count("SessionStart", "none", wrapper("SessionStart")) !== 1) process.exit(1);
       if (count("UserPromptSubmit", "none", (hook) => wrapper("UserPromptSubmit")(hook) || (hook.type === "command" && /prompt-routing-hook\.mjs/.test(hook.command) && /claude-json/.test(hook.command))) !== 1) process.exit(1);
+      if (count("PostToolUse", "context-activity", wrapper("PostToolUse")) !== 1) process.exit(1);
       if (count("PostToolUse", "skill", (hook) => hook.type === "command" && /harness-event/.test(hook.command) && /emit\s+skill-start/.test(hook.command) && /--runtime\s+claude/.test(hook.command)) !== 1) process.exit(1);
+      if (count("SessionEnd", "none", wrapper("SessionEnd")) !== 1) process.exit(1);
     } else if (count("UserPromptSubmit", "none", (hook) => wrapper("UserPromptSubmit")(hook) || (hook.type === "command" && /prompt-routing-hook\.mjs/.test(hook.command) && /--format(?:=|\s+)text/.test(hook.command))) !== 1) {
       process.exit(1);
     }
@@ -535,7 +552,7 @@ check_semantic_hook_dedup() {
     const claudePrompt = claude.hooks.UserPromptSubmit[0].hooks[0];
     claudePrompt.command = `REPO="$(dirname "$(dirname "$(readlink -f ~/.claude/settings.json)")")"; node "$REPO/scripts/prompt-routing-hook.mjs" --format claude-json || true`;
     claude.hooks.UserPromptSubmit[0].hooks.push({ type: "command", command: "echo oh-my-ai is only a user hook" });
-    claude.hooks.PostToolUse[0].matcher = " ^Skill$ ";
+    claude.hooks.PostToolUse.find((group) => group.matcher === "Skill").matcher = " ^Skill$ ";
     claude.hooks.SessionStart[0].hooks[0].command = claude.hooks.SessionStart[0].hooks[0].command.replace(/\s+/g, "   ").replace(/"\$HOME\/\.local\/bin\/oh-my-ai"/g, "$HOME/.local/bin/oh-my-ai") + "   ";
     codex.hooks.UserPromptSubmit[0].hooks[0].command = codex.hooks.UserPromptSubmit[0].hooks[0].command.replace(/; then/g, ";    then").replace(/"\$HOME\/\.local\/bin\/oh-my-ai"/g, "$HOME/.local/bin/oh-my-ai") + " ";
     fs.writeFileSync(process.argv[3], `${JSON.stringify(claude, null, 2)}\n`);
@@ -1180,27 +1197,27 @@ for fixture in "$FIXTURE_ROOT"/FX-INS-*; do
   check_fixture_metadata "$fixture"
 done
 
-check_fresh_install
-check_reinstall_idempotency
-check_healthy_doctor
-check_broken_install
-check_dangling_link_recovery
-check_existing_claude_settings_merge
-check_existing_skill_directories
-check_work_start_conflict
-check_invalid_existing_json
-check_semantic_hook_dedup
-check_legacy_customization_preservation
-check_runtime_strict_readiness
-check_disabled_runtime_states
-check_core_requirement_matrix
-check_work_start_runtime_contracts
-check_installed_work_start_e2e
-check_installed_external_repository_notice_e2e
-check_work_start_post_execution_boundary
-check_work_start_public_entry_parser
-check_work_start_engine_failure_modes
-check_work_start_source_relocation
-check_work_start_consent_boundary
+run_isolated_check check_fresh_install
+run_isolated_check check_reinstall_idempotency
+run_isolated_check check_healthy_doctor
+run_isolated_check check_broken_install
+run_isolated_check check_dangling_link_recovery
+run_isolated_check check_existing_claude_settings_merge
+run_isolated_check check_existing_skill_directories
+run_isolated_check check_work_start_conflict
+run_isolated_check check_invalid_existing_json
+run_isolated_check check_semantic_hook_dedup
+run_isolated_check check_legacy_customization_preservation
+run_isolated_check check_runtime_strict_readiness
+run_isolated_check check_disabled_runtime_states
+run_isolated_check check_core_requirement_matrix
+run_isolated_check check_work_start_runtime_contracts
+run_isolated_check check_installed_work_start_e2e
+run_isolated_check check_installed_external_repository_notice_e2e
+run_isolated_check check_work_start_post_execution_boundary
+run_isolated_check check_work_start_public_entry_parser
+run_isolated_check check_work_start_engine_failure_modes
+run_isolated_check check_work_start_source_relocation
+run_isolated_check check_work_start_consent_boundary
 
 echo "all install fixtures passed"
