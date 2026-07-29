@@ -1,5 +1,5 @@
 {
-  "contract": "jira-ticket-contract-preview-v2",
+  "contract": "jira-ticket-pure-contract-preview-v1",
   "network": false,
   "external_write": false,
   "artifact_write": false,

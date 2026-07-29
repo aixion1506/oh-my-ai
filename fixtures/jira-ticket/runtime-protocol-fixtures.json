@@ -1,0 +1,8 @@
+{
+  "contract": "jira-ticket-runtime-protocol-v1",
+  "approval_cases": ["approved-current", "contract-stale", "metadata-stale", "search-stale", "missing-preview-id", "wrong-preview-id"],
+  "identity_cases": ["abc-key", "url-key-mismatch", "invalid-key", "invalid-host", "key-only", "url-only", "summary-mismatch", "project-mismatch", "verified"],
+  "minor_cases": ["search-only-exact", "search-only-similar", "wrong-project", "metadata-sentinel-case-insensitive"],
+  "search_only": true,
+  "required_action_types": ["jira.search_required", "preview_required", "jira.create_required"]
+}

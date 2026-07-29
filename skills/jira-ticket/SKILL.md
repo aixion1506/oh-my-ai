@@ -112,7 +112,14 @@ contradictory, or source-conflicted fields also stop before search and Create.
 Source order is Accepted Decision, Canonical Repository Product and
 Architecture Documents, Confluence Specification, Explicit User Request,
 Handoff Candidate, then Current Conversation. Unread content is `Not
-Verifiable`; a URL is not evidence by itself.
+Verifiable`; a URL is not evidence by itself. The canonical source name is
+`Canonical Repository Product and Architecture Documents`.
+
+Issue Type must be a semantic Feature, Story, Task, Bug, Research, or Tech
+Debt candidate. Otherwise use `Issue Type Decision Required`. **Branch-name fallback** preserves the returned Issue Key only after verification:
+`feat/<ISSUE-KEY>-<slug>`, `chore/<ISSUE-KEY>-<slug>`,
+`fix/<ISSUE-KEY>-<slug>`, `research/<ISSUE-KEY>-<slug>`, or
+`refactor/<ISSUE-KEY>-<slug>`; it never creates a branch.
 
 ## A. Capability Gate
 
@@ -129,6 +136,14 @@ session, that the intended project is `RPL`, and that this check produced
 evidence. Static runtime metadata describes possible support; it never proves
 current connection state. Do not place runtime-specific tool function names in
 this contract.
+
+The canonical runtime entry is `oh-my-ai jira-ticket --json <protocol-input>`.
+It emits `jira.search_required`, accepts the runtime-normalized search result,
+emits a Preview and `preview_id`, accepts an approval object, emits
+`jira.create_required`, then accepts the runtime-normalized Create result.
+Codex·Claude adapters execute the actual MCP/Plugin Tool between these steps
+and return `tool_call_count`, capability evidence, and Jira Site Origin; the
+Core never receives a runtime Tool function name.
 
 If either capability is unavailable or connection evidence is missing, stop:
 
@@ -164,7 +179,16 @@ separate from Write Evidence.
 
 ## D. Current-preview human approval
 
-Only a current Create Preview's explicit approval authorizes one Create call.
+Only a current Create Preview's explicit approval object authorizes one Create
+call:
+
+```json
+{ "status": "approved", "preview_id": "<current SHA-256 preview_id>" }
+```
+
+The `preview_id` is SHA-256 over canonical Contract, Create Metadata, duplicate
+search/reuse result, Branch/PR/HEAD, runtime, and capability evidence. A
+Contract, Metadata, or search-result change invalidates earlier approval.
 Do not infer approval from general positivity, a previous session, Contract
 edits, `검토해줘`, or `계속해`. Rejected, missing, or stale approval leaves
 `Create Attempted: false` and `Mutation: 0`.
@@ -208,8 +232,11 @@ actual invocation only in Write Evidence.
 
 Accept success only when the returned Create result—not a local guess—contains
 an Issue Key and URL, Project `RPL`, the requested Summary, and evidence that
-it is a Create result rather than a search hit. Also report the Create call
-count. A verified success reports the actual Key and URL and then stops.
+it is a Create result rather than a search hit. The Key must match
+`^RPL-[1-9][0-9]*$`; its prefix must be `RPL`; the URL must be a
+`/browse/<returned-key>` URL on the Jira Site Origin verified by the Runtime
+Adapter. Also report the normalized Tool Call Count. A partial Key or URL is
+preserved as Evidence but remains `possibly_applied / not_verifiable`.
 
 ## G. Ambiguous result and idempotency
 
