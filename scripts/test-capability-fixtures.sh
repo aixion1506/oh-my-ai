@@ -84,6 +84,22 @@ fx_cap_002() {
   echo "passed: FX-CAP-002-conditional-capability"
 }
 
+# --- FX-CAP-003 Jira MCP semantic capability declarations ------------------
+
+fx_cap_003() {
+  node - "$REAL_FILE" <<'NODE' || fail "FX-CAP-003: Jira MCP semantic capabilities are incomplete"
+const fs = require("fs");
+const doc = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+for (const runtime of ["codex", "claude"]) {
+  for (const id of ["jira.search", "jira.create"]) {
+    const capability = doc.runtimes[runtime].capabilities.find((item) => item.capability_id === id);
+    if (!capability || capability.declared_status !== "conditional" || capability.required_for_advertised_support !== false) process.exit(1);
+  }
+}
+NODE
+  echo "passed: FX-CAP-003-jira-mcp-semantic-capabilities"
+}
+
 # --- FX-CAP-010 Approval Mixed into Capability (Negative) ------------------
 
 fx_cap_010() {
@@ -250,6 +266,7 @@ require_file "$REAL_FILE"
 
 fx_cap_001
 fx_cap_002
+fx_cap_003
 fx_cap_010
 fx_cap_011
 fx_cap_012

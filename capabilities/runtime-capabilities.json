@@ -344,6 +344,64 @@
           "last_verified_at": "2026-07-20T00:00:00Z",
           "notes": [],
           "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "jira.search",
+          "declared_status": "conditional",
+          "drift_status": "current",
+          "effective_status": "conditional",
+          "conditions": [
+            "A Codex Jira MCP/Plugin exposes a semantic Jira search operation in the active runtime"
+          ],
+          "failure_mode": "Without a verified runtime search operation, jira-ticket stops before duplicate assessment or Create.",
+          "limitations": [
+            "The static declaration does not prove that a Jira MCP/Plugin is connected in a particular session"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [
+            "Runtime adapter verifies the active Jira MCP/Plugin search capability before the workflow begins"
+          ],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json codex-adapter"
+          },
+          "evidence_refs": [
+            "FX-JT-MCP-CODEX-SEARCH"
+          ],
+          "last_verified_at": "2026-07-29T00:00:00Z",
+          "notes": [
+            "Availability is session-specific and is enforced by the Jira MCP-backed Create Workflow capability gate"
+          ],
+          "required_for_advertised_support": false
+        },
+        {
+          "capability_id": "jira.create",
+          "declared_status": "conditional",
+          "drift_status": "current",
+          "effective_status": "conditional",
+          "conditions": [
+            "A Codex Jira MCP/Plugin exposes a semantic Jira create operation in the active runtime"
+          ],
+          "failure_mode": "Without a verified runtime create operation, jira-ticket stops with Mutation 0.",
+          "limitations": [
+            "The static declaration does not prove that a Jira MCP/Plugin is connected in a particular session"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [
+            "Runtime adapter verifies the active Jira MCP/Plugin create capability before the workflow begins"
+          ],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json codex-adapter"
+          },
+          "evidence_refs": [
+            "FX-JT-MCP-CODEX-CREATE"
+          ],
+          "last_verified_at": "2026-07-29T00:00:00Z",
+          "notes": [
+            "Availability is session-specific and is enforced by the Jira MCP-backed Create Workflow capability gate"
+          ],
+          "required_for_advertised_support": false
         }
       ]
     },
@@ -708,6 +766,64 @@
           "last_verified_at": "2026-07-20T00:00:00Z",
           "notes": [],
           "required_for_advertised_support": true
+        },
+        {
+          "capability_id": "jira.search",
+          "declared_status": "conditional",
+          "drift_status": "current",
+          "effective_status": "conditional",
+          "conditions": [
+            "A Claude Jira MCP/Plugin exposes a semantic Jira search operation in the active runtime"
+          ],
+          "failure_mode": "Without a verified runtime search operation, jira-ticket stops before duplicate assessment or Create.",
+          "limitations": [
+            "The static declaration does not prove that a Jira MCP/Plugin is connected in a particular session"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [
+            "Runtime adapter verifies the active Jira MCP/Plugin search capability before the workflow begins"
+          ],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json claude-adapter"
+          },
+          "evidence_refs": [
+            "FX-JT-MCP-CLAUDE-SEARCH"
+          ],
+          "last_verified_at": "2026-07-29T00:00:00Z",
+          "notes": [
+            "Availability is session-specific and is enforced by the Jira MCP-backed Create Workflow capability gate"
+          ],
+          "required_for_advertised_support": false
+        },
+        {
+          "capability_id": "jira.create",
+          "declared_status": "conditional",
+          "drift_status": "current",
+          "effective_status": "conditional",
+          "conditions": [
+            "A Claude Jira MCP/Plugin exposes a semantic Jira create operation in the active runtime"
+          ],
+          "failure_mode": "Without a verified runtime create operation, jira-ticket stops with Mutation 0.",
+          "limitations": [
+            "The static declaration does not prove that a Jira MCP/Plugin is connected in a particular session"
+          ],
+          "unknown_reason": null,
+          "required_manual_step": [
+            "Runtime adapter verifies the active Jira MCP/Plugin create capability before the workflow begins"
+          ],
+          "source": {
+            "type": "manual_fixture",
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json claude-adapter"
+          },
+          "evidence_refs": [
+            "FX-JT-MCP-CLAUDE-CREATE"
+          ],
+          "last_verified_at": "2026-07-29T00:00:00Z",
+          "notes": [
+            "Availability is session-specific and is enforced by the Jira MCP-backed Create Workflow capability gate"
+          ],
+          "required_for_advertised_support": false
         }
       ]
     }
