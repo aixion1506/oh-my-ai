@@ -46,6 +46,10 @@ clone_fixture_repo() {
   if ! git diff --quiet HEAD --; then
     git diff --binary HEAD -- | git -C "$clone" apply
   fi
+  git ls-files --others --exclude-standard -z | while IFS= read -r -d '' file; do
+    mkdir -p "$clone/$(dirname "$file")"
+    cp "$REPO/$file" "$clone/$file"
+  done
   printf '%s\n' "$clone"
 }
 
@@ -98,6 +102,8 @@ assert_managed_hooks_once() {
       const value = group.matcher.trim();
       if (["Skill", "^Skill$"].includes(value)) return "skill";
       if (value === "Write|Edit|MultiEdit|NotebookEdit|Bash") return "context-activity";
+      if (value === "apply_patch|Bash") return "codex-context-activity";
+      if (value === "startup|resume|clear") return "codex-session-start";
       return "other";
     };
     const count = (event, requiredMatcher, predicate) => (installed.hooks[event] || []).flatMap((group) => matcher(group) === requiredMatcher ? (group.hooks || []) : []).filter(predicate).length;
@@ -108,8 +114,11 @@ assert_managed_hooks_once() {
       if (count("PostToolUse", "context-activity", wrapper("PostToolUse")) !== 1) process.exit(1);
       if (count("PostToolUse", "skill", (hook) => hook.type === "command" && /harness-event/.test(hook.command) && /emit\s+skill-start/.test(hook.command) && /--runtime\s+claude/.test(hook.command)) !== 1) process.exit(1);
       if (count("SessionEnd", "none", wrapper("SessionEnd")) !== 1) process.exit(1);
-    } else if (count("UserPromptSubmit", "none", (hook) => wrapper("UserPromptSubmit")(hook) || (hook.type === "command" && /prompt-routing-hook\.mjs/.test(hook.command) && /--format(?:=|\s+)text/.test(hook.command))) !== 1) {
-      process.exit(1);
+    } else {
+      if (count("UserPromptSubmit", "none", (hook) => wrapper("UserPromptSubmit")(hook) || (hook.type === "command" && /prompt-routing-hook\.mjs/.test(hook.command) && /--format(?:=|\s+)text/.test(hook.command))) !== 1) process.exit(1);
+      if (count("SessionStart", "codex-session-start", wrapper("SessionStart")) !== 1) process.exit(1);
+      if (count("PostToolUse", "codex-context-activity", wrapper("PostToolUse")) !== 1) process.exit(1);
+      if (count("SessionEnd", "none", wrapper("SessionEnd")) !== 1) process.exit(1);
     }
   ' "$runtime" "$target" || fail "managed Hook operations were not installed exactly once in $target"
 }
@@ -446,7 +455,7 @@ check_existing_claude_settings_merge() {
   check_fixture_metadata "$fixture"
   clone="$(clone_fixture_repo existing-claude-settings)"
   home_dir="$TEMP_ROOT/existing-claude-settings/home"
-  mkdir -p "$home_dir/.claude"
+  mkdir -p "$home_dir/.claude" "$home_dir/.codex"
   node -e '
     const fs = require("fs");
     const settings = {
@@ -458,6 +467,18 @@ check_existing_claude_settings_merge() {
     };
     fs.writeFileSync(process.argv[1], `${JSON.stringify(settings, null, 2)}\n`);
   ' "$home_dir/.claude/settings.json"
+  node -e '
+    const fs = require("fs");
+    const hooks = {
+      userSetting: "preserved",
+      hooks: {
+        SessionStart: [{ matcher: "startup", hooks: [{ type: "command", command: "user-codex-session-hook" }] }],
+        PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "user-codex-post-tool-hook" }] }],
+        SessionEnd: [{ hooks: [{ type: "command", command: "user-codex-session-end-hook" }] }],
+      },
+    };
+    fs.writeFileSync(process.argv[1], `${JSON.stringify(hooks, null, 2)}\n`);
+  ' "$home_dir/.codex/hooks.json"
 
   output="$(run_setup "$clone" "$home_dir" --install-shared)"
   require_fixed "Claude managed hooks: updated" "$output"
@@ -465,7 +486,12 @@ check_existing_claude_settings_merge() {
   require_fixed '"theme": "user-theme"' "$(cat "$home_dir/.claude/settings.json")"
   require_fixed "user-session-hook" "$(cat "$home_dir/.claude/settings.json")"
   require_fixed "user-prompt-hook" "$(cat "$home_dir/.claude/settings.json")"
+  require_fixed '"userSetting": "preserved"' "$(cat "$home_dir/.codex/hooks.json")"
+  require_fixed "user-codex-session-hook" "$(cat "$home_dir/.codex/hooks.json")"
+  require_fixed "user-codex-post-tool-hook" "$(cat "$home_dir/.codex/hooks.json")"
+  require_fixed "user-codex-session-end-hook" "$(cat "$home_dir/.codex/hooks.json")"
   assert_managed_hooks_once claude "$home_dir/.claude/settings.json"
+  assert_managed_hooks_once codex "$home_dir/.codex/hooks.json"
 
   echo "passed: FX-INS-050 existing-claude-settings"
 }

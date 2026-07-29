@@ -105,11 +105,14 @@ function looksLikeCustomisedManagedOperation(operation, command) {
   if (operation.id.endsWith("skill-usage")) {
     return value.includes("<harness-event> emit skill-start");
   }
+  if (operation.id.endsWith("context-checkpoint-session-start")) {
+    return value.includes(`<oh-my-ai> hook ${operation.runtime} SessionStart`);
+  }
   if (operation.id.endsWith("context-checkpoint-activity")) {
-    return value.includes("<oh-my-ai> hook claude PostToolUse");
+    return value.includes(`<oh-my-ai> hook ${operation.runtime} PostToolUse`);
   }
   if (operation.id.endsWith("context-checkpoint-session-end")) {
-    return value.includes("<oh-my-ai> hook claude SessionEnd");
+    return value.includes(`<oh-my-ai> hook ${operation.runtime} SessionEnd`);
   }
   return false;
 }
@@ -141,6 +144,27 @@ const operationSpecs = [
       isWrapperOperation(hook.command, "codex", "UserPromptSubmit")
       || isLegacyRoutingOperation(hook.command, "codex")
     ),
+  },
+  {
+    id: "codex.context-checkpoint-session-start",
+    runtime: "codex",
+    event: "SessionStart",
+    matcher: "literal:startup|resume|clear",
+    matches: (hook) => hook?.type === "command" && isWrapperOperation(hook.command, "codex", "SessionStart"),
+  },
+  {
+    id: "codex.context-checkpoint-activity",
+    runtime: "codex",
+    event: "PostToolUse",
+    matcher: "literal:apply_patch|Bash",
+    matches: (hook) => hook?.type === "command" && isWrapperOperation(hook.command, "codex", "PostToolUse"),
+  },
+  {
+    id: "codex.context-checkpoint-session-end",
+    runtime: "codex",
+    event: "SessionEnd",
+    matcher: "no_matcher",
+    matches: (hook) => hook?.type === "command" && isWrapperOperation(hook.command, "codex", "SessionEnd"),
   },
   {
     id: "claude.skill-usage",

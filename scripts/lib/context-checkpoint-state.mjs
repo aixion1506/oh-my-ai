@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 const SCHEMA_VERSION = 2;
 const LEGACY_SCHEMA_VERSION = 1;
 const STATE_FILE = "context-checkpoint-state.json";
-const SUPPORTED_RUNTIMES = new Set(["claude"]);
+const SUPPORTED_RUNTIMES = new Set(["claude", "codex"]);
 const SUPPORTED_SIGNALS = new Set(["file_mutation", "validation_run", "explicit_handoff_boundary"]);
 const SUPPORTED_RESOLUTIONS = new Set(["checkpointed", "no_update"]);
 const MAX_EVENT_HASHES = 64;
