@@ -54,7 +54,7 @@ Consumer. The supported Consumers are `work-start`, `jira-work`, and
 | Expected Base Branch | Required. Missing input is `Base Branch Required`. |
 | Expected Base SHA | Optional. If supplied, both local and remote Base must match it. |
 | Expected Branch Name Candidate | Optional. Validate only; never generate or create a Branch. |
-| Issue Key | Optional. Do not infer or invent one. |
+| Issue Key | Required for `jira-work`; optional for other Consumers. Do not infer or invent one. |
 | Execution Policy | Required: `suggest-only`, `patch-with-approval`, or `auto-apply`. |
 | Consumer | Required: `work-start`, `jira-work`, or `manual-review`. |
 | Provided Evidence | Optional evidence reference. Never claim it was verified unless the consumer supplied verified evidence. |
@@ -92,10 +92,13 @@ Before a READY conclusion, the Runtime separately verifies the cached
 `git ls-remote --heads origin`. Exactly one actual remote ref is required and
 it must match the cached ref. The report keeps Expected Base SHA, Cached
 Remote-tracking Base SHA, Actual Remote Base SHA, and Feature Integration Point
-separate. When both local and remote Issue Branches exist, the Runtime verifies
-their actual tips first, classifies local-ahead, remote-ahead, or divergence,
-and performs a merge conclusion only for an aligned tip. The report records
-which verified tip supplied ancestry evidence.
+separate. The candidate Feature Branch receives the same cached-versus-actual
+Remote verification, reported independently as Cached Remote-tracking Feature
+SHA and Actual Remote Feature SHA. A missing, stale, malformed, or unavailable
+Feature ref cannot produce READY. When both local and remote Issue Branches
+exist, the Runtime verifies their actual tips first, classifies local-ahead,
+remote-ahead, or divergence, and performs a merge conclusion only for an
+aligned tip. The report records which verified tip supplied ancestry evidence.
 
 ## Result model
 
@@ -147,10 +150,11 @@ general convention. This preflight does not create names. If a supplied
 candidate conflicts with verified rules, report `CONFLICTED`; if the rules are
 not verified, report `NOT_VERIFIABLE`.
 
-For a `jira-work` invocation with an Issue Key, the Consumer must supply an
-explicit Issue-to-Branch association evidence marker. The Runtime never infers
-an Issue Key from a Branch or PR name: missing association evidence is
-`NOT_VERIFIABLE`, and an evidence marker for another Branch is `CONFLICTED`.
+For a `jira-work` invocation, the Issue Key is required and the Consumer must
+supply an explicit Issue-to-Branch association evidence marker. The Runtime
+never infers an Issue Key from a Branch or PR name: a missing Issue Key or
+association evidence is `NOT_VERIFIABLE`, and an evidence marker for another
+Branch is `CONFLICTED`.
 This association gate runs after structural PR parsing but before any Branch,
 PR, or merge conclusion; an unverified association cannot be bypassed by
 ancestry evidence. No Jira association is required for `manual-review` or
