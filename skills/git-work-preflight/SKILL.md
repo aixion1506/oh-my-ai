@@ -78,12 +78,22 @@ Repository and ref input are usable:
 - `gh pr list`, `gh pr view`
 
 The Runtime reports executed Evidence separately from supplied Evidence. An
-unexecuted query is `NOT_CHECKED`, not a successful absence result.
+unexecuted query is `NOT_CHECKED`, not a successful absence result. It parses
+`gh pr list` with Node.js JSON parsing, so PR state never depends on JSON key
+order; malformed, unavailable, or multiple records fail closed as appropriate.
 
 For a feature Branch, Local Base SHA is the merge base between current HEAD and
 verified `origin/<base>`. This detects a stale integration point without
 misclassifying a Feature Branch that already merged the latest Base merely
 because a separate local base ref has not moved.
+
+Before a READY conclusion, the Runtime separately verifies the cached
+`origin/<base>` ref and the actual `refs/heads/<base>` value from
+`git ls-remote --heads origin`. Exactly one actual remote ref is required and
+it must match the cached ref. The report keeps Expected Base SHA, Cached
+Remote-tracking Base SHA, Actual Remote Base SHA, and Feature Integration Point
+separate. A candidate Branch tip already ancestral to Actual Remote Base is
+`ALREADY_MERGED`, independent of PR state.
 
 ## Result model
 
@@ -102,6 +112,9 @@ because a separate local base ref has not moved.
 All blocking results prohibit a mutation plan. `READY_NEW_WORK` and
 `READY_RESUME` are planning results, never a Branch-creation, checkout, or
 Push authorization.
+
+Only `READY_NEW_WORK` and `READY_RESUME` may return process exit code `0`.
+Every other result is non-zero; the Runtime owns this mapping centrally.
 
 ## Existing Work A–H
 
@@ -131,6 +144,12 @@ Repository-enforced Base and naming rules outrank a Ticket candidate and any
 general convention. This preflight does not create names. If a supplied
 candidate conflicts with verified rules, report `CONFLICTED`; if the rules are
 not verified, report `NOT_VERIFIABLE`.
+
+For a `jira-work` invocation with an Issue Key, the Consumer must supply an
+explicit Issue-to-Branch association evidence marker. The Runtime never infers
+an Issue Key from a Branch or PR name: missing association evidence is
+`NOT_VERIFIABLE`, and an evidence marker for another Branch is `CONFLICTED`.
+No Jira read or write integration is performed here.
 
 ## Execution Policy and output
 

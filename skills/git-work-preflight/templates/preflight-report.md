@@ -27,18 +27,22 @@
 - Remote Verification:
 - Current Branch:
 - Current HEAD:
+- Expected Base SHA:
+- Cached Remote-tracking Base SHA:
+- Actual Remote Base SHA:
+- Feature Integration Point:
 - Local Base SHA:
 - Remote Base SHA:
 - Ancestry Status:
 
 ## Working Tree Status
 
-- Tracked Working Tree Status:
-- Staged Working Tree Status:
-- Unmerged Conflict Status:
+- Working Tree Status:
+- Tracked Status:
+- Staged Status:
+- Unmerged Status:
 - Untracked Local State:
-- Ignored File Status:
-- Local Generated State:
+- Ignored Local State:
 - Mutation Safety:
 
 ## Branch and PR Status
@@ -73,13 +77,23 @@
   PLAN_WITH_SEPARATE_APPROVAL, PLAN_ONLY_RUNTIME_UNAVAILABLE,
   JIRA_RECONCILIATION_ONLY, or STOP.
 
+## Process Exit Code
+
+- `0` is allowed only for `READY_NEW_WORK` and `READY_RESUME`.
+- Every recovery, blocked, merged, conflicted, or unverifiable result is
+  non-zero.
+
 ## Prohibited Actions
 
 - Branch Creation
 - Checkout
 - Reset
+- Restore
+- Stash
+- Clean
 - Commit and Push
 - Draft PR
+- PR Edit
 - Merge
 - Release
 - Tag
