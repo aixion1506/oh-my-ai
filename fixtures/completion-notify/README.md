@@ -11,11 +11,15 @@ Center.
   without a mutation.
 - `FX-CN-004` through `005`: three-install identity, first downstream provider,
   permissions, and recursive dispatcher prevention are exact assertions.
-- `FX-CN-006`: hanging macOS and downstream providers are process-group killed;
-  100 dispatches leave no child alive.
+- `FX-CN-006`: a stable flock reuses an old unlocked lock, rejects active-lock
+  uninstall without mutation, rejects a lock symlink, and leaves no child alive
+  after 100 concurrent dispatches.
 - `FX-CN-007`: the rendered body is fixed text and contains no assistant summary.
+- `FX-CN-007b`: Claude is macOS-only; native Codex alone retains the existing
+  downstream provider contract.
 - `FX-CN-008` through `012`: transaction rollback, independent runtime cleanup,
-  exact Claude identity, repeat uninstall, and missing-state fail-closed paths.
+  production log/lock cleanup, exact Claude identity, repeat uninstall, and
+  missing-state fail-closed paths.
 - `FX-CN-013`: Claude Stop payload maps structurally without reading a user HOME.
 
 The fixture exports disposable HOME/XDG/Codex/Claude paths before invoking any

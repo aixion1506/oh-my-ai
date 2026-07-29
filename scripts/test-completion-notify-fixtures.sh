@@ -225,9 +225,10 @@ pass "FX-CN-004b existing direct and alias self-reference state is NOT VERIFIABL
 
 use_home modes
 seed_settings
-chmod 644 "$CODEX_DIR/config.toml"
+chmod 644 "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
-[ "$(mode "$CODEX_DIR/config.toml")" = 644 ] || fail "existing 0644 config mode was not preserved"
+[ "$(mode "$CODEX_DIR/config.toml")" = 644 ] || fail "existing 0644 Codex config mode was not preserved"
+[ "$(mode "$CLAUDE_DIR/settings.json")" = 644 ] || fail "existing 0644 Claude settings mode was not preserved"
 [ "$(mode "$(state_path)")" = 600 ] || fail "new state mode is not private"
 python3 - "$(state_path)" <<'PY'
 import json, sys
@@ -236,7 +237,16 @@ PY
 chmod 644 "$(state_path)"
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 [ "$(mode "$(state_path)")" = 600 ] || fail "v1 state migration did not strengthen mode"
-pass "FX-CN-004c config mode preservation and private-state migration mode"
+"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "0644 mode uninstall failed"
+[ "$(mode "$CODEX_DIR/config.toml")" = 644 ] || fail "uninstall changed existing Codex config mode"
+[ "$(mode "$CLAUDE_DIR/settings.json")" = 644 ] || fail "uninstall changed existing Claude settings mode"
+
+use_home new-modes
+rm -f "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
+"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+[ "$(mode "$CODEX_DIR/config.toml")" = 600 ] || fail "new Codex config mode is not private"
+[ "$(mode "$CLAUDE_DIR/settings.json")" = 600 ] || fail "new Claude settings mode is not private"
+pass "FX-CN-004c both user configs preserve modes while new configs and state stay private"
 
 runtime="$(runtime_root)"
 ln -s "$runtime/dispatcher" "$runtime/self-dispatcher"
@@ -257,15 +267,22 @@ use_home timeout
 seed_settings
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 mac_hang="$TEMP_ROOT/macos-hang"; down_hang="$TEMP_ROOT/downstream-hang"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$PID_FILE"\nsleep 5\n' >"$mac_hang"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$PID_FILE"\nsleep 5\n' >"$down_hang"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$MAC_PID_FILE"\nsleep 5\n' >"$mac_hang"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$DOWN_PID_FILE"\nsleep 5\n' >"$down_hang"
 chmod 700 "$mac_hang" "$down_hang"
 python3 - "$(state_path)" "$down_hang" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
 PY
-: >"$TEMP_ROOT/pids"
+: >"$TEMP_ROOT/macos-pids"
+: >"$TEMP_ROOT/downstream-pids"
 : >"$TEMP_ROOT/supervisors"
+export MAC_PID_FILE="$TEMP_ROOT/macos-pids"
+export DOWN_PID_FILE="$TEMP_ROOT/downstream-pids"
+# An unlocked, old lock is reusable. The stable flock, not its age or inode
+# replacement, decides which concurrent dispatcher becomes supervisor.
+: >"$(state_path).dispatch.lock"
+touch -d '2 days ago' "$(state_path).dispatch.lock"
 started="$(date +%s%N)"
 OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}'
 elapsed=$(( $(date +%s%N) - started ))
@@ -276,34 +293,73 @@ done
 wait
 sleep 0.05
 [ "$(grep -cve '^$' "$TEMP_ROOT/supervisors")" -eq 1 ] || fail "100-call burst started more than one concurrent supervisor"
-assert_live_pids_at_most "$TEMP_ROOT/pids" provider 2
+assert_live_pids_at_most "$TEMP_ROOT/macos-pids" macOS-provider 1
+assert_live_pids_at_most "$TEMP_ROOT/downstream-pids" codex-downstream 1
 sleep 3
-assert_dead_pids "$TEMP_ROOT/pids" provider
+assert_dead_pids "$TEMP_ROOT/macos-pids" macOS-provider
+assert_dead_pids "$TEMP_ROOT/downstream-pids" codex-downstream
 assert_dead_pids "$TEMP_ROOT/supervisors" supervisor
-pass "FX-CN-006 macOS/downstream timeout, single-worker cap, and 100 dispatch child cleanup"
+pass "FX-CN-006 stable flock reuses an old unlocked lock and caps 100 concurrent dispatches"
+
+use_home lock-active
+seed_settings
+"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+lock_path="$(state_path).dispatch.lock"
+: >"$lock_path"
+python3 - "$lock_path" <<'PY' &
+import fcntl, sys, time
+with open(sys.argv[1], 'r+') as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    time.sleep(2)
+PY
+lock_holder=$!
+sleep 0.1
+before_manifest="$(manifest)"
+if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "uninstall ignored an active dispatcher lock"; fi
+[ "$before_manifest" = "$(manifest)" ] || fail "active dispatcher lock allowed uninstall mutation"
+wait "$lock_holder"
+"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "uninstall did not recover after lock release"
+pass "FX-CN-006b active flock blocks uninstall without mutation"
+
+use_home lock-symlink
+seed_settings
+"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+lock_path="$(state_path).dispatch.lock"; victim="$TEMP_ROOT/lock-victim"; fake_mac="$TEMP_ROOT/lock-symlink-mac"
+printf 'unchanged\n' >"$victim"
+rm -f "$lock_path"
+ln -s "$victim" "$lock_path"
+printf '#!/usr/bin/env bash\nprintf invoked >"$LOCK_SYMLINK_PROVIDER"\n' >"$fake_mac"
+chmod 700 "$fake_mac"
+LOCK_SYMLINK_PROVIDER="$TEMP_ROOT/lock-symlink-provider" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}'
+sleep 0.2
+[ "$(cat "$victim")" = unchanged ] || fail "dispatcher followed a lock symlink"
+[ ! -e "$TEMP_ROOT/lock-symlink-provider" ] || fail "lock symlink started a provider"
+pass "FX-CN-006c lock symlink fails open without provider execution"
 
 rendered="$(OH_MY_AI_NOTIFY_RENDER_ONLY=1 "$REPO/scripts/completion-notify-macos.sh" '{"type":"agent-turn-complete","cwd":"/private/abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz","last-assistant-message":"SECRET=sk-live /Users/alice RPL-123 branch diff terminal"}')"
 [ "$rendered" = $'Codex Turn 완료 · abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefgh\n응답이 완료되었습니다. 결과를 확인하세요.' ] || fail "default notification contract leaked assistant content or project normalization changed"
 pass "FX-CN-007 fixed body contains zero assistant-summary characters"
 
 use_home privacy
-seed_settings
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
 fake_mac="$TEMP_ROOT/privacy-mac"; fake_down="$TEMP_ROOT/privacy-down"
-printf '#!/usr/bin/env bash\nprintf "%%s" "$1" >"$PRIVACY_MAC"\n' >"$fake_mac"
-printf '#!/usr/bin/env bash\nprintf "%%s" "$1" >"$PRIVACY_DOWN"\n' >"$fake_down"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >>"$PRIVACY_MAC"\n' >"$fake_mac"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >>"$PRIVACY_DOWN"\n' >"$fake_down"
 chmod 700 "$fake_mac" "$fake_down"
-python3 - "$(state_path)" "$fake_down" <<'PY'
-import json, sys
-p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
-PY
+seed_settings "\"$fake_down\""
+"$REPO/scripts/completion-notify.py" install --yes >/dev/null
 printf '%s' '{"cwd":"/repo/claude","last_assistant_message":"SECRET"}' | PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(runtime_root)/adapters/claude"
 sleep 1
-for capture in "$TEMP_ROOT/privacy-mac.json" "$TEMP_ROOT/privacy-down.json"; do
-  grep -q SECRET "$capture" && fail "Claude assistant content leaked to provider"
-  grep -Eq 'last_assistant_message|last-assistant-message|prompt|transcript|response|output' "$capture" && fail "Claude assistant field leaked to provider"
-done
-pass "FX-CN-007b Claude event is cwd-only for macOS and downstream providers"
+[ -f "$TEMP_ROOT/privacy-mac.json" ] || fail "Claude event did not reach macOS provider"
+[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.json")" -eq 1 ] || fail "Claude event called macOS provider more than once"
+[ ! -e "$TEMP_ROOT/privacy-down.json" ] || fail "Claude event created a Codex downstream provider"
+grep -q SECRET "$TEMP_ROOT/privacy-mac.json" && fail "Claude assistant content leaked to macOS provider"
+grep -Eq 'last_assistant_message|last-assistant-message|prompt|transcript|response|output' "$TEMP_ROOT/privacy-mac.json" && fail "Claude assistant field leaked to macOS provider"
+PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/codex"}'
+sleep 1
+[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.json")" -eq 2 ] || fail "native Codex event did not call macOS provider exactly once"
+[ -f "$TEMP_ROOT/privacy-down.json" ] || fail "native Codex event did not call existing downstream"
+[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-down.json")" -eq 1 ] || fail "native Codex event called downstream more than once"
+pass "FX-CN-007b Claude is macOS-only while native Codex retains its downstream contract"
 
 for stage in after-runtime after-config after-state after-self-test after-log after-lock; do
   use_home "rollback-$stage"
@@ -341,14 +397,21 @@ pass "FX-CN-010 Codex divergence preserves Codex while Claude cleans independent
 use_home uninstall
 seed_settings "\"$fake_downstream\", \"--keep\""
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/uninstall"}'
+sleep 1
+[ -f "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "production dispatch did not create its log"
+printf 'keep this unrelated log\n' >"$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log"
+other_log_hash="$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "first uninstall failed"
 "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "second uninstall was not a no-op success"
 python3 - "$CODEX_DIR/config.toml" <<'PY'
 import sys, tomllib
 assert tomllib.loads(open(sys.argv[1]).read())['notify'][0].endswith('downstream-fast')
 PY
-[ ! -e "$(state_path)" ] && [ ! -e "$(dispatcher)" ] || fail "successful uninstall retained state or runtime"
-pass "FX-CN-011 previous provider restore and repeat uninstall no-op"
+[ ! -e "$(state_path)" ] && [ ! -e "$(dispatcher)" ] && [ ! -e "$(state_path).dispatch.lock" ] || fail "successful uninstall retained state, runtime, or lock"
+[ ! -e "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "successful uninstall retained managed log"
+[ "$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")" = "$other_log_hash" ] || fail "uninstall changed an unrelated oh-my-ai log"
+pass "FX-CN-011 production log/lock cleanup, unrelated-log preservation, and repeat uninstall no-op"
 
 use_home managed-without-state
 seed_settings "\"$XDG_DATA_HOME/oh-my-ai/notifications/dispatcher\""
