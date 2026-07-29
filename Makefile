@@ -59,7 +59,7 @@ install-shared: instructions
 	./setup.sh --install-shared
 
 install-completion-notify:
-	./scripts/completion-notify.py install --yes
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ./scripts/completion-notify.py install --yes; else ./scripts/completion-notify.py install; fi
 
 completion-notify-status:
 	./scripts/completion-notify.py status

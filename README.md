@@ -72,20 +72,26 @@ interactive terminal, asks before adding this optional integration:
 make install
 # non-interactive explicit opt-in
 make install ENABLE_COMPLETION_NOTIFY=1
+# explicit standalone installation: prompt by default
+make install-completion-notify
+# non-interactive standalone installation
+make install-completion-notify ENABLE_COMPLETION_NOTIFY=1
 ```
 
 It installs **Codex Turn 완료** and **Claude Turn 완료** notifications. A Turn
 notification is not proof that a task, validation, PR, or deployment
-succeeded. The notification shows only the project directory name and the
-first safe line of the assistant response (up to 90 characters); it never
-includes the prompt, absolute path, code, diff, branch, Jira key, or secret.
+succeeded. The title contains only the runtime and normalized project-directory
+basename; the body is always `응답이 완료되었습니다. 결과를 확인하세요.` It never
+shows assistant-response content, prompts, paths, code, diffs, branches, Jira
+keys, terminal output, or secrets.
 
 Before changing configuration, the installer shows a preview and backup path,
-then requires approval. Codex's existing `notify` target is preserved as an
-asynchronous downstream provider; Claude's `Stop` hook is merged additively.
-Any notification-provider failure is fail-open and never blocks Codex or
-Claude. User-specific commands and paths live outside this repository under
-`~/.local/share/oh-my-ai/notifications/`.
+then requires approval. Codex's existing `notify` target is preserved as a
+bounded asynchronous downstream provider; Claude's `Stop` hook is merged
+additively. Configuration writes are regular-file-only, atomic, permission
+scoped, and transactionally rolled back on failure. Any provider failure is
+fail-open and cannot block a Turn indefinitely. User-specific commands and
+paths live outside this repository under `~/.local/share/oh-my-ai/notifications/`.
 
 ```bash
 make completion-notify-status
@@ -98,6 +104,11 @@ The current provider is macOS `osascript` only. Linux desktop, SSH, ntfy,
 mobile, and cloud notifications are intentionally outside this integration.
 The automated fixtures use a disposable HOME and fake providers. Notification
 Center delivery remains a separate manual E2E on an explicitly approved Mac.
+
+When creating a PR from a shell, write Markdown through `gh --body-file` or a
+single-quoted heredoc. Do not pass Markdown with backticks through a
+double-quoted shell argument or an unquoted heredoc, because shell command
+substitution can execute an installation example.
 
 - `make doctor`: 기존 설정·Hook·Skill 충돌 가능성을 읽기 전용으로 점검합니다.
 - `make install-shared`: 기존 설정을 무단으로 덮어쓰지 않고 공유 Runtime Entry와 Work-start Skill을 설치합니다.

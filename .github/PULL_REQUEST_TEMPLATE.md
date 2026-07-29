@@ -49,6 +49,10 @@
 - [ ] (해당 시) `node --check` / `bash -n` / `make doctor`
 - [ ] 기능 스모크 테스트:
 
+## PR 본문 shell 안전성
+
+- [ ] Markdown PR body는 `gh --body-file` 또는 single-quoted heredoc으로 전달함 (double-quoted shell argument·unquoted heredoc 금지)
+
 ## 동시 세션 위생
 <!-- 이 레포는 여러 세션이 같은 워킹트리를 공유할 수 있음 -->
 - [ ] 작성 시점 기준 `git status --short`에 무관 dirty/untracked 파일 없음

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Optional, local-only completion notification integration.
 
-The repository is the source; install copies only these runtime files into the
-user data directory.  No command in this module reads prompt text or writes a
-user configuration until `install` has received explicit consent.
+The installer edits user-owned settings only after explicit consent.  Every
+managed write is regular-file only, atomically replaced, and permission scoped
+to the invoking user.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import platform
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -26,20 +26,27 @@ except ModuleNotFoundError:  # pragma: no cover - Python >= 3.11 is required
     tomllib = None
 
 REPO = Path(__file__).resolve().parent.parent
-SAFE_DEFAULT = "응답이 완료되었습니다."
+STATE_VERSION = 2
+ADAPTER_VERSION = 2
 
 
 def paths() -> dict[str, Path]:
     home = Path(os.environ.get("HOME", str(Path.home())))
     data = Path(os.environ.get("XDG_DATA_HOME", home / ".local/share")) / "oh-my-ai/notifications"
+    state_root = data / "state"
+    log_root = Path(os.environ.get("XDG_STATE_HOME", home / ".local/state")) / "oh-my-ai"
     return {
         "home": home,
         "data": data,
-        "state": data / "state/completion-notify.json",
+        "state_root": state_root,
+        "state": state_root / "completion-notify.json",
+        "state_lock": state_root / "completion-notify.json.dispatch.lock",
         "dispatcher": data / "dispatcher",
         "macos": data / "adapters/macos",
         "codex": data / "adapters/codex",
         "claude": data / "adapters/claude",
+        "log_root": log_root,
+        "log": log_root / "completion-notify.log",
         "codex_config": Path(os.environ.get("CODEX_DIR", home / ".codex")) / "config.toml",
         "claude_settings": Path(os.environ.get("CLAUDE_DIR", home / ".claude")) / "settings.json",
     }
@@ -49,26 +56,104 @@ def say(message: str) -> None:
     print(message)
 
 
-def load_json(path: Path, default):
-    if not path.exists():
-        return default
-    return json.loads(path.read_text(encoding="utf-8"))
+def reject_symlink(path: Path, label: str) -> None:
+    if path.is_symlink():
+        raise ValueError(f"{label} is a symlink; refusing to follow it")
 
 
-def atomic_write(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(f".{path.name}.tmp")
-    temp.write_text(value, encoding="utf-8")
-    os.replace(temp, path)
-
-
-def backup(path: Path) -> Path | None:
-    if not path.exists():
+def read_regular_bytes(path: Path, label: str) -> bytes | None:
+    if not path.exists() and not path.is_symlink():
         return None
-    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    destination = path.with_name(f"{path.name}.oh-my-ai-completion-notify.{stamp}.bak")
-    shutil.copy2(path, destination)
-    return destination
+    reject_symlink(path, label)
+    info = path.stat()
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError(f"{label} is not a regular file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        with os.fdopen(fd, "rb", closefd=False) as source:
+            return source.read()
+    finally:
+        os.close(fd)
+
+
+def ensure_dir(path: Path, created_dirs: list[Path], enforce_mode: bool = False) -> None:
+    if path.exists() or path.is_symlink():
+        reject_symlink(path, str(path))
+        if not path.is_dir():
+            raise ValueError(f"{path} is not a directory")
+        if enforce_mode:
+            os.chmod(path, 0o700)
+        return
+    parent = path.parent
+    if parent != path:
+        ensure_dir(parent, created_dirs)
+    path.mkdir(mode=0o700)
+    os.chmod(path, 0o700)
+    created_dirs.append(path)
+
+
+def fsync_directory(path: Path) -> None:
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def atomic_write(path: Path, value: str | bytes, created_dirs: list[Path], default_mode: int = 0o600) -> None:
+    """Replace one regular file without predictable temporary names."""
+    reject_symlink(path, str(path))
+    ensure_dir(path.parent, created_dirs)
+    existing = path.stat().st_mode if path.exists() else None
+    mode = stat.S_IMODE(existing) if existing is not None else default_mode
+    payload = value.encode("utf-8") if isinstance(value, str) else value
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temp = Path(temp_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as destination:
+            destination.write(payload)
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.chmod(temp, mode)
+        os.replace(temp, path)
+        fsync_directory(path.parent)
+    except Exception:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def backup(path: Path, created_dirs: list[Path]) -> Path | None:
+    content = read_regular_bytes(path, str(path))
+    if content is None:
+        return None
+    ensure_dir(path.parent, created_dirs)
+    fd, name = tempfile.mkstemp(prefix=f"{path.name}.oh-my-ai-completion-notify.", suffix=".bak", dir=path.parent)
+    destination = Path(name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as target:
+            target.write(content)
+            target.flush()
+            os.fsync(target.fileno())
+        os.chmod(destination, 0o600)
+        fsync_directory(path.parent)
+        return destination
+    except Exception:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def command_array(value, label: str) -> list[str] | None:
@@ -82,9 +167,8 @@ def command_array(value, label: str) -> list[str] | None:
 def parse_toml(path: Path) -> tuple[str, dict]:
     if tomllib is None:
         raise ValueError("Python 3.11+ tomllib is required")
-    raw = path.read_text(encoding="utf-8") if path.exists() else ""
-    # TOML itself also rejects duplicate keys, but expose the actionable
-    # notification-specific diagnosis before parsing the rest of the file.
+    raw_bytes = read_regular_bytes(path, "Codex config")
+    raw = raw_bytes.decode("utf-8") if raw_bytes is not None else ""
     notify_line_span(raw)
     try:
         return raw, tomllib.loads(raw or "")
@@ -111,7 +195,7 @@ def notify_line_span(raw: str) -> tuple[int, int] | None:
     return found
 
 
-def set_codex_notify(config: Path, command: list[str] | None) -> None:
+def set_codex_notify(config: Path, command: list[str] | None, created_dirs: list[Path]) -> None:
     raw, parsed = parse_toml(config)
     span = notify_line_span(raw)
     existing = command_array(parsed.get("notify"), "top-level notify")
@@ -121,12 +205,17 @@ def set_codex_notify(config: Path, command: list[str] | None) -> None:
     if span:
         raw = raw[:span[0]] + replacement + raw[span[1]:]
     elif command:
-        # A TOML key after the first table header belongs to that table. Put a
-        # newly introduced top-level key before all tables without reformatting
-        # any user-owned configuration.
         raw = replacement + raw
-    atomic_write(config, raw)
+    atomic_write(config, raw, created_dirs)
     parse_toml(config)
+
+
+def canonical_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def fingerprint(value: object) -> str:
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def claude_hook_command(adapter: Path) -> str:
@@ -134,19 +223,19 @@ def claude_hook_command(adapter: Path) -> str:
 
 
 def managed_claude_hook(adapter: Path) -> dict:
-    return {"matcher": "", "hooks": [{"type": "command", "command": claude_hook_command(adapter)}]}
+    return {"hooks": [{"type": "command", "command": claude_hook_command(adapter)}]}
 
 
-def is_managed_claude_hook(hook: object) -> bool:
-    if not isinstance(hook, dict):
-        return False
-    for item in hook.get("hooks", []):
-        if isinstance(item, dict) and isinstance(item.get("command"), str) and "oh-my-ai/notifications/adapters/claude" in item["command"]:
-            return True
-    return False
+def contains_managed_adapter(hook: object) -> bool:
+    return isinstance(hook, dict) and "oh-my-ai/notifications/adapters/claude" in canonical_json(hook)
 
 
-def merge_claude(settings: Path, adapter: Path) -> tuple[dict, bool]:
+def load_json(path: Path, default):
+    raw = read_regular_bytes(path, str(path))
+    return default if raw is None else json.loads(raw.decode("utf-8"))
+
+
+def load_claude(settings: Path) -> tuple[dict, list]:
     data = load_json(settings, {})
     if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
         raise ValueError("Claude settings must be a JSON object with an optional hooks object")
@@ -154,43 +243,124 @@ def merge_claude(settings: Path, adapter: Path) -> tuple[dict, bool]:
     stop = hooks.setdefault("Stop", [])
     if not isinstance(stop, list):
         raise ValueError("Claude Stop hooks must be an array")
-    managed = [item for item in stop if is_managed_claude_hook(item)]
-    if len(managed) > 1:
-        raise ValueError("duplicate oh-my-ai Claude completion hooks")
-    if managed:
-        return data, False
-    stop.append(managed_claude_hook(adapter))
-    return data, True
+    return data, stop
 
 
-def copy_runtime(p: dict[str, Path]) -> None:
-    sources = {"dispatcher": "completion-notify-dispatcher.sh", "macos": "completion-notify-macos.sh", "codex": "completion-notify-codex.sh", "claude": "completion-notify-claude.sh"}
-    for key, filename in sources.items():
-        source, target = REPO / "scripts" / filename, p[key]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+def merge_claude(settings: Path, expected: dict, created_dirs: list[Path]) -> bool:
+    data, stop = load_claude(settings)
+    exact = [hook for hook in stop if hook == expected]
+    similar = [hook for hook in stop if contains_managed_adapter(hook) and hook != expected]
+    if len(exact) > 1:
+        raise ValueError("duplicate exact oh-my-ai Claude completion hooks")
+    if similar:
+        raise ValueError("existing Claude completion hook diverged; refusing to replace it")
+    if exact:
+        return False
+    stop.append(expected)
+    atomic_write(settings, json.dumps(data, ensure_ascii=False, indent=2) + "\n", created_dirs)
+    return True
+
+
+def copy_runtime(p: dict[str, Path], created_dirs: list[Path]) -> None:
+    ensure_dir(p["data"], created_dirs, enforce_mode=True)
+    ensure_dir(p["state_root"], created_dirs, enforce_mode=True)
+    for key, filename in {"dispatcher": "completion-notify-dispatcher.sh", "macos": "completion-notify-macos.sh", "codex": "completion-notify-codex.sh", "claude": "completion-notify-claude.sh"}.items():
+        source = REPO / "scripts" / filename
+        content = source.read_bytes()
+        atomic_write(p[key], content, created_dirs, default_mode=0o700)
+        os.chmod(p[key], 0o700)
 
 
 def installed_dispatcher_command(p: dict[str, Path]) -> list[str]:
     return [str(p["dispatcher"])]
 
 
-def read_state(p: dict[str, Path]) -> dict:
-    return load_json(p["state"], {})
+def dispatcher_realpath(p: dict[str, Path]) -> str:
+    return os.path.realpath(p["dispatcher"])
+
+
+def state_from_install(p: dict[str, Path], previous: list[str] | None, hook: dict) -> dict:
+    return {
+        "version": STATE_VERSION,
+        "adapter_version": ADAPTER_VERSION,
+        "installed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "dispatcher": str(p["dispatcher"]),
+        "dispatcher_realpath": dispatcher_realpath(p),
+        "previous_codex_notify": previous,
+        "claude_hook": hook,
+        "claude_hook_fingerprint": fingerprint(hook),
+    }
+
+
+def read_state(p: dict[str, Path]) -> tuple[dict | None, bool]:
+    raw = read_regular_bytes(p["state"], "completion notification state")
+    if raw is None:
+        return None, False
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"completion notification state is invalid: {error}") from error
+    if not isinstance(value, dict):
+        raise ValueError("completion notification state must be a JSON object")
+    return value, True
+
+
+def validate_state(p: dict[str, Path], state: dict) -> tuple[dict, bool]:
+    previous = state.get("previous_codex_notify")
+    if previous is not None:
+        command_array(previous, "saved previous notify")
+    if state.get("dispatcher") != str(p["dispatcher"]) or state.get("dispatcher_realpath", dispatcher_realpath(p)) != dispatcher_realpath(p):
+        raise ValueError("saved dispatcher identity does not match this installation")
+    if state.get("version") == 1:
+        hook = managed_claude_hook(p["claude"])
+        return state_from_install(p, previous, hook), True
+    hook = state.get("claude_hook")
+    if state.get("version") != STATE_VERSION or state.get("adapter_version") != ADAPTER_VERSION:
+        raise ValueError("completion notification state version is unsupported")
+    if not isinstance(hook, dict) or state.get("claude_hook_fingerprint") != fingerprint(hook):
+        raise ValueError("saved Claude hook identity is invalid")
+    return state, False
+
+
+def capture(paths_to_capture: list[Path]) -> dict[Path, tuple[bytes, int] | None]:
+    result: dict[Path, tuple[bytes, int] | None] = {}
+    for path in paths_to_capture:
+        content = read_regular_bytes(path, str(path))
+        result[path] = None if content is None else (content, stat.S_IMODE(path.stat().st_mode))
+    return result
+
+
+def restore(snapshot: dict[Path, tuple[bytes, int] | None], created_dirs: list[Path], created_backups: list[Path]) -> None:
+    for path, prior in snapshot.items():
+        try:
+            if prior is None:
+                if path.exists() or path.is_symlink():
+                    reject_symlink(path, str(path))
+                    path.unlink()
+            else:
+                content, mode = prior
+                atomic_write(path, content, created_dirs, default_mode=mode)
+                os.chmod(path, mode)
+        except OSError:
+            pass
+    for path in created_backups:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    for directory in reversed(created_dirs):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
 
 
 def preview(p: dict[str, Path]) -> dict:
     raw, parsed = parse_toml(p["codex_config"])
     notify_line_span(raw)
     codex_previous = command_array(parsed.get("notify"), "top-level notify")
-    claude = load_json(p["claude_settings"], {})
-    if not isinstance(claude, dict):
-        raise ValueError("Claude settings must be a JSON object")
-    stop = claude.get("hooks", {}).get("Stop", []) if isinstance(claude.get("hooks", {}), dict) else []
-    if not isinstance(stop, list):
-        raise ValueError("Claude Stop hooks must be an array")
-    return {"codex_previous": codex_previous, "claude_managed": sum(is_managed_claude_hook(h) for h in stop), "os": platform.system()}
+    _, stop = load_claude(p["claude_settings"])
+    return {"codex_previous": codex_previous, "claude_stop_count": len(stop), "os": platform.system()}
 
 
 def install(args: argparse.Namespace) -> int:
@@ -202,9 +372,9 @@ def install(args: argparse.Namespace) -> int:
         return 1
     say(f"Detected OS: {info['os']}")
     say("Detected Runtime: Codex, Claude Code")
-    say(f"Existing notification configuration: Codex notify {'present' if info['codex_previous'] else 'absent'}; Claude managed hook count {info['claude_managed']}")
+    say(f"Existing notification configuration: Codex notify {'present' if info['codex_previous'] else 'absent'}; Claude Stop hook count {info['claude_stop_count']}")
     say("Configuration Preview: Codex top-level notify → oh-my-ai dispatcher; Claude Stop hook → additive adapter")
-    say(f"Backup path: {p['codex_config']}.oh-my-ai-completion-notify.<timestamp>.bak and {p['claude_settings']}.oh-my-ai-completion-notify.<timestamp>.bak")
+    say(f"Backup path: {p['codex_config']}.oh-my-ai-completion-notify.*.bak and {p['claude_settings']}.oh-my-ai-completion-notify.*.bak")
     approved = args.yes
     if not approved and sys.stdin.isatty() and sys.stdout.isatty():
         approved = input("Codex·Claude Turn 완료 알림을 설정할까요? [Y/n] ").strip().lower() in ("", "y", "yes")
@@ -214,44 +384,70 @@ def install(args: argparse.Namespace) -> int:
     if os.environ.get("OH_MY_AI_NOTIFY_TEST_PLATFORM", platform.system()) != "Darwin":
         say("completion notify: skipped (macOS notification provider is the only supported provider; settings unchanged)")
         return 0
-    state = read_state(p)
-    codex_backup = backup(p["codex_config"])
-    claude_backup = backup(p["claude_settings"])
+    current = info["codex_previous"]
+    expected_dispatcher = installed_dispatcher_command(p)
     try:
-        copy_runtime(p)
-        before_raw, before_parsed = parse_toml(p["codex_config"])
-        previous = command_array(before_parsed.get("notify"), "top-level notify")
-        set_codex_notify(p["codex_config"], installed_dispatcher_command(p))
-        claude_data, _ = merge_claude(p["claude_settings"], p["claude"])
-        atomic_write(p["claude_settings"], json.dumps(claude_data, ensure_ascii=False, indent=2) + "\n")
-        state = {"version": 1, "installed_at": dt.datetime.now(dt.timezone.utc).isoformat(), "dispatcher": str(p["dispatcher"]), "previous_codex_notify": previous, "codex_backup": str(codex_backup) if codex_backup else None, "claude_backup": str(claude_backup) if claude_backup else None}
-        atomic_write(p["state"], json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+        saved, state_exists = read_state(p)
+        if current == expected_dispatcher:
+            if not state_exists:
+                raise ValueError("NOT VERIFIABLE: managed Codex notify has no saved state")
+            assert saved is not None
+            state, migrate_state = validate_state(p, saved)
+            previous = state["previous_codex_notify"]
+        else:
+            if state_exists:
+                raise ValueError("NOT VERIFIABLE: saved state exists but Codex notify is not managed")
+            previous = current
+            state = state_from_install(p, previous, managed_claude_hook(p["claude"]))
+            migrate_state = True
+        hook = state["claude_hook"]
+        if not isinstance(hook, dict) or state.get("claude_hook_fingerprint") != fingerprint(hook):
+            raise ValueError("NOT VERIFIABLE: saved Claude hook identity is invalid")
+    except (AssertionError, ValueError, json.JSONDecodeError) as error:
+        say(f"completion notify: install not verifiable; settings unchanged: {error}")
+        return 1
+
+    created_dirs: list[Path] = []
+    created_backups: list[Path] = []
+    managed_files = [p["codex_config"], p["claude_settings"], p["state"], p["dispatcher"], p["macos"], p["codex"], p["claude"]]
+    try:
+        snapshot = capture(managed_files)
+        for config in (p["codex_config"], p["claude_settings"]):
+            item = backup(config, created_dirs)
+            if item:
+                created_backups.append(item)
+        copy_runtime(p, created_dirs)
+        if current != expected_dispatcher:
+            set_codex_notify(p["codex_config"], expected_dispatcher, created_dirs)
+        merge_claude(p["claude_settings"], hook, created_dirs)
+        if migrate_state:
+            atomic_write(p["state"], json.dumps(state, ensure_ascii=False, indent=2) + "\n", created_dirs)
+        if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") == "after-state":
+            raise RuntimeError("injected transaction failure")
         if test(argparse.Namespace()) != 0:
             raise RuntimeError("synthetic dispatcher test failed")
     except Exception as error:
-        if codex_backup:
-            shutil.copy2(codex_backup, p["codex_config"])
-        elif p["codex_config"].exists():
-            p["codex_config"].unlink()
-        if claude_backup:
-            shutil.copy2(claude_backup, p["claude_settings"])
-        elif p["claude_settings"].exists():
-            p["claude_settings"].unlink()
-        say(f"completion notify: failed and restored backups: {error}")
+        restore(snapshot, created_dirs, created_backups)
+        say(f"completion notify: failed and restored the installation transaction: {error}")
         return 1
     say("completion notify: installed; Codex config parsed and synthetic event dispatched")
     return 0
 
 
 def status(_args: argparse.Namespace) -> int:
-    p, state = paths(), read_state(paths())
+    p = paths()
     try:
         _, parsed = parse_toml(p["codex_config"])
         notify = command_array(parsed.get("notify"), "top-level notify")
         codex = "managed" if notify == installed_dispatcher_command(p) else "not-managed"
+        state, present = read_state(p)
+        if present:
+            assert state is not None
+            validate_state(p, state)
+        state_label = "present" if present else "absent"
     except Exception as error:
-        codex = f"invalid ({error})"
-    say(f"completion notify status: Codex {codex}; dispatcher {'ready' if p['dispatcher'].is_file() and os.access(p['dispatcher'], os.X_OK) else 'missing'}; state {'present' if state else 'absent'}")
+        codex, state_label = f"invalid ({error})", "unknown"
+    say(f"completion notify status: Codex {codex}; dispatcher {'ready' if p['dispatcher'].is_file() and os.access(p['dispatcher'], os.X_OK) else 'missing'}; state {state_label}")
     return 0
 
 
@@ -260,8 +456,12 @@ def test(_args: argparse.Namespace) -> int:
     if not p["dispatcher"].is_file():
         say("completion notify test: dispatcher missing (install first)")
         return 1
-    payload = json.dumps({"type": "agent-turn-complete", "cwd": "/safe/project", "last-assistant-message": "# 안전한 테스트 응답\nsecond line"})
-    result = subprocess.run([str(p["dispatcher"]), payload], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3)
+    payload = json.dumps({"type": "agent-turn-complete", "cwd": "/safe/project"})
+    try:
+        result = subprocess.run([str(p["dispatcher"]), payload], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=2)
+    except subprocess.TimeoutExpired:
+        say("completion notify test: dispatcher timeout")
+        return 1
     if result.returncode != 0:
         say("completion notify test: dispatcher failed")
         return 1
@@ -269,65 +469,100 @@ def test(_args: argparse.Namespace) -> int:
     return 0
 
 
+def remove_runtime(p: dict[str, Path]) -> bool:
+    complete = True
+    for path in (p["dispatcher"], p["macos"], p["codex"], p["claude"], p["state"], p["state_lock"]):
+        if path.exists() or path.is_symlink():
+            if path.is_symlink():
+                complete = False
+                continue
+            try:
+                path.unlink()
+            except OSError:
+                complete = False
+    for directory in (p["state_root"], p["data"] / "adapters", p["data"]):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return complete
+
+
 def uninstall(_args: argparse.Namespace) -> int:
-    p, state = paths(), read_state(paths())
-    if not state:
-        say("completion notify uninstall: no local state; nothing changed")
-        return 0
+    p = paths()
+    try:
+        state, present = read_state(p)
+        if not present:
+            say("completion notify uninstall: already absent; nothing changed")
+            return 0
+        assert state is not None
+        state, _ = validate_state(p, state)
+    except (AssertionError, ValueError, json.JSONDecodeError) as error:
+        say(f"completion notify uninstall: state not verifiable; no settings changed: {error}")
+        return 1
+
+    created_dirs: list[Path] = []
+    pending = False
+    outcomes: list[str] = []
     try:
         _, parsed = parse_toml(p["codex_config"])
         current = command_array(parsed.get("notify"), "top-level notify")
+        if current == installed_dispatcher_command(p):
+            backup(p["codex_config"], created_dirs)
+            set_codex_notify(p["codex_config"], state["previous_codex_notify"], created_dirs)
+            outcomes.append("Codex restored")
+        else:
+            pending = True
+            outcomes.append("Codex diverged; preserved")
     except Exception as error:
-        say(f"completion notify uninstall: config unreadable; no settings changed: {error}")
-        return 1
-    expected = installed_dispatcher_command(p)
-    if current != expected:
-        say("completion notify uninstall: config diverged; no settings changed. Preview: restore the saved previous notify with `make uninstall-completion-notify` after restoring the dispatcher command, or use the recorded backup path.")
-        return 1
-    previous = state.get("previous_codex_notify")
-    if previous is not None and not isinstance(previous, list):
-        say("completion notify uninstall: saved previous notify is invalid; no settings changed")
-        return 1
-    codex_backup = backup(p["codex_config"])
-    claude_backup = backup(p["claude_settings"])
+        pending = True
+        outcomes.append(f"Codex unreadable; preserved ({error})")
+
     try:
-        set_codex_notify(p["codex_config"], previous)
-        data = load_json(p["claude_settings"], {})
-        stop = data.get("hooks", {}).get("Stop", []) if isinstance(data, dict) and isinstance(data.get("hooks", {}), dict) else None
-        if not isinstance(stop, list):
-            raise ValueError("Claude Stop hooks are invalid")
-        data["hooks"]["Stop"] = [hook for hook in stop if not is_managed_claude_hook(hook)]
-        atomic_write(p["claude_settings"], json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        data, stop = load_claude(p["claude_settings"])
+        expected = state["claude_hook"]
+        exact = [hook for hook in stop if hook == expected]
+        similar = [hook for hook in stop if contains_managed_adapter(hook) and hook != expected]
+        if len(exact) > 1:
+            raise ValueError("duplicate exact managed Claude hooks")
+        if similar:
+            pending = True
+            outcomes.append("Claude hook diverged; preserved")
+        elif exact:
+            backup(p["claude_settings"], created_dirs)
+            data["hooks"]["Stop"] = [hook for hook in stop if hook != expected]
+            atomic_write(p["claude_settings"], json.dumps(data, ensure_ascii=False, indent=2) + "\n", created_dirs)
+            outcomes.append("Claude managed hook removed")
+        else:
+            outcomes.append("Claude managed hook already absent")
     except Exception as error:
-        if codex_backup: shutil.copy2(codex_backup, p["codex_config"])
-        if claude_backup: shutil.copy2(claude_backup, p["claude_settings"])
-        say(f"completion notify uninstall: failed and restored backups: {error}")
-        return 1
-    say("completion notify uninstall: restored the previous Codex provider and removed only the managed Claude hook")
-    return 0
+        pending = True
+        outcomes.append(f"Claude unreadable; preserved ({error})")
+
+    if not pending and remove_runtime(p):
+        say("completion notify uninstall: " + "; ".join(outcomes) + "; local runtime removed")
+        return 0
+    say("completion notify uninstall: " + "; ".join(outcomes) + "; manual recovery required; state/runtime retained")
+    return 1
 
 
 def doctor(_args: argparse.Namespace) -> int:
     p = paths()
     failures = 0
     for label, path in (("dispatcher", p["dispatcher"]), ("macOS adapter", p["macos"]), ("Codex adapter", p["codex"]), ("Claude adapter", p["claude"])):
-        ok = path.is_file() and os.access(path, os.X_OK)
-        say(f"{label}: {'ready' if ok else 'missing or not executable'}")
+        ok = path.is_file() and not path.is_symlink() and os.access(path, os.X_OK)
+        say(f"{label}: {'ready' if ok else 'missing or unsafe'}")
         failures += not ok
     try:
-        raw, parsed = parse_toml(p["codex_config"])
-        notify_line_span(raw)
+        _, parsed = parse_toml(p["codex_config"])
         command_array(parsed.get("notify"), "top-level notify")
-        say("Codex config: parseable; top-level notify is structurally valid")
+        state, present = read_state(p)
+        if present:
+            assert state is not None
+            validate_state(p, state)
+        say("Codex config and local state: structurally valid")
     except Exception as error:
-        say(f"Codex config: invalid ({error})")
-        failures += 1
-    state = read_state(p)
-    previous = state.get("previous_codex_notify") if state else None
-    say(f"downstream provider: {'preserved' if previous else 'none'}")
-    if p["dispatcher"].is_file() and not test(argparse.Namespace()):
-        say("recent log / timeout boundary: synthetic dispatch completed")
-    else:
+        say(f"Codex config or local state: invalid ({error})")
         failures += 1
     return 1 if failures else 0
 
@@ -335,7 +570,9 @@ def doctor(_args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
-    command = sub.add_parser("install"); command.add_argument("--yes", action="store_true"); command.set_defaults(func=install)
+    command = sub.add_parser("install")
+    command.add_argument("--yes", action="store_true")
+    command.set_defaults(func=install)
     for name, func in (("status", status), ("test", test), ("uninstall", uninstall), ("doctor", doctor)):
         sub.add_parser(name).set_defaults(func=func)
     args = parser.parse_args()
