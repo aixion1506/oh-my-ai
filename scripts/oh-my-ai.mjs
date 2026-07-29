@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { handleClaudeCheckpointHook } from "./lib/context-checkpoint-claude.mjs";
+import { handleCodexCheckpointHook } from "./lib/context-checkpoint-codex.mjs";
 import {
   checkpointHandoffPreflight,
   checkpointStatus,
@@ -96,6 +97,18 @@ function runHook(args) {
     process.exit(0);
   }
 
+  let codexCheckpointOutput = {};
+  if (
+    runtime === "codex"
+    && ["PostToolUse", "SessionEnd", "SessionStart", "UserPromptSubmit"].includes(eventName)
+  ) {
+    codexCheckpointOutput = handleCodexCheckpointHook(eventName, input, { env: process.env });
+    if (eventName !== "UserPromptSubmit") {
+      writeHookOutput(eventName, codexCheckpointOutput);
+      process.exit(0);
+    }
+  }
+
   if (eventName !== "UserPromptSubmit") {
     process.exit(0);
   }
@@ -125,7 +138,11 @@ function runHook(args) {
     maxBuffer: 1024 * 1024,
   });
 
-  if (result.stdout) process.stdout.write(result.stdout);
+  if (runtime === "codex") {
+    writeMergedCodexPromptOutput(codexCheckpointOutput, result.stdout);
+  } else if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
   if (result.status !== 0 || result.error) {
     logHookFailure({
       runtime,
@@ -150,6 +167,10 @@ function sessionStartBacklog() {
 }
 
 function writeClaudeHookOutput(eventName, output) {
+  writeHookOutput(eventName, output);
+}
+
+function writeHookOutput(eventName, output) {
   if (!output.systemMessage && !output.additionalContext) return;
   const payload = {};
   if (output.systemMessage) payload.systemMessage = output.systemMessage;
@@ -160,6 +181,27 @@ function writeClaudeHookOutput(eventName, output) {
     };
   }
   process.stdout.write(`${JSON.stringify(payload)}\n`);
+}
+
+function writeMergedCodexPromptOutput(checkpointOutput, routingStdout) {
+  let routingOutput = {};
+  if (routingStdout?.trim()) {
+    try {
+      routingOutput = JSON.parse(routingStdout);
+    } catch {
+      process.stdout.write(routingStdout);
+      return;
+    }
+  }
+  const systemMessage = [
+    checkpointOutput.systemMessage,
+    routingOutput.systemMessage,
+  ].filter(Boolean).join("\n\n");
+  const additionalContext = [
+    checkpointOutput.additionalContext,
+    routingOutput.hookSpecificOutput?.additionalContext,
+  ].filter(Boolean).join("\n\n");
+  writeHookOutput("UserPromptSubmit", { systemMessage, additionalContext });
 }
 
 function runContextCheckpoint(args) {

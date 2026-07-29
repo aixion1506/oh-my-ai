@@ -205,7 +205,7 @@ const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
 assert.equal(fixture.contract, "git-work-preflight-runtime-fixtures-v1");
 assert.deepEqual(
   fixture.scenarios.map(({ id }) => id),
-  ["draft-pr-key-order", "local-only", "merged-pr", "aligned", "local-ahead", "remote-ahead", "diverged", "candidate-ancestor", "cached-base-mismatch", "github-unavailable", "multiple-prs", "report-newline-injection", "malformed-pr-json", "jira-association-unavailable", "jira-association-conflict", "remote-ahead-local-tip-already-in-base", "jira-association-unavailable-ancestor", "jira-association-matched-ancestor", "jira-association-conflicted-ancestor", "manual-review-ancestor"],
+  ["draft-pr-key-order", "local-only", "merged-pr", "aligned", "local-ahead", "remote-ahead", "diverged", "candidate-ancestor", "cached-base-mismatch", "github-unavailable", "multiple-prs", "report-newline-injection", "malformed-pr-json", "jira-association-unavailable", "jira-association-conflict", "remote-ahead-local-tip-already-in-base", "jira-association-unavailable-ancestor", "jira-association-matched-ancestor", "jira-association-conflicted-ancestor", "manual-review-ancestor", "stale-cached-feature-remote-ahead", "jira-work-missing-issue-key", "jira-work-valid-issue-key"],
 );
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "git-work-preflight-runtime-"));
@@ -226,8 +226,17 @@ base='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 actual="$base"
 [ "$scenario" != 'cached-base-mismatch' ] || actual='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 candidate='cccccccccccccccccccccccccccccccccccccccc'
-remote_candidate="$candidate"
-[ "$scenario" != 'remote-ahead-local-tip-already-in-base' ] || remote_candidate='dddddddddddddddddddddddddddddddddddddddd'
+cached_remote_candidate="$candidate"
+actual_remote_candidate="$candidate"
+case "$scenario" in
+  remote-ahead-local-tip-already-in-base)
+    cached_remote_candidate='dddddddddddddddddddddddddddddddddddddddd'
+    actual_remote_candidate="$cached_remote_candidate"
+    ;;
+  stale-cached-feature-remote-ahead)
+    actual_remote_candidate='dddddddddddddddddddddddddddddddddddddddd'
+    ;;
+esac
 if [ "$1" = '-C' ]; then shift 2; fi
 command="$1"
 shift
@@ -241,14 +250,14 @@ case "$command" in
         if [ "$scenario" = 'cached-base-mismatch' ]; then printf '%s\n' "$base"; else printf '%s\n' "$actual"; fi
         ;;
       --verify\ feat/shared-git-preflight\^\{commit\}) printf '%s\n' "$candidate" ;;
-      --verify\ origin/feat/shared-git-preflight\^\{commit\}) printf '%s\n' "$remote_candidate" ;;
+      --verify\ origin/feat/shared-git-preflight\^\{commit\}) printf '%s\n' "$cached_remote_candidate" ;;
       *) exit 70 ;;
     esac
     ;;
   merge-base)
     if [ "$1" = '--is-ancestor' ]; then
       case "$scenario" in
-        candidate-ancestor|manual-review-ancestor|jira-association-matched-ancestor|remote-ahead-local-tip-already-in-base) exit 0 ;;
+        candidate-ancestor|manual-review-ancestor|jira-association-matched-ancestor|remote-ahead-local-tip-already-in-base|stale-cached-feature-remote-ahead) exit 0 ;;
       esac
       exit 1
     fi
@@ -277,7 +286,7 @@ case "$command" in
     if [ "$ref" = 'refs/heads/master' ]; then
       printf '%s\trefs/heads/master\n' "$actual"
     elif [ "$ref" = 'refs/heads/feat/shared-git-preflight' ]; then
-      [ "$scenario" = 'local-only' ] || printf '%s\trefs/heads/feat/shared-git-preflight\n' "$remote_candidate"
+      [ "$scenario" = 'local-only' ] || printf '%s\trefs/heads/feat/shared-git-preflight\n' "$actual_remote_candidate"
     else
       exit 71
     fi
@@ -312,7 +321,7 @@ try {
   for (const scenario of fixture.scenarios) {
     const evidence = scenario.id === "report-newline-injection"
       ? "repository-naming-rule-verified,evil\n# forged\nBlocking: true"
-      : scenario.id === "jira-association-matched-ancestor"
+      : scenario.id === "jira-association-matched-ancestor" || scenario.id === "jira-work-valid-issue-key"
         ? "repository-naming-rule-verified,issue-association-verified:RPL-TEST:feat/shared-git-preflight"
       : scenario.id === "jira-association-conflict" || scenario.id === "jira-association-conflicted-ancestor"
         ? "repository-naming-rule-verified,issue-association-verified:RPL-TEST:other-branch"
@@ -322,10 +331,10 @@ try {
       "--expected-base-branch", "master",
       "--expected-branch-name", "feat/shared-git-preflight",
       "--execution-policy", "suggest-only",
-      "--consumer", scenario.id.startsWith("jira-association-") ? "jira-work" : "manual-review",
+      "--consumer", scenario.id.startsWith("jira-association-") || scenario.id.startsWith("jira-work-") ? "jira-work" : "manual-review",
       "--provided-evidence", evidence,
     ];
-    if (scenario.id.startsWith("jira-association-")) args.push("--issue-key", "RPL-TEST");
+    if (scenario.id.startsWith("jira-association-") || scenario.id === "jira-work-valid-issue-key") args.push("--issue-key", "RPL-TEST");
     const result = spawnSync(runtimePath, args, {
       encoding: "utf8",
       env: { ...process.env, HOME: fakeHome, PATH: `${fakeBin}:${process.env.PATH}`, PREFLIGHT_SCENARIO: scenario.id, PREFLIGHT_REPO: repo },
@@ -342,13 +351,26 @@ try {
       "PR Status": scenario.pr_status,
       "Issue Association Status": scenario.issue_association_status,
       "Remote Verification": scenario.remote_verification,
+      "Feature Remote Verification": scenario.feature_remote_verification,
       Mutation: scenario.mutation,
       "Process Exit Code": String(scenario.process_exit_code),
     })) {
       assert.equal(report.get(field), expected, `${scenario.id}: ${field}`);
     }
-    for (const field of ["Consumer", "Issue Key", "Execution Policy", "Mutation Safety", "Repository", "Expected Base Branch", "Executed Evidence", "Provided Evidence", "Supplied Evidence", "Unexecuted Checks", "Prohibited Actions", "Tracked Status", "Staged Status", "Unmerged Status", "Untracked Local State", "Ignored Local State", "Cached Remote-tracking Base SHA", "Actual Remote Base SHA", "Feature Integration Point", "Candidate Tip Evidence"]) {
+    for (const field of ["Consumer", "Issue Key", "Execution Policy", "Mutation Safety", "Repository", "Expected Base Branch", "Executed Evidence", "Provided Evidence", "Supplied Evidence", "Unexecuted Checks", "Prohibited Actions", "Tracked Status", "Staged Status", "Unmerged Status", "Untracked Local State", "Ignored Local State", "Cached Remote-tracking Base SHA", "Actual Remote Base SHA", "Cached Remote-tracking Feature SHA", "Actual Remote Feature SHA", "Feature Integration Point", "Candidate Tip Evidence"]) {
       assert.ok(report.has(field), `${scenario.id}: report lacks ${field}`);
+    }
+    if (scenario.cached_remote_tracking_feature_sha) {
+      assert.equal(report.get("Cached Remote-tracking Feature SHA"), scenario.cached_remote_tracking_feature_sha, `${scenario.id}: cached Feature SHA`);
+    }
+    if (scenario.actual_remote_feature_sha) {
+      assert.equal(report.get("Actual Remote Feature SHA"), scenario.actual_remote_feature_sha, `${scenario.id}: actual Feature SHA`);
+    }
+    if (scenario.unexecuted_checks) {
+      assert.equal(report.get("Unexecuted Checks"), scenario.unexecuted_checks, `${scenario.id}: Unexecuted Checks`);
+    }
+    if (scenario.candidate_tip_evidence) {
+      assert.equal(report.get("Candidate Tip Evidence"), scenario.candidate_tip_evidence, `${scenario.id}: Candidate Tip Evidence`);
     }
     if (scenario.id === "report-newline-injection") {
       assert.equal((result.stdout.match(/^Blocking:/gm) || []).length, 1, "injected Blocking field escaped");
