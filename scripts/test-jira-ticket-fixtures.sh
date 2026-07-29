@@ -6,34 +6,25 @@ cd "$REPO"
 
 SKILL="skills/jira-ticket/SKILL.md"
 CONTRACT="skills/jira-ticket/templates/ticket-contract.md"
+PREVIEW="skills/jira-ticket/templates/mcp-create-preview.md"
 BACKLOG="skills/jira-ticket/templates/backlog-preview.md"
 FIXTURE="fixtures/jira-ticket/pure-contract-fixtures.json"
+WORKFLOW_FIXTURE="fixtures/jira-ticket/mcp-create-workflow-fixtures.json"
 
-fail() {
-  echo "jira-ticket fixture failure: $*" >&2
-  exit 1
-}
+fail() { echo "jira-ticket fixture failure: $*" >&2; exit 1; }
+require_file() { [ -f "$1" ] || fail "missing file: $1"; }
+require_text() { rg -q -F -- "$2" "$1" || fail "missing text '$2' in $1"; }
 
-require_file() {
-  [ -f "$1" ] || fail "missing file: $1"
-}
-
-require_text() {
-  local file="$1"
-  local text="$2"
-  rg -q -F -- "$text" "$file" || fail "missing text '$text' in $file"
-}
-
-require_file "$SKILL"
-require_file "$CONTRACT"
-require_file "$BACKLOG"
-require_file "$FIXTURE"
+for file in "$SKILL" "$CONTRACT" "$PREVIEW" "$BACKLOG" "$FIXTURE" "$WORKFLOW_FIXTURE"; do
+  require_file "$file"
+done
 
 for field in \
   "Summary" "Context" "Goal" "Source of Truth" "In Scope" "Out of Scope" \
   "Acceptance Criteria" "Repository" "Base Branch" "Expected Branch Name" \
   "Dependencies" "Verification" "Do Not Touch" "Definition of Done"; do
   require_text "$CONTRACT" "## $field"
+  require_text "$PREVIEW" "### $field"
   require_text "$BACKLOG" "### $field"
 done
 
@@ -42,88 +33,51 @@ for sentinel in "Decision Required" "Repository Required" "Base Branch Required"
   require_text "$CONTRACT" "$sentinel"
 done
 
-for source in \
-  "Accepted Decision" \
-  "Canonical Repository Product and Architecture Documents" \
-  "Confluence Specification" \
-  "Explicit User Request" \
-  "Handoff Candidate" \
-  "Current Conversation"; do
-  require_text "$SKILL" "$source"
-  require_text "$BACKLOG" "$source"
-done
-
 for text in \
-  "Contract Validation Failure" \
-  "External Write Status:" \
-  "Unavailable in this implementation phase" \
-  "이 구성으로 Jira에 생성할까요?" \
-  "Jira, Atlassian Connector, Confluence Connector" \
-  "branch, code, commit, push, PR" \
-  "credential, secret, Cloud ID, account ID" \
-  "<ISSUE-KEY>"; do
+  "Jira MCP-backed Create Workflow" \
+  "Codex·Claude Jira MCP/Plugin" \
+  "jira.search" \
+  "jira.create" \
+  "Create Attempted: false" \
+  "exactly once" \
+  "Automatic Retry: false" \
+  "Product:" \
+  "Primary Repository:" \
+  "Area:" \
+  "Current HEAD:"; do
   require_text "$SKILL" "$text"
 done
 
-for heading in \
-  "## Source Status" \
-  "## Mode" \
-  "## Epic Candidate" \
-  "## Child Ticket Index Summary" \
-  "## Complete Child Ticket Contracts" \
-  "## External Write Status" \
-  "## Approval Boundary"; do
-  require_text "$BACKLOG" "$heading"
-done
-
-require_text "$BACKLOG" "does not replace a"
-require_text "$BACKLOG" "complete Child Ticket Contract"
-require_text "$BACKLOG" "Contracts must be Valid"
-require_text "$BACKLOG" "do not show the Jira creation approval"
-
-external_line="$(rg -n -m 1 '^## External Write Status$' "$BACKLOG" | cut -d: -f1)"
-approval_line="$(rg -n -m 1 '^## Approval Boundary$' "$BACKLOG" | cut -d: -f1)"
-[ -n "$external_line" ] || fail "missing External Write Status heading"
-[ -n "$approval_line" ] || fail "missing Approval Boundary heading"
-[ "$external_line" -lt "$approval_line" ] \
-  || fail "External Write Status must appear before Approval Boundary"
-
-skill_external_line="$(rg -n -m 1 -F 'External Write Status:' "$SKILL" | cut -d: -f1)"
-skill_approval_line="$(rg -n -m 1 -F '이 구성으로 Jira에 생성할까요?' "$SKILL" | cut -d: -f1)"
-[ -n "$skill_external_line" ] || fail "missing Skill External Write Status workflow"
-[ -n "$skill_approval_line" ] || fail "missing Skill approval question workflow"
-[ "$skill_external_line" -lt "$skill_approval_line" ] \
-  || fail "Skill must show External Write Status before the approval question"
-
-require_text "$SKILL" '[ -x "$HOME/.local/bin/harness-event" ]'
-require_text "$SKILL" "|| true"
-require_text "$SKILL" "Binary가 없거나 실행이 실패해도 Preview를 계속한다"
-
-node - "$FIXTURE" <<'NODE'
+node - "$FIXTURE" "$WORKFLOW_FIXTURE" <<'NODE'
 const fs = require("fs");
-const fixture = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const preview = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const workflow = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const legacy = new Set([
+  "single-technical-task", "user-feature", "existing-defect", "pre-implementation-research",
+  "structural-improvement", "multi-repository-specification", "before-approval",
+  "connector-unavailable", "ambiguous-intent", "canonical-source-conflict",
+  "repository-required", "blank-or-whitespace-field", "scope-conflict",
+  "secret-bearing-input", "before-jira-key",
+]);
+if (preview.contract !== "jira-ticket-contract-preview-v2" || preview.network || preview.external_write || preview.artifact_write) process.exit(1);
+const previewIds = new Set(preview.scenarios.map((scenario) => scenario.id));
+if (legacy.size !== previewIds.size || [...legacy].some((id) => !previewIds.has(id))) process.exit(1);
 const required = [
-  "single-technical-task",
-  "user-feature",
-  "existing-defect",
-  "pre-implementation-research",
-  "structural-improvement",
-  "multi-repository-specification",
-  "before-approval",
-  "connector-unavailable",
-  "ambiguous-intent",
-  "canonical-source-conflict",
-  "repository-required",
-  "blank-or-whitespace-field",
-  "scope-conflict",
-  "secret-bearing-input",
-  "before-jira-key",
+  "mcp-unavailable", "search-only", "search-failed", "search-unclear", "exact-duplicate",
+  "similar-duplicate", "no-result-before-approval", "non-explicit-positive-is-not-approval", "no-result-approval-rejected", "create-success",
+  "actual-key-url-verification", "wrong-project-response", "keyless-success", "create-timeout",
+  "response-loss-rerun-finds-duplicate", "single-create-call", "codex-adapter", "claude-adapter",
+  "preview-write-evidence-separated", "description-header", "fourteen-field-contract-regression", "missing-create-metadata",
 ];
-if (fixture.contract !== "jira-ticket-pure-contract-preview-v1") process.exit(1);
-if (fixture.network || fixture.external_write || fixture.artifact_write) process.exit(1);
-const ids = new Set(fixture.scenarios.map((scenario) => scenario.id));
-if (required.some((id) => !ids.has(id))) process.exit(1);
-if (fixture.scenarios.some((scenario) => /token|credential|cloud id|account id/i.test(JSON.stringify(scenario)))) process.exit(1);
+const fields = [
+  "search_attempted", "search_result", "duplicate_status", "approval_status", "create_attempted",
+  "create_call_count", "mutation_status", "actual_issue_key", "actual_issue_url", "verification_status",
+  "allowed_next_step",
+];
+if (workflow.contract !== "jira-ticket-mcp-backed-create-workflow-v1") process.exit(1);
+if (required.some((id) => !workflow.scenarios.some((scenario) => scenario.id === id))) process.exit(1);
+if (fields.some((field) => !workflow.required_report_fields.includes(field))) process.exit(1);
 NODE
 
-echo "jira-ticket pure contract fixtures passed"
+node scripts/test-jira-ticket-mcp-create-workflow.mjs
+echo "jira-ticket MCP-backed Create Workflow fixtures passed"
