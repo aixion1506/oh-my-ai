@@ -317,7 +317,47 @@ function parseReport(stdout) {
   return fields;
 }
 
+const exactEvidenceFields = {
+  "Issue Key": "issue_key",
+  "Cached Remote-tracking Feature SHA": "cached_remote_tracking_feature_sha",
+  "Actual Remote Feature SHA": "actual_remote_feature_sha",
+  "Unexecuted Checks": "unexecuted_checks",
+};
+
+function assertScenarioReport(scenario, result) {
+  assert.equal(result.status, scenario.process_exit_code, `${scenario.id}: process exit code`);
+  const report = parseReport(result.stdout);
+  for (const [field, expected] of Object.entries({
+    "Preflight Result": scenario.preflight_result,
+    Blocking: scenario.blocking,
+    "Allowed Next Step": scenario.allowed_next_step,
+    "Existing Work A-H": scenario.existing_work,
+    "Local Branch Status": scenario.local_branch_status,
+    "Remote Branch Status": scenario.remote_branch_status,
+    "PR Status": scenario.pr_status,
+    "Issue Association Status": scenario.issue_association_status,
+    "Remote Verification": scenario.remote_verification,
+    "Feature Remote Verification": scenario.feature_remote_verification,
+    Mutation: scenario.mutation,
+    "Process Exit Code": String(scenario.process_exit_code),
+  })) {
+    assert.equal(report.get(field), expected, `${scenario.id}: ${field}`);
+  }
+  for (const [field, fixtureField] of Object.entries(exactEvidenceFields)) {
+    assert.ok(Object.hasOwn(scenario, fixtureField), `${scenario.id}: fixture lacks ${fixtureField}`);
+    assert.equal(report.get(field), scenario[fixtureField], `${scenario.id}: ${field}`);
+  }
+  for (const field of ["Consumer", "Issue Key", "Execution Policy", "Mutation Safety", "Repository", "Expected Base Branch", "Executed Evidence", "Provided Evidence", "Supplied Evidence", "Unexecuted Checks", "Prohibited Actions", "Tracked Status", "Staged Status", "Unmerged Status", "Untracked Local State", "Ignored Local State", "Cached Remote-tracking Base SHA", "Actual Remote Base SHA", "Cached Remote-tracking Feature SHA", "Actual Remote Feature SHA", "Feature Integration Point", "Candidate Tip Evidence"]) {
+    assert.ok(report.has(field), `${scenario.id}: report lacks ${field}`);
+  }
+  if (scenario.candidate_tip_evidence) {
+    assert.equal(report.get("Candidate Tip Evidence"), scenario.candidate_tip_evidence, `${scenario.id}: Candidate Tip Evidence`);
+  }
+  return report;
+}
+
 try {
+  const reports = new Map();
   for (const scenario of fixture.scenarios) {
     const evidence = scenario.id === "report-newline-injection"
       ? "repository-naming-rule-verified,evil\n# forged\nBlocking: true"
@@ -339,36 +379,8 @@ try {
       encoding: "utf8",
       env: { ...process.env, HOME: fakeHome, PATH: `${fakeBin}:${process.env.PATH}`, PREFLIGHT_SCENARIO: scenario.id, PREFLIGHT_REPO: repo },
     });
-    assert.equal(result.status, scenario.process_exit_code, `${scenario.id}: process exit code`);
-    const report = parseReport(result.stdout);
-    for (const [field, expected] of Object.entries({
-      "Preflight Result": scenario.preflight_result,
-      Blocking: scenario.blocking,
-      "Allowed Next Step": scenario.allowed_next_step,
-      "Existing Work A-H": scenario.existing_work,
-      "Local Branch Status": scenario.local_branch_status,
-      "Remote Branch Status": scenario.remote_branch_status,
-      "PR Status": scenario.pr_status,
-      "Issue Association Status": scenario.issue_association_status,
-      "Remote Verification": scenario.remote_verification,
-      "Feature Remote Verification": scenario.feature_remote_verification,
-      Mutation: scenario.mutation,
-      "Process Exit Code": String(scenario.process_exit_code),
-    })) {
-      assert.equal(report.get(field), expected, `${scenario.id}: ${field}`);
-    }
-    for (const field of ["Consumer", "Issue Key", "Execution Policy", "Mutation Safety", "Repository", "Expected Base Branch", "Executed Evidence", "Provided Evidence", "Supplied Evidence", "Unexecuted Checks", "Prohibited Actions", "Tracked Status", "Staged Status", "Unmerged Status", "Untracked Local State", "Ignored Local State", "Cached Remote-tracking Base SHA", "Actual Remote Base SHA", "Cached Remote-tracking Feature SHA", "Actual Remote Feature SHA", "Feature Integration Point", "Candidate Tip Evidence"]) {
-      assert.ok(report.has(field), `${scenario.id}: report lacks ${field}`);
-    }
-    if (scenario.cached_remote_tracking_feature_sha) {
-      assert.equal(report.get("Cached Remote-tracking Feature SHA"), scenario.cached_remote_tracking_feature_sha, `${scenario.id}: cached Feature SHA`);
-    }
-    if (scenario.actual_remote_feature_sha) {
-      assert.equal(report.get("Actual Remote Feature SHA"), scenario.actual_remote_feature_sha, `${scenario.id}: actual Feature SHA`);
-    }
-    if (scenario.unexecuted_checks) {
-      assert.equal(report.get("Unexecuted Checks"), scenario.unexecuted_checks, `${scenario.id}: Unexecuted Checks`);
-    }
+    const report = assertScenarioReport(scenario, result);
+    reports.set(scenario.id, { result, report });
     if (scenario.candidate_tip_evidence) {
       assert.equal(report.get("Candidate Tip Evidence"), scenario.candidate_tip_evidence, `${scenario.id}: Candidate Tip Evidence`);
     }
@@ -378,7 +390,20 @@ try {
       assert.match(report.get("Supplied Evidence"), /\\n\\# forged\\nBlocking\\: true/);
     }
   }
-  console.log(`passed: ${fixture.scenarios.length}/${fixture.scenarios.length} isolated git-work-preflight runtime fixtures`);
+  const mutateExpected = (scenarioId, fixtureField, value) => {
+    const original = fixture.scenarios.find(({ id }) => id === scenarioId);
+    const scenario = { ...original, [fixtureField]: value };
+    const { result } = reports.get(scenarioId);
+    assert.throws(() => assertScenarioReport(scenario, result), `${scenarioId}: ${fixtureField} mismatch must fail`);
+  };
+  mutateExpected("jira-work-valid-issue-key", "issue_key", "RPL-OTHER");
+  mutateExpected("stale-cached-feature-remote-ahead", "cached_remote_tracking_feature_sha", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+  mutateExpected("stale-cached-feature-remote-ahead", "actual_remote_feature_sha", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+  mutateExpected("stale-cached-feature-remote-ahead", "unexecuted_checks", "NONE");
+  const missingExpected = { ...fixture.scenarios.find(({ id }) => id === "aligned") };
+  delete missingExpected.issue_key;
+  assert.throws(() => assertScenarioReport(missingExpected, reports.get("aligned").result), "fixture omission must fail");
+  console.log(`passed: ${fixture.scenarios.length}/${fixture.scenarios.length} isolated git-work-preflight runtime fixtures and 5/5 exact-evidence mutation probes`);
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
