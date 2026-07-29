@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -257,7 +258,7 @@ def merge_claude(settings: Path, expected: dict, created_dirs: list[Path]) -> bo
     if exact:
         return False
     stop.append(expected)
-    atomic_write(settings, json.dumps(data, ensure_ascii=False, indent=2) + "\n", created_dirs)
+    atomic_write(settings, json.dumps(data, ensure_ascii=False, indent=2) + "\n", created_dirs, preserve_existing_mode=True)
     return True
 
 
@@ -499,9 +500,56 @@ def test(_args: argparse.Namespace) -> int:
     return 0
 
 
+class ActiveDispatcherLock(Exception):
+    """A live supervisor owns the notification lock."""
+
+
+def acquire_dispatch_lock(p: dict[str, Path], created_dirs: list[Path]) -> int:
+    """Acquire the stable dispatch inode without changing a competing lock."""
+    ensure_dir(p["state_root"], created_dirs)
+    lock = p["state_lock"]
+    reject_symlink(lock, str(lock))
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("dispatcher lock is not a regular file")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ActiveDispatcherLock from error
+        os.fchmod(fd, 0o600)
+        return fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def release_dispatch_lock(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def remove_held_dispatch_lock(p: dict[str, Path], fd: int) -> bool:
+    """Remove only the stable lock inode currently held by this uninstall."""
+    lock = p["state_lock"]
+    try:
+        if lock.is_symlink():
+            return False
+        current = os.lstat(lock)
+        held = os.fstat(fd)
+        if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+            return False
+        lock.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def remove_runtime(p: dict[str, Path]) -> bool:
     complete = True
-    for path in (p["dispatcher"], p["macos"], p["codex"], p["claude"], p["state"], p["state_lock"]):
+    for path in (p["dispatcher"], p["macos"], p["codex"], p["claude"], p["state"], p["log"]):
         if path.exists() or path.is_symlink():
             if path.is_symlink():
                 complete = False
@@ -510,12 +558,15 @@ def remove_runtime(p: dict[str, Path]) -> bool:
                 path.unlink()
             except OSError:
                 complete = False
-    for directory in (p["state_root"], p["data"] / "adapters", p["data"]):
+    return complete
+
+
+def remove_empty_managed_dirs(p: dict[str, Path]) -> None:
+    for directory in (p["state_root"], p["data"] / "adapters", p["data"], p["log_root"]):
         try:
             directory.rmdir()
         except OSError:
             pass
-    return complete
 
 
 def uninstall(_args: argparse.Namespace) -> int:
@@ -539,48 +590,61 @@ def uninstall(_args: argparse.Namespace) -> int:
         return 1
 
     created_dirs: list[Path] = []
+    try:
+        lock_fd = acquire_dispatch_lock(p, created_dirs)
+    except ActiveDispatcherLock:
+        say("completion notify uninstall: active dispatcher owns the lock; nothing changed")
+        return 1
+    except (OSError, ValueError) as error:
+        say(f"completion notify uninstall: lock not verifiable; no settings changed: {error}")
+        return 1
+
     pending = False
     outcomes: list[str] = []
     try:
-        _, parsed = parse_toml(p["codex_config"])
-        current = command_array(parsed.get("notify"), "top-level notify")
-        if current == installed_dispatcher_command(p):
-            backup(p["codex_config"], created_dirs)
-            set_codex_notify(p["codex_config"], state["previous_codex_notify"], created_dirs)
-            outcomes.append("Codex restored")
-        else:
+        try:
+            _, parsed = parse_toml(p["codex_config"])
+            current = command_array(parsed.get("notify"), "top-level notify")
+            if current == installed_dispatcher_command(p):
+                backup(p["codex_config"], created_dirs)
+                set_codex_notify(p["codex_config"], state["previous_codex_notify"], created_dirs)
+                outcomes.append("Codex restored")
+            else:
+                pending = True
+                outcomes.append("Codex diverged; preserved")
+        except Exception as error:
             pending = True
-            outcomes.append("Codex diverged; preserved")
-    except Exception as error:
-        pending = True
-        outcomes.append(f"Codex unreadable; preserved ({error})")
+            outcomes.append(f"Codex unreadable; preserved ({error})")
 
-    try:
-        data, stop = load_claude(p["claude_settings"])
-        expected = state["claude_hook"]
-        exact = [hook for hook in stop if hook == expected]
-        similar = [hook for hook in stop if contains_managed_adapter(hook) and hook != expected]
-        if len(exact) > 1:
-            raise ValueError("duplicate exact managed Claude hooks")
-        if similar:
+        try:
+            data, stop = load_claude(p["claude_settings"])
+            expected = state["claude_hook"]
+            exact = [hook for hook in stop if hook == expected]
+            similar = [hook for hook in stop if contains_managed_adapter(hook) and hook != expected]
+            if len(exact) > 1:
+                raise ValueError("duplicate exact managed Claude hooks")
+            if similar:
+                pending = True
+                outcomes.append("Claude hook diverged; preserved")
+            elif exact:
+                backup(p["claude_settings"], created_dirs)
+                data["hooks"]["Stop"] = [hook for hook in stop if hook != expected]
+                atomic_write(p["claude_settings"], json.dumps(data, ensure_ascii=False, indent=2) + "\n", created_dirs, preserve_existing_mode=True)
+                outcomes.append("Claude managed hook removed")
+            else:
+                outcomes.append("Claude managed hook already absent")
+        except Exception as error:
             pending = True
-            outcomes.append("Claude hook diverged; preserved")
-        elif exact:
-            backup(p["claude_settings"], created_dirs)
-            data["hooks"]["Stop"] = [hook for hook in stop if hook != expected]
-            atomic_write(p["claude_settings"], json.dumps(data, ensure_ascii=False, indent=2) + "\n", created_dirs)
-            outcomes.append("Claude managed hook removed")
-        else:
-            outcomes.append("Claude managed hook already absent")
-    except Exception as error:
-        pending = True
-        outcomes.append(f"Claude unreadable; preserved ({error})")
+            outcomes.append(f"Claude unreadable; preserved ({error})")
 
-    if not pending and remove_runtime(p):
-        say("completion notify uninstall: " + "; ".join(outcomes) + "; local runtime removed")
-        return 0
-    say("completion notify uninstall: " + "; ".join(outcomes) + "; manual recovery required; state/runtime retained")
-    return 1
+        if not pending and remove_runtime(p) and remove_held_dispatch_lock(p, lock_fd):
+            remove_empty_managed_dirs(p)
+            say("completion notify uninstall: " + "; ".join(outcomes) + "; local runtime removed")
+            return 0
+        say("completion notify uninstall: " + "; ".join(outcomes) + "; manual recovery required; state/runtime retained")
+        return 1
+    finally:
+        release_dispatch_lock(lock_fd)
 
 
 def doctor(_args: argparse.Namespace) -> int:

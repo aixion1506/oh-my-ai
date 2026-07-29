@@ -12,10 +12,10 @@ payload="${1:-}"
 provider="${OH_MY_AI_NOTIFY_MACOS_ADAPTER:-$BASE/adapters/macos}"
 
 command -v python3 >/dev/null 2>&1 || exit 0
-python3 - "$STATE" "$payload" "$provider" "$BASE/dispatcher" "${OH_MY_AI_NOTIFY_TIMEOUT:-1}" "$LOG_DIR" "$LOG" "${OH_MY_AI_NOTIFY_SUPERVISOR_PID_FILE:-}" >/dev/null 2>&1 <<'PY'
+python3 - "$STATE" "$payload" "$provider" "$BASE/dispatcher" "$BASE/adapters/codex" "${OH_MY_AI_NOTIFY_TIMEOUT:-1}" "$LOG_DIR" "$LOG" "${OH_MY_AI_NOTIFY_SUPERVISOR_PID_FILE:-}" >/dev/null 2>&1 <<'PY'
 import fcntl, json, os, signal, stat, subprocess, sys, time
 
-state_path, payload, provider, dispatcher, raw_timeout, log_dir, log_path, supervisor_pid_file = sys.argv[1:]
+state_path, payload, provider, dispatcher, codex_adapter, raw_timeout, log_dir, log_path, supervisor_pid_file = sys.argv[1:]
 
 def regular_open(path, flags, mode=0o600):
     fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), mode)
@@ -42,7 +42,18 @@ def write_log():
     except Exception:
         pass
 
-write_log()
+def downstream_allowed(raw_payload):
+    try:
+        event = json.loads(raw_payload)
+    except Exception:
+        return False
+    if not isinstance(event, dict) or event.get("type") != "agent-turn-complete":
+        return False
+    runtime = event.get("runtime")
+    # A missing runtime is Codex's native notify contract. Claude and unknown
+    # runtimes may use the macOS provider but must never inherit Codex notify.
+    return runtime is None or runtime == "codex"
+
 try:
     timeout = max(0.05, min(float(raw_timeout), 5.0))
 except ValueError:
@@ -51,20 +62,12 @@ lock_path = state_path + ".dispatch.lock"
 children = []
 try:
     os.makedirs(os.path.dirname(lock_path), mode=0o700, exist_ok=True)
+    lock_fd = regular_open(lock_path, os.O_RDWR | os.O_CREAT)
     try:
-        lock_fd = regular_open(lock_path, os.O_RDWR | os.O_CREAT | os.O_EXCL)
-    except FileExistsError:
-        # A worker that crashed before cleanup is recoverable only after its
-        # bounded timeout window; an active worker remains the sole owner.
-        try:
-            info = os.lstat(lock_path)
-            if stat.S_ISREG(info.st_mode) and time.time() - info.st_mtime > 15:
-                os.unlink(lock_path)
-                lock_fd = regular_open(lock_path, os.O_RDWR | os.O_CREAT | os.O_EXCL)
-            else:
-                raise SystemExit(0)
-        except FileNotFoundError:
-            raise SystemExit(0)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(lock_fd)
+        raise SystemExit(0)
     os.fchmod(lock_fd, 0o600)
     pid = os.fork()
     if pid:
@@ -74,6 +77,7 @@ try:
         os.setsid()
     except OSError:
         pass
+    write_log()
     if supervisor_pid_file:
         try:
             fd = regular_open(supervisor_pid_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
@@ -93,18 +97,19 @@ try:
         child = start([provider, payload])
         if child:
             children.append(child)
-        try:
-            state_fd = regular_open(state_path, os.O_RDONLY)
-            with os.fdopen(state_fd, encoding="utf-8") as source:
-                command = json.load(source).get("previous_codex_notify")
-            if isinstance(command, list) and command and all(isinstance(x, str) and x for x in command):
-                candidate = os.path.realpath(command[0])
-                if candidate != os.path.realpath(dispatcher):
-                    child = start(command + [payload])
-                    if child:
-                        children.append(child)
-        except Exception:
-            pass
+        if downstream_allowed(payload):
+            try:
+                state_fd = regular_open(state_path, os.O_RDONLY)
+                with os.fdopen(state_fd, encoding="utf-8") as source:
+                    command = json.load(source).get("previous_codex_notify")
+                if isinstance(command, list) and command and all(isinstance(x, str) and x for x in command):
+                    candidate = os.path.realpath(command[0])
+                    if candidate not in (os.path.realpath(dispatcher), os.path.realpath(codex_adapter)):
+                        child = start(command + [payload])
+                        if child:
+                            children.append(child)
+            except Exception:
+                pass
         deadline = time.monotonic() + timeout
         while any(child.poll() is None for child in children) and time.monotonic() < deadline:
             time.sleep(0.02)
@@ -129,11 +134,10 @@ try:
             except Exception:
                 pass
     finally:
-        os.close(lock_fd)
         try:
-            os.unlink(lock_path)
-        except OSError:
-            pass
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
 except Exception:
     pass
 PY

@@ -36,16 +36,18 @@ runtime.
 
 The installer previews the change and creates private backups before it
 replaces Codex's single top-level `notify` entry. An existing Codex provider
-is retained through a bounded asynchronous downstream provider; it is the
-user's pre-installation target and keeps its original Codex event contract.
-Claude's `Stop` hook is merged additively with an exact stored identity and
-never forwards assistant-response text downstream. Failure restores the
-complete installation transaction.
+is retained only for native Codex completion events through a bounded
+asynchronous downstream provider; Claude events are macOS-only. Claude's
+`Stop` hook is merged additively with an exact stored identity and never
+forwards assistant-response text downstream. Failure restores the complete
+installation transaction.
 
 `uninstall` restores a Runtime only when its exact stored managed identity still
 matches. A user-modified Runtime is preserved and reported for manual recovery;
-other exact managed Runtimes are cleaned independently. Provider delivery is
-bounded, fail-open, and cannot accumulate children indefinitely.
+other exact managed Runtimes are cleaned independently. It refuses to mutate
+while a dispatcher holds its stable lock, then removes the managed log, lock,
+state, and empty dedicated directories. Provider delivery is bounded, fail-open,
+and cannot accumulate children indefinitely.
 
 Manual E2E is separate: use an explicitly approved macOS configuration or a
 disposable HOME. Fixtures never call Notification Center or modify real user
