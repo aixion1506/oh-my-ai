@@ -11,13 +11,14 @@
 - Expected Base Branch:
 - Expected Base SHA:
 - Expected Branch Candidate:
-- Issue Key: provided only; never inferred.
+- Issue Key: provided only; never inferred; `Not Provided` when absent.
 - Execution Policy:
 - Provided Evidence:
 
 ## Evidence
 
 - Executed Evidence:
+- Provided Evidence:
 - Supplied Evidence:
 - Unexecuted Checks: record as `NOT_CHECKED`, never as passed.
 
@@ -51,10 +52,13 @@
 - Local Branch Status:
 - Remote Branch Status:
 - PR Status:
-- Existing Work A–H:
+- Issue Association Status:
+- Candidate Tip Evidence:
+- Existing Work A-H:
 
 ## Preflight Result
 
+- Preflight Result:
 - READY_NEW_WORK
 - READY_RESUME
 - RECOVERY_REQUIRED
@@ -67,24 +71,29 @@
 
 ## Blocking Items
 
-- Enumerate every required-input failure, unreadable Repository, Remote or
-  GitHub failure, Base mismatch, dirty state, naming-rule gap, divergence, or
-  collision. Do not downgrade an unavailable check to branch absence.
+- Blocking:
+- Blocking Items: enumerate every required-input failure, unreadable Repository,
+  Remote or GitHub failure, Base mismatch, dirty state, naming-rule gap,
+  divergence, or collision. Do not downgrade an unavailable check to branch
+  absence.
 
 ## Allowed Next Step
 
+- Allowed Next Step:
 - PLAN_NEW_WORK_ONLY, PLAN_RESUME_ONLY, RECOVERY_PLAN_ONLY,
   PLAN_WITH_SEPARATE_APPROVAL, PLAN_ONLY_RUNTIME_UNAVAILABLE,
   JIRA_RECONCILIATION_ONLY, or STOP.
 
 ## Process Exit Code
 
-- `0` is allowed only for `READY_NEW_WORK` and `READY_RESUME`.
+- Mutation: always `0`.
+- Process Exit Code: `0` is allowed only for `READY_NEW_WORK` and `READY_RESUME`.
 - Every recovery, blocked, merged, conflicted, or unverifiable result is
   non-zero.
 
 ## Prohibited Actions
 
+- Prohibited Actions:
 - Branch Creation
 - Checkout
 - Reset
@@ -103,6 +112,7 @@
 
 ## Unavailable Capabilities
 
+- Unavailable Capabilities:
 - Branch Creation
 - Checkout
 - Implementation

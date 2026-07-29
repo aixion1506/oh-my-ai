@@ -28,7 +28,11 @@ ignored_local_state='NOT_CHECKED'
 local_branch_status='NOT_CHECKED'
 remote_branch_status='NOT_CHECKED'
 pr_status='NOT_CHECKED'
+issue_association_status='NOT_REQUIRED'
 ancestry_status='NOT_CHECKED'
+local_branch_tip='NOT_CHECKED'
+remote_branch_tip='NOT_CHECKED'
+candidate_tip_evidence='NOT_CHECKED'
 existing_work_state='NONE'
 executed_evidence='NOT_CHECKED'
 unexecuted_checks='Required checks not reached; per-field status is authoritative'
@@ -86,6 +90,8 @@ report() {
   local result="$1" blocking="$2" next_step="$3" blocking_items="$4" exit_code="$5"
   printf '%s\n' '# Git Work Preflight Report'
   report_field 'Consumer' "${consumer:-NOT_PROVIDED}"
+  report_field 'Issue Key' "${issue_key:-NOT_PROVIDED}"
+  report_field 'Execution Policy' "${execution_policy:-NOT_PROVIDED}"
   report_field 'Repository' "${repository:-NOT_PROVIDED}"
   report_field 'Repository Verification' "$repository_verification"
   report_field 'Remote Verification' "$remote_verification"
@@ -108,10 +114,14 @@ report() {
   report_field 'Local Branch Status' "$local_branch_status"
   report_field 'Remote Branch Status' "$remote_branch_status"
   report_field 'PR Status' "$pr_status"
+  report_field 'Issue Association Status' "$issue_association_status"
+  report_field 'Candidate Tip Evidence' "$candidate_tip_evidence"
   report_field 'Ancestry Status' "$ancestry_status"
   report_field 'Executed Evidence' "$executed_evidence"
+  report_field 'Provided Evidence' "${provided_evidence:-NONE}"
   report_field 'Supplied Evidence' "${provided_evidence:-NONE}"
   report_field 'Unexecuted Checks' "$unexecuted_checks"
+  report_field 'Mutation Safety' 'Read-only / Mutation 0'
   report_field 'Existing Work A-H' "$existing_work_state"
   report_field 'Preflight Result' "$result"
   report_field 'Blocking' "$blocking"
@@ -354,46 +364,18 @@ else
   remote_branch_status='ABSENT'
 fi
 
-candidate_tip=''
 if [ "$local_branch_status" = 'PRESENT' ]; then
-  candidate_tip="$(git -C "$repository" rev-parse --verify "${expected_branch_name}^{commit}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Local candidate Branch tip cannot be verified'
-elif [ "$remote_branch_status" = 'PRESENT' ]; then
-  candidate_tip="${remote_branch_output%%$'\t'*}"
+  local_branch_tip="$(git -C "$repository" rev-parse --verify "${expected_branch_name}^{commit}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Local candidate Branch tip cannot be verified'
 fi
-if [ -n "$candidate_tip" ]; then
-  if git -C "$repository" merge-base --is-ancestor "$candidate_tip" "$actual_remote_base_sha" 2>/dev/null; then
-    existing_work_state='G'
-    ancestry_status='CANDIDATE_ANCESTOR_OF_ACTUAL_REMOTE_BASE'
-    append_executed 'Candidate ancestry=ALREADY_MERGED'
-    unexecuted_checks='GitHub PR query=NOT_CHECKED (ancestry is conclusive)'
-    finish ALREADY_MERGED JIRA_RECONCILIATION_ONLY 'Candidate Branch tip is already included in Actual Remote Base'
-  else
-    merge_base_status=$?
-    [ "$merge_base_status" -eq 1 ] || hard_stop NOT_VERIFIABLE 'Candidate Branch ancestry cannot be verified'
+if [ "$remote_branch_status" = 'PRESENT' ]; then
+  if [ "$(printf '%s\n' "$remote_branch_output" | wc -l | tr -d ' ')" -ne 1 ]; then
+    hard_stop NOT_VERIFIABLE 'Actual Remote Issue Branch must resolve to exactly one ref'
   fi
-  append_executed 'Candidate ancestry=NOT_ANCESTOR'
-fi
-
-if [ "$local_branch_status" = 'PRESENT' ] && [ "$remote_branch_status" = 'PRESENT' ]; then
-  branch_counts="$(git -C "$repository" rev-list --left-right --count "${expected_branch_name}...origin/${expected_branch_name}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Issue Branch ancestry cannot be verified'
-  read -r branch_local_ahead branch_remote_ahead <<< "$branch_counts"
-  if [ "$branch_local_ahead" != 0 ] && [ "$branch_remote_ahead" != 0 ]; then
-    local_branch_status='PRESENT_DIVERGED'
-    remote_branch_status='PRESENT_DIVERGED'
-    existing_work_state='F'
-    ancestry_status='DIVERGED'
-    hard_stop BLOCKED_DIVERGENCE 'Local and Remote Issue Branches diverge'
-  elif [ "$branch_local_ahead" != 0 ]; then
-    local_branch_status='PRESENT_LOCAL_AHEAD'
-    remote_branch_status='PRESENT_LOCAL_AHEAD'
-  elif [ "$branch_remote_ahead" != 0 ]; then
-    local_branch_status='PRESENT_REMOTE_AHEAD'
-    remote_branch_status='PRESENT_REMOTE_AHEAD'
-  else
-    local_branch_status='PRESENT_ALIGNED'
-    remote_branch_status='PRESENT_ALIGNED'
+  remote_branch_tip="${remote_branch_output%%$'\t'*}"
+  remote_branch_ref="${remote_branch_output#*$'\t'}"
+  if ! [[ "$remote_branch_tip" =~ ^[0-9a-fA-F]{40,64}$ ]] || [ "$remote_branch_ref" != "refs/heads/${expected_branch_name}" ]; then
+    hard_stop NOT_VERIFIABLE 'Actual Remote Issue Branch response is malformed'
   fi
-  append_executed 'Issue Branch relation=VERIFIED'
 fi
 
 pr_json="$(cd "$repository" && gh pr list --head "$expected_branch_name" --state all --json state,isDraft,headRefName 2>/dev/null)" || { pr_status='NOT_VERIFIABLE'; hard_stop NOT_VERIFIABLE 'GitHub PR state cannot be queried'; }
@@ -421,6 +403,72 @@ process.stdin.on("end", () => {
 });
 ' "$expected_branch_name")" || { pr_status='NOT_VERIFIABLE'; hard_stop NOT_VERIFIABLE 'GitHub PR response is malformed or unsupported'; }
 
+# Jira evidence is a mandatory gate for jira-work with an Issue Key.  Do not
+# let a Branch, PR, or ancestry conclusion bypass a missing association.
+if [ "$consumer" = 'jira-work' ] && [ -n "$issue_key" ]; then
+  association_marker="issue-association-verified:${issue_key}:${expected_branch_name}"
+  if evidence_has_marker "$association_marker"; then
+    issue_association_status='MATCHED'
+    append_executed 'Supplied Jira Issue-to-Branch association=MATCHED_BY_CONSUMER'
+  elif printf '%s' "$provided_evidence" | tr ',' '\n' | grep -F -q -- 'issue-association-verified:'; then
+    issue_association_status='CONFLICTED'
+    existing_work_state='H'
+    hard_stop CONFLICTED 'Supplied Jira Issue association conflicts with the expected Branch'
+  else
+    issue_association_status='NOT_PROVIDED'
+    hard_stop NOT_VERIFIABLE 'Jira Issue association evidence is not supplied'
+  fi
+fi
+
+unexecuted_checks='NONE'
+if [ "$local_branch_status" = 'PRESENT' ] && [ "$remote_branch_status" = 'PRESENT' ]; then
+  cached_remote_branch_tip="$(git -C "$repository" rev-parse --verify "origin/${expected_branch_name}^{commit}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Cached Remote-tracking Issue Branch cannot be resolved'
+  if [ "$cached_remote_branch_tip" != "$remote_branch_tip" ]; then
+    hard_stop NOT_VERIFIABLE 'Cached Remote-tracking Issue Branch differs from Actual Remote Issue Branch'
+  fi
+  append_executed 'Actual Remote Issue Branch=VERIFIED'
+  branch_counts="$(git -C "$repository" rev-list --left-right --count "${local_branch_tip}...${cached_remote_branch_tip}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Issue Branch ancestry cannot be verified'
+  read -r branch_local_ahead branch_remote_ahead <<< "$branch_counts"
+  if [ "$branch_local_ahead" != 0 ] && [ "$branch_remote_ahead" != 0 ]; then
+    local_branch_status='PRESENT_DIVERGED'
+    remote_branch_status='PRESENT_DIVERGED'
+    existing_work_state='F'
+    ancestry_status='DIVERGED'
+    hard_stop BLOCKED_DIVERGENCE 'Local and Remote Issue Branches diverge'
+  elif [ "$branch_local_ahead" != 0 ]; then
+    local_branch_status='PRESENT_LOCAL_AHEAD'
+    remote_branch_status='PRESENT_LOCAL_AHEAD'
+  elif [ "$branch_remote_ahead" != 0 ]; then
+    local_branch_status='PRESENT_REMOTE_AHEAD'
+    remote_branch_status='PRESENT_REMOTE_AHEAD'
+  else
+    local_branch_status='PRESENT_ALIGNED'
+    remote_branch_status='PRESENT_ALIGNED'
+  fi
+  append_executed 'Issue Branch relation=VERIFIED'
+fi
+
+if [ "$local_branch_status" = 'PRESENT_LOCAL_AHEAD' ] || [ "$remote_branch_status" = 'PRESENT_LOCAL_AHEAD' ] || [ "$local_branch_status" = 'PRESENT_REMOTE_AHEAD' ] || [ "$remote_branch_status" = 'PRESENT_REMOTE_AHEAD' ]; then
+  if [ "$pr_status" = 'OPEN_DRAFT' ]; then
+    existing_work_state='E'
+  else
+    existing_work_state='B'
+  fi
+  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Local and Remote Issue Branches are not aligned'
+fi
+if [ "$local_branch_status" = 'PRESENT' ] && [ "$remote_branch_status" = 'ABSENT' ]; then
+  candidate_tip_evidence="LOCAL_ONLY SHA=${local_branch_tip}"
+  append_executed 'Candidate tip source=LOCAL_ONLY'
+  existing_work_state='C'
+  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Local-only Issue Branch requires recovery planning'
+fi
+if [ "$local_branch_status" = 'ABSENT' ] && [ "$remote_branch_status" = 'PRESENT' ]; then
+  candidate_tip_evidence="REMOTE_ONLY SHA=${remote_branch_tip}"
+  append_executed 'Candidate tip source=REMOTE_ONLY'
+  existing_work_state='D'
+  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Remote-only Issue Branch requires recovery planning'
+fi
+
 if [ "$pr_status" = 'MULTIPLE' ]; then
   existing_work_state='H'
   hard_stop CONFLICTED 'Multiple PRs reference the expected Branch'
@@ -438,42 +486,26 @@ if [ "$pr_status" = 'OPEN_NON_DRAFT' ] || [ "$pr_status" = 'CLOSED_UNMERGED' ]; 
   hard_stop CONFLICTED 'Existing non-Draft or closed PR requires human judgment'
 fi
 
-if [ "$consumer" = 'jira-work' ] && [ -n "$issue_key" ]; then
-  association_marker="issue-association-verified:${issue_key}:${expected_branch_name}"
-  if evidence_has_marker "$association_marker"; then
-    append_executed 'Supplied Jira Issue-to-Branch association=VERIFIED_BY_CONSUMER'
-  elif printf '%s' "$provided_evidence" | tr ',' '\n' | grep -F -q -- 'issue-association-verified:'; then
-    existing_work_state='H'
-    hard_stop CONFLICTED 'Supplied Jira Issue association conflicts with the expected Branch'
-  else
-    hard_stop NOT_VERIFIABLE 'Jira Issue association evidence is not supplied'
-  fi
-fi
-
-unexecuted_checks='NONE'
 if [ "$local_branch_status" = 'PRESENT_ALIGNED' ] && [ "$remote_branch_status" = 'PRESENT_ALIGNED' ]; then
+  candidate_tip="$local_branch_tip"
+  candidate_tip_evidence="LOCAL_AND_REMOTE_ALIGNED SHA=${candidate_tip}"
+  append_executed 'Candidate tip source=LOCAL_AND_REMOTE_ALIGNED'
+  if git -C "$repository" merge-base --is-ancestor "$candidate_tip" "$actual_remote_base_sha" 2>/dev/null; then
+    existing_work_state='G'
+    ancestry_status='CANDIDATE_ANCESTOR_OF_ACTUAL_REMOTE_BASE'
+    append_executed 'Candidate ancestry=ALREADY_MERGED'
+    finish ALREADY_MERGED JIRA_RECONCILIATION_ONLY 'Aligned Candidate Branch tip is already included in Actual Remote Base'
+  else
+    merge_base_status=$?
+    [ "$merge_base_status" -eq 1 ] || hard_stop NOT_VERIFIABLE 'Candidate Branch ancestry cannot be verified'
+  fi
+  append_executed 'Candidate ancestry=NOT_ANCESTOR'
   if [ "$pr_status" = 'OPEN_DRAFT' ]; then
     existing_work_state='E'
   else
     existing_work_state='B'
   fi
   finish READY_RESUME PLAN_RESUME_ONLY 'NONE'
-fi
-if [ "$local_branch_status" = 'PRESENT_LOCAL_AHEAD' ] || [ "$remote_branch_status" = 'PRESENT_LOCAL_AHEAD' ] || [ "$local_branch_status" = 'PRESENT_REMOTE_AHEAD' ] || [ "$remote_branch_status" = 'PRESENT_REMOTE_AHEAD' ]; then
-  if [ "$pr_status" = 'OPEN_DRAFT' ]; then
-    existing_work_state='E'
-  else
-    existing_work_state='B'
-  fi
-  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Local and Remote Issue Branches are not aligned'
-fi
-if [ "$local_branch_status" = 'PRESENT' ] && [ "$remote_branch_status" = 'ABSENT' ]; then
-  existing_work_state='C'
-  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Local-only Issue Branch requires recovery planning'
-fi
-if [ "$local_branch_status" = 'ABSENT' ] && [ "$remote_branch_status" = 'PRESENT' ]; then
-  existing_work_state='D'
-  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Remote-only Issue Branch requires recovery planning'
 fi
 
 existing_work_state='A'

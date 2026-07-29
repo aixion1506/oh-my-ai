@@ -92,8 +92,10 @@ Before a READY conclusion, the Runtime separately verifies the cached
 `git ls-remote --heads origin`. Exactly one actual remote ref is required and
 it must match the cached ref. The report keeps Expected Base SHA, Cached
 Remote-tracking Base SHA, Actual Remote Base SHA, and Feature Integration Point
-separate. A candidate Branch tip already ancestral to Actual Remote Base is
-`ALREADY_MERGED`, independent of PR state.
+separate. When both local and remote Issue Branches exist, the Runtime verifies
+their actual tips first, classifies local-ahead, remote-ahead, or divergence,
+and performs a merge conclusion only for an aligned tip. The report records
+which verified tip supplied ancestry evidence.
 
 ## Result model
 
@@ -149,6 +151,10 @@ For a `jira-work` invocation with an Issue Key, the Consumer must supply an
 explicit Issue-to-Branch association evidence marker. The Runtime never infers
 an Issue Key from a Branch or PR name: missing association evidence is
 `NOT_VERIFIABLE`, and an evidence marker for another Branch is `CONFLICTED`.
+This association gate runs after structural PR parsing but before any Branch,
+PR, or merge conclusion; an unverified association cannot be bypassed by
+ancestry evidence. No Jira association is required for `manual-review` or
+`work-start`.
 No Jira read or write integration is performed here.
 
 ## Execution Policy and output
