@@ -30,12 +30,17 @@ overall task success. It shows only the normalized working-directory basename
 and the fixed body `응답이 완료되었습니다. 결과를 확인하세요.` Assistant-response
 summaries are intentionally unsupported, so prompts, paths, code, diffs,
 branches, Jira identifiers, terminal output, and secrets are not projected.
+The Claude adapter does not read or include assistant-response fields in the
+shared event, and the macOS adapter receives no response text from either
+runtime.
 
 The installer previews the change and creates private backups before it
 replaces Codex's single top-level `notify` entry. An existing Codex provider
-is retained through a bounded asynchronous downstream provider. Claude's
-`Stop` hook is merged additively with an exact stored identity. Failure restores
-the complete installation transaction.
+is retained through a bounded asynchronous downstream provider; it is the
+user's pre-installation target and keeps its original Codex event contract.
+Claude's `Stop` hook is merged additively with an exact stored identity and
+never forwards assistant-response text downstream. Failure restores the
+complete installation transaction.
 
 `uninstall` restores a Runtime only when its exact stored managed identity still
 matches. A user-modified Runtime is preserved and reported for manual recovery;

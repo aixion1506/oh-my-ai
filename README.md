@@ -84,11 +84,15 @@ succeeded. The title contains only the runtime and normalized project-directory
 basename; the body is always `응답이 완료되었습니다. 결과를 확인하세요.` It never
 shows assistant-response content, prompts, paths, code, diffs, branches, Jira
 keys, terminal output, or secrets.
+The Claude adapter never reads or includes assistant-response text in the
+shared event; the macOS provider receives no response text from either runtime.
 
 Before changing configuration, the installer shows a preview and backup path,
 then requires approval. Codex's existing `notify` target is preserved as a
-bounded asynchronous downstream provider; Claude's `Stop` hook is merged
-additively. Configuration writes are regular-file-only, atomic, permission
+bounded asynchronous downstream provider. That provider is a pre-existing
+user target and therefore keeps its original Codex event contract. Claude's
+`Stop` hook is merged additively and never creates a new downstream for
+assistant-response text. Configuration writes are regular-file-only, atomic, permission
 scoped, and transactionally rolled back on failure. Any provider failure is
 fail-open and cannot block a Turn indefinitely. User-specific commands and
 paths live outside this repository under `~/.local/share/oh-my-ai/notifications/`.
