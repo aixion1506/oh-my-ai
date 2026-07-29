@@ -12,10 +12,13 @@ provided_evidence=""
 
 repository_verification='NOT_VERIFIABLE'
 remote_verification='NOT_CHECKED'
+feature_remote_verification='NOT_CHECKED'
 current_branch='NOT_CHECKED'
 current_head='NOT_CHECKED'
 cached_remote_tracking_base_sha='NOT_CHECKED'
 actual_remote_base_sha='NOT_CHECKED'
+cached_remote_tracking_feature_sha='NOT_CHECKED'
+actual_remote_feature_sha='NOT_CHECKED'
 feature_integration_point='NOT_CHECKED'
 local_base_sha='NOT_CHECKED'
 remote_base_sha='NOT_CHECKED'
@@ -95,12 +98,15 @@ report() {
   report_field 'Repository' "${repository:-NOT_PROVIDED}"
   report_field 'Repository Verification' "$repository_verification"
   report_field 'Remote Verification' "$remote_verification"
+  report_field 'Feature Remote Verification' "$feature_remote_verification"
   report_field 'Current Branch' "$current_branch"
   report_field 'Current HEAD' "$current_head"
   report_field 'Expected Base Branch' "${expected_base_branch:-NOT_PROVIDED}"
   report_field 'Expected Base SHA' "${expected_base_sha:-NOT_PROVIDED}"
   report_field 'Cached Remote-tracking Base SHA' "$cached_remote_tracking_base_sha"
   report_field 'Actual Remote Base SHA' "$actual_remote_base_sha"
+  report_field 'Cached Remote-tracking Feature SHA' "$cached_remote_tracking_feature_sha"
+  report_field 'Actual Remote Feature SHA' "$actual_remote_feature_sha"
   report_field 'Feature Integration Point' "$feature_integration_point"
   report_field 'Local Base SHA' "$local_base_sha"
   report_field 'Remote Base SHA' "$remote_base_sha"
@@ -235,6 +241,11 @@ case "$consumer" in
   work-start|jira-work|manual-review) ;;
   *) hard_stop NOT_VERIFIABLE 'Consumer is not supported' ;;
 esac
+if [ "$consumer" = 'jira-work' ] && [ -z "$issue_key" ]; then
+  issue_association_status='MISSING_ISSUE_KEY'
+  unexecuted_checks='Jira Issue-to-Branch association=NOT_EXECUTED (Issue Key not supplied); Git and GitHub checks=NOT_EXECUTED'
+  hard_stop NOT_VERIFIABLE 'Issue Key is required for jira-work'
+fi
 safe_ref_component "$expected_base_branch" || hard_stop NOT_VERIFIABLE 'Expected Base Branch is unsafe'
 if [ -n "$expected_branch_name" ]; then
   safe_ref_component "$expected_branch_name" || hard_stop NOT_VERIFIABLE 'Expected Branch Candidate is unsafe'
@@ -351,7 +362,10 @@ if ! evidence_has_marker 'repository-naming-rule-verified'; then
 fi
 
 local_branch_output="$(git -C "$repository" branch --list -- "$expected_branch_name" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Local Branch cannot be queried'
-remote_branch_output="$(git -C "$repository" ls-remote --heads origin "refs/heads/${expected_branch_name}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Remote Branch cannot be queried'
+remote_branch_output="$(git -C "$repository" ls-remote --heads origin "refs/heads/${expected_branch_name}" 2>/dev/null)" || {
+  feature_remote_verification='NOT_VERIFIABLE'
+  hard_stop NOT_VERIFIABLE 'Remote Branch cannot be queried'
+}
 append_executed 'Local and remote Branch presence=VERIFIED'
 if [ -n "$local_branch_output" ]; then
   local_branch_status='PRESENT'
@@ -362,6 +376,7 @@ if [ -n "$remote_branch_output" ]; then
   remote_branch_status='PRESENT'
 else
   remote_branch_status='ABSENT'
+  actual_remote_feature_sha='NOT_FOUND'
 fi
 
 if [ "$local_branch_status" = 'PRESENT' ]; then
@@ -369,13 +384,16 @@ if [ "$local_branch_status" = 'PRESENT' ]; then
 fi
 if [ "$remote_branch_status" = 'PRESENT' ]; then
   if [ "$(printf '%s\n' "$remote_branch_output" | wc -l | tr -d ' ')" -ne 1 ]; then
+    feature_remote_verification='NOT_VERIFIABLE'
     hard_stop NOT_VERIFIABLE 'Actual Remote Issue Branch must resolve to exactly one ref'
   fi
   remote_branch_tip="${remote_branch_output%%$'\t'*}"
   remote_branch_ref="${remote_branch_output#*$'\t'}"
   if ! [[ "$remote_branch_tip" =~ ^[0-9a-fA-F]{40,64}$ ]] || [ "$remote_branch_ref" != "refs/heads/${expected_branch_name}" ]; then
+    feature_remote_verification='NOT_VERIFIABLE'
     hard_stop NOT_VERIFIABLE 'Actual Remote Issue Branch response is malformed'
   fi
+  actual_remote_feature_sha="$remote_branch_tip"
 fi
 
 pr_json="$(cd "$repository" && gh pr list --head "$expected_branch_name" --state all --json state,isDraft,headRefName 2>/dev/null)" || { pr_status='NOT_VERIFIABLE'; hard_stop NOT_VERIFIABLE 'GitHub PR state cannot be queried'; }
@@ -421,12 +439,41 @@ if [ "$consumer" = 'jira-work' ] && [ -n "$issue_key" ]; then
 fi
 
 unexecuted_checks='NONE'
+if cached_remote_branch_tip="$(git -C "$repository" rev-parse --verify "origin/${expected_branch_name}^{commit}" 2>/dev/null)"; then
+  cached_remote_tracking_feature_sha="$cached_remote_branch_tip"
+else
+  cached_remote_branch_tip=''
+  cached_remote_tracking_feature_sha='NOT_FOUND'
+fi
+append_executed 'Cached remote-tracking Feature=QUERIED'
+
+if [ "$remote_branch_status" = 'ABSENT' ] && [ -z "$cached_remote_branch_tip" ]; then
+  feature_remote_verification='VERIFIED_ABSENT'
+elif [ "$remote_branch_status" = 'ABSENT' ]; then
+  feature_remote_verification='CACHED_REF_REMOTE_ABSENT'
+  candidate_tip_evidence="LOCAL SHA=${local_branch_tip}; CACHED_REMOTE SHA=${cached_remote_tracking_feature_sha}; ACTUAL_REMOTE SHA=NOT_FOUND"
+  unexecuted_checks='Feature relation and ancestry=NOT_EXECUTED (actual Remote Feature ref absent)'
+  [ "$local_branch_status" = 'PRESENT' ] && existing_work_state='C'
+  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Cached Remote-tracking Feature exists while Actual Remote Feature is absent'
+elif [ -z "$cached_remote_branch_tip" ]; then
+  feature_remote_verification='CACHED_REF_NOT_FOUND'
+  candidate_tip_evidence="LOCAL SHA=${local_branch_tip}; CACHED_REMOTE SHA=NOT_FOUND; ACTUAL_REMOTE SHA=${actual_remote_feature_sha}"
+  unexecuted_checks='Feature relation and ancestry=NOT_EXECUTED (cached Remote-tracking Feature ref absent)'
+  [ "$local_branch_status" = 'ABSENT' ] && existing_work_state='D'
+  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Actual Remote Feature exists without a cached Remote-tracking Feature'
+elif [ "$cached_remote_branch_tip" != "$remote_branch_tip" ]; then
+  feature_remote_verification='CACHED_ACTUAL_MISMATCH'
+  candidate_tip_evidence="LOCAL SHA=${local_branch_tip}; CACHED_REMOTE SHA=${cached_remote_tracking_feature_sha}; ACTUAL_REMOTE SHA=${actual_remote_feature_sha}"
+  append_executed 'Cached and actual Remote Feature comparison=MISMATCH'
+  unexecuted_checks='Feature relation and ancestry=NOT_EXECUTED (cached and actual Remote Feature refs differ)'
+  existing_work_state='B'
+  finish RECOVERY_REQUIRED RECOVERY_PLAN_ONLY 'Cached Remote-tracking Feature differs from Actual Remote Feature'
+else
+  feature_remote_verification='VERIFIED'
+  append_executed 'Cached and actual Remote Feature comparison=ALIGNED'
+fi
+
 if [ "$local_branch_status" = 'PRESENT' ] && [ "$remote_branch_status" = 'PRESENT' ]; then
-  cached_remote_branch_tip="$(git -C "$repository" rev-parse --verify "origin/${expected_branch_name}^{commit}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Cached Remote-tracking Issue Branch cannot be resolved'
-  if [ "$cached_remote_branch_tip" != "$remote_branch_tip" ]; then
-    hard_stop NOT_VERIFIABLE 'Cached Remote-tracking Issue Branch differs from Actual Remote Issue Branch'
-  fi
-  append_executed 'Actual Remote Issue Branch=VERIFIED'
   branch_counts="$(git -C "$repository" rev-list --left-right --count "${local_branch_tip}...${cached_remote_branch_tip}" 2>/dev/null)" || hard_stop NOT_VERIFIABLE 'Issue Branch ancestry cannot be verified'
   read -r branch_local_ahead branch_remote_ahead <<< "$branch_counts"
   if [ "$branch_local_ahead" != 0 ] && [ "$branch_remote_ahead" != 0 ]; then

@@ -11,7 +11,7 @@
 - Expected Base Branch:
 - Expected Base SHA:
 - Expected Branch Candidate:
-- Issue Key: provided only; never inferred; `Not Provided` when absent.
+- Issue Key: required for `jira-work`; optional otherwise; never inferred.
 - Execution Policy:
 - Provided Evidence:
 
@@ -26,11 +26,14 @@
 
 - Repository Verification:
 - Remote Verification:
+- Feature Remote Verification:
 - Current Branch:
 - Current HEAD:
 - Expected Base SHA:
 - Cached Remote-tracking Base SHA:
 - Actual Remote Base SHA:
+- Cached Remote-tracking Feature SHA:
+- Actual Remote Feature SHA:
 - Feature Integration Point:
 - Local Base SHA:
 - Remote Base SHA:
