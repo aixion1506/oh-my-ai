@@ -18,12 +18,15 @@
 ## Target
 
 - Product:
-- Repository:
+- Primary Repository:
 - Area:
 - Assignee:
 - Priority:
 - Technical Labels:
 - Issue Type:
+
+All Target values except Technical Labels are minimum Create input. Missing,
+whitespace-only, or `Not Verifiable` values stop with `Mutation: 0`.
 
 ## Ticket Contract
 

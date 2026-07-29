@@ -43,10 +43,13 @@ for (const scenario of fixture.scenarios) {
     },
   });
   const runContract = scenario.contract === "invalid" ? { ...contract, Goal: "Not Verifiable" } : contract;
-  const runMetadata = scenario.metadata === "missing" ? { ...metadata, assignee: "" } : metadata;
+  const runMetadata = { ...metadata, ...(scenario.metadata_overrides ?? {}) };
   const report = await runJiraTicketCreateWorkflow({ adapter, contract: runContract, metadata: runMetadata, approval: scenario.approval });
   for (const field of fixture.required_report_fields) {
     assert.deepEqual(report[field], scenario.expected[field], `${scenario.id}: ${field}`);
+  }
+  if (scenario.missing_metadata) {
+    assert.deepEqual(report.missing_metadata, scenario.missing_metadata, `${scenario.id}: missing metadata`);
   }
   assert.equal(searchCalls, scenario.expected.search_attempted ? 1 : 0, `${scenario.id}: search call count`);
   assert.equal(createCalls, scenario.expected.create_call_count, `${scenario.id}: create call count`);

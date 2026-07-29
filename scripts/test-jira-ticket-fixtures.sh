@@ -67,7 +67,10 @@ const required = [
   "similar-duplicate", "no-result-before-approval", "non-explicit-positive-is-not-approval", "no-result-approval-rejected", "create-success",
   "actual-key-url-verification", "wrong-project-response", "keyless-success", "create-timeout",
   "response-loss-rerun-finds-duplicate", "single-create-call", "codex-adapter", "claude-adapter",
-  "preview-write-evidence-separated", "description-header", "fourteen-field-contract-regression", "missing-create-metadata",
+  "preview-write-evidence-separated", "description-header", "fourteen-field-contract-regression",
+  "project-missing", "issue-type-missing", "assignee-missing", "priority-missing",
+  "product-repository-area-missing", "metadata-whitespace", "metadata-not-verifiable",
+  "all-required-metadata-normal",
 ];
 const fields = [
   "search_attempted", "search_result", "duplicate_status", "approval_status", "create_attempted",

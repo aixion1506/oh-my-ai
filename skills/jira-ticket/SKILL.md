@@ -171,6 +171,20 @@ edits, `검토해줘`, or `계속해`. Rejected, missing, or stale approval leav
 
 ## E. Create
 
+The minimum Create input is Project, Issue Type, Summary, Assignee, Priority,
+Product, Primary Repository, and Area. A missing, whitespace-only, or `Not
+Verifiable` value is a hard stop before Search or Create:
+
+```text
+Create Attempted: false
+Create Call Count: 0
+Mutation: 0
+Verification Status: NOT_VERIFIABLE
+Allowed Next Step: 누락 Metadata 보완
+```
+
+Branch and Current HEAD remain Description evidence, not minimum Create input.
+
 After approval, call `jira.create` exactly once with Project `RPL`, Issue Type,
 Summary, Description, Assignee, Priority, and needed technical Labels. No
 custom field is created. Description starts with:

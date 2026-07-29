@@ -52,10 +52,20 @@ function hasCapability(adapter, capability) {
   return record?.available === true && record?.connection_verified === true;
 }
 
-function hasValidCreateMetadata(metadata) {
-  return ["project", "product", "repository", "area", "issue_type", "assignee", "priority", "branch"].every((field) => {
-    return typeof metadata?.[field] === "string" && metadata[field].trim();
-  });
+function missingCreateMetadata(contract, metadata) {
+  const required = [
+    ["Project", metadata?.project],
+    ["Issue Type", metadata?.issue_type],
+    ["Summary", contract?.Summary],
+    ["Assignee", metadata?.assignee],
+    ["Priority", metadata?.priority],
+    ["Product", metadata?.product],
+    ["Primary Repository", metadata?.repository],
+    ["Area", metadata?.area],
+  ];
+  return required
+    .filter(([, value]) => typeof value !== "string" || !value.trim() || value.trim() === "Not Verifiable")
+    .map(([field]) => field);
 }
 
 function createDescription(contract, metadata) {
@@ -65,7 +75,7 @@ function createDescription(contract, metadata) {
     `Area: ${metadata.area}`,
     `Assignee: ${metadata.assignee}`,
     `Priority: ${metadata.priority}`,
-    `Branch: ${metadata.branch}`,
+    `Branch: ${metadata.branch?.trim() || "Not Verifiable"}`,
     `PR: ${metadata.pr ?? "Not created"}`,
     `Current HEAD: ${metadata.current_head ?? "Not Verifiable"}`,
   ];
@@ -109,21 +119,24 @@ export async function runJiraTicketCreateWorkflow({ adapter, contract, metadata,
   const runtime = adapter?.runtime ?? "unknown";
   report.preview_evidence.push(`Runtime: ${runtime}`);
 
+  const missingMetadata = missingCreateMetadata(contract, metadata);
+  if (missingMetadata.length > 0) {
+    report.missing_metadata = missingMetadata;
+    report.verification_status = "NOT_VERIFIABLE";
+    return finishWithoutCreate(report, {
+      result: "not_performed",
+      duplicate: "not_checked",
+      approval: "blocked",
+      next: "누락 Metadata 보완",
+    });
+  }
+
   if (!hasValidContract(contract)) {
     return finishWithoutCreate(report, {
       result: "not_performed",
       duplicate: "not_checked",
       approval: "blocked",
       next: "Resolve the Ticket Contract validation failures",
-    });
-  }
-
-  if (!hasValidCreateMetadata(metadata)) {
-    return finishWithoutCreate(report, {
-      result: "not_performed",
-      duplicate: "not_checked",
-      approval: "blocked",
-      next: "Resolve required Jira Create metadata",
     });
   }
 
@@ -236,4 +249,4 @@ export async function runJiraTicketCreateWorkflow({ adapter, contract, metadata,
   return report;
 }
 
-export { BLOCKING_SENTINELS, CONTRACT_FIELDS, createDescription, searchRequest };
+export { BLOCKING_SENTINELS, CONTRACT_FIELDS, createDescription, missingCreateMetadata, searchRequest };
