@@ -54,7 +54,7 @@ Consumer. The supported Consumers are `work-start`, `jira-work`, and
 | Expected Base Branch | Required. Missing input is `Base Branch Required`. |
 | Expected Base SHA | Optional. If supplied, both local and remote Base must match it. |
 | Expected Branch Name Candidate | Optional. Validate only; never generate or create a Branch. |
-| Issue Key | Required for `jira-work`; optional for other Consumers. Do not infer or invent one. |
+| Issue Key | Required for `jira-work`; optional for other Consumers. The Runtime reports an omitted key as `NOT_PROVIDED`; never infer or invent one. |
 | Execution Policy | Required: `suggest-only`, `patch-with-approval`, or `auto-apply`. |
 | Consumer | Required: `work-start`, `jira-work`, or `manual-review`. |
 | Provided Evidence | Optional evidence reference. Never claim it was verified unless the consumer supplied verified evidence. |
@@ -152,14 +152,21 @@ not verified, report `NOT_VERIFIABLE`.
 
 For a `jira-work` invocation, the Issue Key is required and the Consumer must
 supply an explicit Issue-to-Branch association evidence marker. The Runtime
-never infers an Issue Key from a Branch or PR name: a missing Issue Key or
-association evidence is `NOT_VERIFIABLE`, and an evidence marker for another
-Branch is `CONFLICTED`.
+never infers an Issue Key from a Branch or PR name: a missing Issue Key is
+reported as `Issue Key: NOT_PROVIDED` and `Issue Association Status:
+MISSING_ISSUE_KEY`, while missing association evidence is `NOT_VERIFIABLE`.
+An evidence marker for another Branch is `CONFLICTED`.
 This association gate runs after structural PR parsing but before any Branch,
 PR, or merge conclusion; an unverified association cannot be bypassed by
 ancestry evidence. No Jira association is required for `manual-review` or
 `work-start`.
 No Jira read or write integration is performed here.
+
+`Unexecuted Checks` is `NONE` only when the Runtime reached every required
+check. Otherwise it preserves the actual `...=NOT_EXECUTED (reason)` entries;
+before the check plan is reached, it is `Required checks not reached;
+per-field status is authoritative`. Per-field unexecuted state is
+`NOT_CHECKED`.
 
 ## Execution Policy and output
 

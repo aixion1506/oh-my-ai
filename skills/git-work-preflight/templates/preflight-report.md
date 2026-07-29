@@ -11,7 +11,7 @@
 - Expected Base Branch:
 - Expected Base SHA:
 - Expected Branch Candidate:
-- Issue Key: required for `jira-work`; optional otherwise; never inferred.
+- Issue Key: required for `jira-work`; optional otherwise; `NOT_PROVIDED` when absent; never inferred.
 - Execution Policy:
 - Provided Evidence:
 
@@ -20,7 +20,10 @@
 - Executed Evidence:
 - Provided Evidence:
 - Supplied Evidence:
-- Unexecuted Checks: record as `NOT_CHECKED`, never as passed.
+- Unexecuted Checks: `NONE` only after every required check; otherwise list
+  `...=NOT_EXECUTED (reason)`, or use `Required checks not reached; per-field
+  status is authoritative` before the check plan is reached. Per-field
+  unexecuted state is `NOT_CHECKED`, never passed.
 
 ## Repository and Base
 
@@ -55,7 +58,8 @@
 - Local Branch Status:
 - Remote Branch Status:
 - PR Status:
-- Issue Association Status:
+- Issue Association Status: `MISSING_ISSUE_KEY` when a `jira-work` Issue Key
+  was absent and association was not executed.
 - Candidate Tip Evidence:
 - Existing Work A-H:
 
