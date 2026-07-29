@@ -90,14 +90,26 @@ fx_cap_003() {
   node - "$REAL_FILE" <<'NODE' || fail "FX-CAP-003: Jira MCP semantic capabilities are incomplete"
 const fs = require("fs");
 const doc = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+function bindingIsExact(runtime, id, capability) {
+  const label = runtime.toUpperCase();
+  const verb = id.split(".")[1].toUpperCase();
+  return capability?.declared_status === "conditional"
+    && capability.required_for_advertised_support === false
+    && capability.conditions?.[0] === `A ${runtime === "codex" ? "Codex" : "Claude"} Jira MCP/Plugin exposes a semantic Jira ${id.split(".")[1]} operation in the active runtime`
+    && capability.source?.reference === `fixtures/jira-ticket/mcp-create-workflow-fixtures.json ${runtime}-adapter`
+    && capability.evidence_refs?.[0] === `FX-JT-MCP-${label}-${verb}`;
+}
 for (const runtime of ["codex", "claude"]) {
   for (const id of ["jira.search", "jira.create"]) {
     const capability = doc.runtimes[runtime].capabilities.find((item) => item.capability_id === id);
-    if (!capability || capability.declared_status !== "conditional" || capability.required_for_advertised_support !== false) process.exit(1);
+    if (!bindingIsExact(runtime, id, capability)) process.exit(1);
   }
 }
+const swapped = structuredClone(doc);
+[swapped.runtimes.codex.capabilities, swapped.runtimes.claude.capabilities] = [swapped.runtimes.claude.capabilities, swapped.runtimes.codex.capabilities];
+if (bindingIsExact("codex", "jira.search", swapped.runtimes.codex.capabilities.find((item) => item.capability_id === "jira.search"))) process.exit(1);
 NODE
-  echo "passed: FX-CAP-003-jira-mcp-semantic-capabilities"
+  echo "passed: FX-CAP-003-jira-mcp-runtime-binding-and-swap-detection"
 }
 
 # --- FX-CAP-010 Approval Mixed into Capability (Negative) ------------------

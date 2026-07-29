@@ -1,25 +1,12 @@
-const CONTRACT_FIELDS = [
-  "Summary",
-  "Context",
-  "Goal",
-  "Source of Truth",
-  "In Scope",
-  "Out of Scope",
-  "Acceptance Criteria",
-  "Repository",
-  "Base Branch",
-  "Expected Branch Name",
-  "Dependencies",
-  "Verification",
-  "Do Not Touch",
-  "Definition of Done",
-];
+import { createHash } from "node:crypto";
 
+const CONTRACT_FIELDS = [
+  "Summary", "Context", "Goal", "Source of Truth", "In Scope", "Out of Scope",
+  "Acceptance Criteria", "Repository", "Base Branch", "Expected Branch Name",
+  "Dependencies", "Verification", "Do Not Touch", "Definition of Done",
+];
 const BLOCKING_SENTINELS = new Set([
-  "Decision Required",
-  "Repository Required",
-  "Base Branch Required",
-  "Not Verifiable",
+  "decision required", "repository required", "base branch required", "not verifiable",
 ]);
 
 function baseReport() {
@@ -31,6 +18,7 @@ function baseReport() {
     create_attempted: false,
     create_call_count: 0,
     mutation_status: "0",
+    automatic_retry: false,
     actual_issue_key: null,
     actual_issue_url: null,
     verification_status: "not_verifiable",
@@ -40,213 +28,230 @@ function baseReport() {
   };
 }
 
-function hasValidContract(contract) {
-  return CONTRACT_FIELDS.every((field) => {
-    const value = contract?.[field];
-    return typeof value === "string" && value.trim() && !BLOCKING_SENTINELS.has(value.trim());
-  });
+function normalizedText(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function hasCapability(adapter, capability) {
-  const record = adapter?.capabilities?.[capability];
-  return record?.available === true && record?.connection_verified === true;
+function isBlocking(value) {
+  return BLOCKING_SENTINELS.has(normalizedText(value).toLowerCase());
+}
+
+function hasValidContract(contract) {
+  return CONTRACT_FIELDS.every((field) => normalizedText(contract?.[field]) && !isBlocking(contract[field]));
 }
 
 function missingCreateMetadata(contract, metadata) {
   const required = [
-    ["Project", metadata?.project],
-    ["Issue Type", metadata?.issue_type],
-    ["Summary", contract?.Summary],
-    ["Assignee", metadata?.assignee],
-    ["Priority", metadata?.priority],
-    ["Product", metadata?.product],
-    ["Primary Repository", metadata?.repository],
-    ["Area", metadata?.area],
+    ["Project", metadata?.project], ["Issue Type", metadata?.issue_type], ["Summary", contract?.Summary],
+    ["Assignee", metadata?.assignee], ["Priority", metadata?.priority], ["Product", metadata?.product],
+    ["Primary Repository", metadata?.repository], ["Area", metadata?.area],
   ];
-  return required
-    .filter(([, value]) => typeof value !== "string" || !value.trim() || value.trim() === "Not Verifiable")
-    .map(([field]) => field);
+  return required.filter(([, value]) => !normalizedText(value) || isBlocking(value)).map(([field]) => field);
+}
+
+function hasCapability(state, capability) {
+  const record = state.capabilities?.[capability];
+  return record?.available === true && record?.connection_verified === true;
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+  }
+  return value ?? null;
+}
+
+function previewPayload(state, search) {
+  return canonicalize({
+    contract: Object.fromEntries(CONTRACT_FIELDS.map((field) => [field, state.contract[field]])),
+    project: state.metadata.project,
+    issue_type: state.metadata.issue_type,
+    assignee: state.metadata.assignee,
+    priority: state.metadata.priority,
+    product: state.metadata.product,
+    primary_repository: state.metadata.repository,
+    area: state.metadata.area,
+    branch: state.metadata.branch ?? null,
+    pr: state.metadata.pr ?? null,
+    current_head: state.metadata.current_head ?? null,
+    duplicate_search: search,
+    reuse_candidate: search.issue ?? null,
+    runtime: state.runtime,
+    capability_evidence: state.capabilities,
+    runtime_evidence: state.runtime_evidence,
+  });
+}
+
+function previewId(payload) {
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
 function createDescription(contract, metadata) {
   const header = [
-    `Product: ${metadata.product}`,
-    `Primary Repository: ${metadata.repository}`,
-    `Area: ${metadata.area}`,
-    `Assignee: ${metadata.assignee}`,
-    `Priority: ${metadata.priority}`,
-    `Branch: ${metadata.branch?.trim() || "Not Verifiable"}`,
-    `PR: ${metadata.pr ?? "Not created"}`,
-    `Current HEAD: ${metadata.current_head ?? "Not Verifiable"}`,
+    `Product: ${metadata.product}`, `Primary Repository: ${metadata.repository}`, `Area: ${metadata.area}`,
+    `Assignee: ${metadata.assignee}`, `Priority: ${metadata.priority}`,
+    `Branch: ${normalizedText(metadata.branch) || "Not Verifiable"}`,
+    `PR: ${metadata.pr ?? "Not created"}`, `Current HEAD: ${metadata.current_head ?? "Not Verifiable"}`,
   ];
-  const body = CONTRACT_FIELDS.map((field) => `## ${field}\n${contract[field]}`);
-  return [...header, "", ...body].join("\n");
+  return [...header, "", ...CONTRACT_FIELDS.map((field) => `## ${field}\n${contract[field]}`)].join("\n");
 }
 
 function searchRequest(contract, metadata) {
   return {
-    project: "RPL",
-    summary_keywords: contract.Summary,
-    product: metadata.product,
-    repository: metadata.repository,
-    area: metadata.area,
-    related_pr: metadata.pr ?? null,
-    branch: metadata.branch,
-    decision: metadata.decision ?? null,
-    existing_issue_key: metadata.existing_issue_key ?? null,
-    created_after: metadata.created_after ?? null,
+    project: "RPL", summary_keywords: contract.Summary, product: metadata.product,
+    repository: metadata.repository, area: metadata.area, related_pr: metadata.pr ?? null,
+    branch: metadata.branch ?? null, decision: metadata.decision ?? null,
+    existing_issue_key: metadata.existing_issue_key ?? null, created_after: metadata.created_after ?? null,
     contract_fingerprint_candidate: `${contract.Summary}|${metadata.product}|${metadata.repository}|${metadata.area}`,
   };
 }
 
-function finishWithoutCreate(report, { result, duplicate, approval, next }) {
-  report.search_result = result;
-  report.duplicate_status = duplicate;
-  report.approval_status = approval;
-  report.allowed_next_step = next;
-  return report;
+function terminal(state, patch) {
+  Object.assign(state.report, patch);
+  return { state, report: state.report, required_action: null };
 }
 
-/**
- * Runs the Jira MCP-backed Create Workflow against a runtime adapter.
- *
- * The adapter owns runtime-specific MCP/Plugin discovery and invocation. This
- * module accepts only the semantic jira.search and jira.create capabilities;
- * it never knows a runtime tool name, endpoint, credential, or SDK.
- */
-export async function runJiraTicketCreateWorkflow({ adapter, contract, metadata, approval }) {
-  const report = baseReport();
-  const runtime = adapter?.runtime ?? "unknown";
-  report.preview_evidence.push(`Runtime: ${runtime}`);
-
-  const missingMetadata = missingCreateMetadata(contract, metadata);
-  if (missingMetadata.length > 0) {
-    report.missing_metadata = missingMetadata;
-    report.verification_status = "NOT_VERIFIABLE";
-    return finishWithoutCreate(report, {
-      result: "not_performed",
-      duplicate: "not_checked",
-      approval: "blocked",
-      next: "누락 Metadata 보완",
-    });
-  }
-
-  if (!hasValidContract(contract)) {
-    return finishWithoutCreate(report, {
-      result: "not_performed",
-      duplicate: "not_checked",
-      approval: "blocked",
-      next: "Resolve the Ticket Contract validation failures",
-    });
-  }
-
-  if (metadata.project !== "RPL" || !hasCapability(adapter, "jira.search") || !hasCapability(adapter, "jira.create")) {
-    return finishWithoutCreate(report, {
-      result: "not_performed",
-      duplicate: "not_checked",
-      approval: "not_requested",
-      next: "Connect Jira MCP/Plugin or review the Ticket Contract manually",
-    });
-  }
-
-  let search;
-  report.search_attempted = true;
-  try {
-    search = await adapter.search(searchRequest(contract, metadata));
-  } catch (error) {
-    return finishWithoutCreate(report, {
-      result: "failed",
-      duplicate: "unknown",
-      approval: "not_requested",
-      next: "Resolve Jira search evidence before creating an Issue",
-    });
-  }
-
-  report.preview_evidence.push(`Search result: ${search?.status ?? "unknown"}`);
-  switch (search?.status) {
-    case "exact_duplicate":
-      report.reuse_candidate = search.issue ?? null;
-      return finishWithoutCreate(report, {
-        result: "exact_duplicate",
-        duplicate: "exact",
-        approval: "not_requested",
-        next: "Reuse the existing Jira Issue",
-      });
-    case "similar":
-      report.reuse_candidate = search.issue ?? null;
-      return finishWithoutCreate(report, {
-        result: "similar",
-        duplicate: "similar",
-        approval: "decision_required",
-        next: "Ask a human whether to reuse or create a Jira Issue",
-      });
-    case "none":
-      report.search_result = "none";
-      report.duplicate_status = "none";
-      break;
-    default:
-      return finishWithoutCreate(report, {
-        result: "unclear",
-        duplicate: "unknown",
-        approval: "not_requested",
-        next: "Resolve Jira search evidence before creating an Issue",
-      });
-  }
-
-  if (approval !== "explicit_current_preview") {
-    return finishWithoutCreate(report, {
-      result: "none",
-      duplicate: "none",
-      approval: approval === "rejected" ? "rejected" : "pending",
-      next: approval === "rejected" ? "Keep the preview without creating a Jira Issue" : "Obtain explicit approval for this Create Preview",
-    });
-  }
-
-  const request = {
-    project: "RPL",
-    issue_type: metadata.issue_type,
-    summary: contract.Summary,
-    description: createDescription(contract, metadata),
-    assignee: metadata.assignee,
-    priority: metadata.priority,
-    labels: metadata.labels ?? [],
+function createRequest(state) {
+  return {
+    project: "RPL", issue_type: state.metadata.issue_type, summary: state.contract.Summary,
+    description: createDescription(state.contract, state.metadata), assignee: state.metadata.assignee,
+    priority: state.metadata.priority, labels: state.metadata.labels ?? [],
   };
-  report.approval_status = "explicit_current_preview";
-  report.create_attempted = true;
-  report.create_call_count = 1;
-  report.write_evidence.push("Create requested exactly once after current Preview approval");
-
-  let created;
-  try {
-    created = await adapter.create(request);
-  } catch (error) {
-    report.mutation_status = "possibly_applied";
-    report.verification_status = "not_verifiable";
-    report.allowed_next_step = "Re-search Jira with the same contract evidence; automatic retry is false";
-    return report;
-  }
-
-  if (created?.kind !== "created" || !created.key || !created.url) {
-    report.mutation_status = "possibly_applied";
-    report.verification_status = "not_verifiable";
-    report.allowed_next_step = "Re-search Jira with the same contract evidence; automatic retry is false";
-    return report;
-  }
-
-  report.actual_issue_key = created.key;
-  report.actual_issue_url = created.url;
-  report.write_evidence.push(`Returned Issue Key: ${created.key}`, `Returned Issue URL: ${created.url}`);
-  if (created.project !== "RPL" || created.summary !== contract.Summary) {
-    report.mutation_status = "possibly_applied";
-    report.verification_status = "not_verifiable";
-    report.allowed_next_step = "Re-search Jira with the same contract evidence; automatic retry is false";
-    return report;
-  }
-
-  report.mutation_status = "applied";
-  report.verification_status = "verified";
-  report.allowed_next_step = "Report the verified Jira Issue and stop";
-  return report;
 }
 
-export { BLOCKING_SENTINELS, CONTRACT_FIELDS, createDescription, missingCreateMetadata, searchRequest };
+function validSiteOrigin(origin) {
+  try { return new URL(origin).origin === origin; } catch { return false; }
+}
+
+function issueUrlMatches(url, siteOrigin, key) {
+  try {
+    const parsed = new URL(url);
+    return parsed.origin === siteOrigin && parsed.pathname === `/browse/${key}`;
+  } catch {
+    return false;
+  }
+}
+
+/** Runtime-neutral first stage. It emits a semantic action; it never invokes Jira. */
+export function beginJiraTicketCreateWorkflow(input) {
+  const state = {
+    runtime: input.runtime,
+    contract: input.contract,
+    metadata: input.metadata,
+    capabilities: input.capabilities ?? {},
+    runtime_evidence: input.runtime_evidence ?? {},
+    report: baseReport(),
+  };
+  state.report.preview_evidence.push(`Runtime: ${state.runtime ?? "unknown"}`);
+  const missing = missingCreateMetadata(state.contract, state.metadata);
+  if (missing.length) return terminal(state, {
+    missing_metadata: missing, approval_status: "blocked", verification_status: "NOT_VERIFIABLE", allowed_next_step: "누락 Metadata 보완",
+  });
+  if (!hasValidContract(state.contract)) return terminal(state, {
+    approval_status: "blocked", allowed_next_step: "Resolve the Ticket Contract validation failures",
+  });
+  if (state.metadata.project !== "RPL") return terminal(state, {
+    verification_status: "not_verifiable", allowed_next_step: "Project를 RPL로 수정",
+  });
+  if (!hasCapability(state, "jira.search")) return terminal(state, {
+    allowed_next_step: "Connect Jira MCP/Plugin or review the Ticket Contract manually",
+  });
+  state.report.search_attempted = true;
+  return { state, report: state.report, required_action: { type: "jira.search_required", request: searchRequest(state.contract, state.metadata) } };
+}
+
+/** Accepts a runtime-normalized result after exactly one Jira search tool call. */
+export function applyJiraSearchResult(state, search) {
+  if (search?.tool_call_count !== 1) return terminal(state, {
+    search_result: "unclear", duplicate_status: "unknown", allowed_next_step: "Resolve Jira search evidence before creating an Issue",
+  });
+  state.search = search;
+  state.report.search_result = search.status ?? "unclear";
+  state.report.preview_evidence.push(`Search result: ${search.status ?? "unknown"}`, `Search tool calls: ${search.tool_call_count}`);
+  if (search.status === "exact_duplicate") return terminal(state, {
+    duplicate_status: "exact", reuse_candidate: search.issue ?? null, allowed_next_step: "Reuse the existing Jira Issue",
+  });
+  if (search.status === "similar") return terminal(state, {
+    duplicate_status: "similar", approval_status: "decision_required", reuse_candidate: search.issue ?? null, allowed_next_step: "Ask a human whether to reuse or create a Jira Issue",
+  });
+  if (search.status === "failed") return terminal(state, {
+    duplicate_status: "unknown", allowed_next_step: "Resolve Jira search evidence before creating an Issue",
+  });
+  if (search.status !== "none") return terminal(state, {
+    search_result: "unclear", duplicate_status: "unknown", allowed_next_step: "Resolve Jira search evidence before creating an Issue",
+  });
+  state.report.duplicate_status = "none";
+  state.preview = previewPayload(state, search);
+  state.preview_id = previewId(state.preview);
+  state.report.preview_id = state.preview_id;
+  if (!hasCapability(state, "jira.create")) return terminal(state, {
+    allowed_next_step: "Connect Jira Create capability before approving a Create Preview",
+  });
+  if (!validSiteOrigin(state.runtime_evidence.jira_site_origin)) return terminal(state, {
+    allowed_next_step: "Verify the Jira Site Origin before approving a Create Preview",
+  });
+  return { state, report: state.report, required_action: { type: "preview_required", preview_id: state.preview_id, preview: state.preview } };
+}
+
+/** Approval is valid only for the exact canonical Preview emitted above. */
+export function applyJiraPreviewApproval(state, approval) {
+  const currentPreviewId = state.search ? previewId(previewPayload(state, state.search)) : null;
+  if (approval?.status === "pending") return terminal(state, {
+    approval_status: "pending", allowed_next_step: "Obtain explicit approval for this Create Preview",
+  });
+  if (approval?.status === "rejected") return terminal(state, {
+    approval_status: "rejected", allowed_next_step: "Keep the preview without creating a Jira Issue",
+  });
+  if (approval?.status !== "approved" || !approval.preview_id || approval.preview_id !== state.preview_id || approval.preview_id !== currentPreviewId) {
+    return terminal(state, {
+      approval_status: "stale_or_missing", verification_status: "not_verifiable", allowed_next_step: "현재 Preview를 다시 승인",
+    });
+  }
+  state.report.approval_status = "approved";
+  return { state, report: state.report, required_action: { type: "jira.create_required", request: createRequest(state), preview_id: state.preview_id } };
+}
+
+/** Validates a runtime-normalized Create result without constructing a Jira URL or Key. */
+export function applyJiraCreateResult(state, created) {
+  state.report.create_attempted = true;
+  state.report.create_call_count = created?.tool_call_count ?? 0;
+  state.report.actual_issue_key = created?.key ?? null;
+  state.report.actual_issue_url = created?.url ?? null;
+  state.report.write_evidence.push(`Create tool calls: ${created?.tool_call_count ?? 0}`);
+  if (created?.key) state.report.write_evidence.push(`Returned Issue Key: ${created.key}`);
+  if (created?.url) state.report.write_evidence.push(`Returned Issue URL: ${created.url}`);
+  const keyValid = /^RPL-[1-9][0-9]*$/.test(created?.key ?? "");
+  const verified = created?.kind === "created" && created?.tool_call_count === 1 && keyValid
+    && created.project === "RPL" && created.summary === state.contract.Summary
+    && issueUrlMatches(created.url, state.runtime_evidence.jira_site_origin, created.key);
+  if (!verified) return terminal(state, {
+    mutation_status: "possibly_applied", verification_status: "not_verifiable",
+    allowed_next_step: "Re-search Jira with the same contract evidence; automatic retry is false",
+  });
+  return terminal(state, {
+    mutation_status: "applied", verification_status: "verified", allowed_next_step: "Report the verified Jira Issue and stop",
+  });
+}
+
+/** Fixture convenience only; production uses the three stages through oh-my-ai jira-ticket. */
+export async function runJiraTicketCreateWorkflow({ adapter, contract, metadata, approval }) {
+  let step = beginJiraTicketCreateWorkflow({ runtime: adapter?.runtime, contract, metadata, capabilities: adapter?.capabilities, runtime_evidence: adapter?.runtime_evidence });
+  if (step.required_action?.type !== "jira.search_required") return step.report;
+  let search;
+  try { search = await adapter.search(step.required_action.request); } catch { search = { status: "failed", tool_call_count: 1 }; }
+  step = applyJiraSearchResult(step.state, search);
+  if (step.required_action?.type !== "preview_required") return step.report;
+  const normalizedApproval = approval?.current === true
+    ? { status: "approved", preview_id: step.state.preview_id }
+    : approval === "pending" ? { status: "pending" }
+      : approval === "rejected" ? { status: "rejected" }
+        : approval;
+  step = applyJiraPreviewApproval(step.state, normalizedApproval);
+  if (step.required_action?.type !== "jira.create_required") return step.report;
+  let created;
+  try { created = await adapter.create(step.required_action.request); } catch { created = { kind: "timeout", tool_call_count: 1 }; }
+  return applyJiraCreateResult(step.state, created).report;
+}
+
+export { BLOCKING_SENTINELS, CONTRACT_FIELDS, createDescription, missingCreateMetadata, previewId, searchRequest };

@@ -30,6 +30,7 @@ for (const scenario of fixture.scenarios) {
   const adapter = createFakeJiraMcpAdapter({
     runtime: scenario.runtime ?? "codex",
     capabilities: scenario.capabilities === "ready" ? readyCapabilities : scenario.capabilities,
+    runtime_evidence: { jira_site_origin: "https://jira.example" },
     search: () => {
       searchCalls += 1;
       if (scenario.search === "throw") throw new Error("fixture search failure");
@@ -44,9 +45,11 @@ for (const scenario of fixture.scenarios) {
   });
   const runContract = scenario.contract === "invalid" ? { ...contract, Goal: "Not Verifiable" } : contract;
   const runMetadata = { ...metadata, ...(scenario.metadata_overrides ?? {}) };
-  const report = await runJiraTicketCreateWorkflow({ adapter, contract: runContract, metadata: runMetadata, approval: scenario.approval });
+  const approval = scenario.approval === "explicit_current_preview" ? { status: "approved", current: true } : scenario.approval;
+  const report = await runJiraTicketCreateWorkflow({ adapter, contract: runContract, metadata: runMetadata, approval });
   for (const field of fixture.required_report_fields) {
-    assert.deepEqual(report[field], scenario.expected[field], `${scenario.id}: ${field}`);
+    const expected = field === "automatic_retry" ? (scenario.expected[field] ?? false) : scenario.expected[field];
+    assert.deepEqual(report[field], expected, `${scenario.id}: ${field}`);
   }
   if (scenario.missing_metadata) {
     assert.deepEqual(report.missing_metadata, scenario.missing_metadata, `${scenario.id}: missing metadata`);
