@@ -11,6 +11,7 @@
 ### born-here (처음부터 이 레포에서 만든 것)
 - `skills/daily-report/` — Optional Slack/Notion 일일보고 workflow
 - `skills/execution-recovery/` — 도구·권한·샌드박스 장애의 재시도 폭주를 차단하고 안전하게 대피
+- `skills/git-work-preflight/` — Git Mutation 전 공통으로 소비하는 읽기 전용 Repository 안전 Gate
 - `skills/handoff-prompt/` — 세션 전환 시 다음 AI 세션에 붙여넣을 handoff prompt를 사람이 직접 작성하도록 안내
 - `skills/harness-automation/` — 반복 업무를 감지하고 적절한 자동화 형태로 구조화
 - `skills/jira-ticket/` — Jira 생성 전 Source·Ticket Contract·Backlog Preview를 검증하는 optional planning workflow
