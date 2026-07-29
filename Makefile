@@ -1,7 +1,7 @@
 REPO    := $(shell pwd)
 PROFILE ?=
 
-.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-jira-ticket-fixtures test-jira-work-fixtures test-git-work-preflight-fixtures test-context-checkpoint-fixtures test-v1-fixtures test-v1x-fixtures
+.PHONY: install install-shared install-completion-notify completion-notify-status test-completion-notify doctor-completion-notify uninstall-completion-notify init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-completion-notify-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-jira-ticket-fixtures test-jira-work-fixtures test-git-work-preflight-fixtures test-context-checkpoint-fixtures test-v1-fixtures test-v1x-fixtures
 
 instructions:
 	./scripts/render-instructions.sh
@@ -53,9 +53,28 @@ test-v1-fixtures: test-install-fixtures test-routing-fixtures test-work-start-fi
 test-v1x-fixtures: test-v1-fixtures test-context-checkpoint-fixtures
 
 install: install-shared
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ./scripts/completion-notify.py install --yes; else ./scripts/completion-notify.py install; fi
 
 install-shared: instructions
 	./setup.sh --install-shared
+
+install-completion-notify:
+	./scripts/completion-notify.py install --yes
+
+completion-notify-status:
+	./scripts/completion-notify.py status
+
+test-completion-notify:
+	./scripts/completion-notify.py test
+
+doctor-completion-notify:
+	./scripts/completion-notify.py doctor
+
+uninstall-completion-notify:
+	./scripts/completion-notify.py uninstall
+
+test-completion-notify-fixtures:
+	./scripts/test-completion-notify-fixtures.sh
 
 init-profile:
 	@if [ -z "$(PROFILE)" ]; then echo "usage: make init-profile PROFILE=<name>" >&2; exit 2; fi
