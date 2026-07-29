@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Delivery is detached from the agent turn.  One bounded supervisor at a time
-# owns provider children and kills their process groups on timeout.
+# Delivery is detached from the agent turn. One bounded supervisor at a time
+# owns at most two provider children (macOS plus one legacy Codex downstream)
+# and kills their process groups on timeout.
 set -u
 umask 077
 BASE="${OH_MY_AI_NOTIFY_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/oh-my-ai/notifications}"
@@ -11,10 +12,10 @@ payload="${1:-}"
 provider="${OH_MY_AI_NOTIFY_MACOS_ADAPTER:-$BASE/adapters/macos}"
 
 command -v python3 >/dev/null 2>&1 || exit 0
-python3 - "$STATE" "$payload" "$provider" "$BASE/dispatcher" "${OH_MY_AI_NOTIFY_TIMEOUT:-1}" "$LOG_DIR" "$LOG" >/dev/null 2>&1 <<'PY' &
+python3 - "$STATE" "$payload" "$provider" "$BASE/dispatcher" "${OH_MY_AI_NOTIFY_TIMEOUT:-1}" "$LOG_DIR" "$LOG" "${OH_MY_AI_NOTIFY_SUPERVISOR_PID_FILE:-}" >/dev/null 2>&1 <<'PY'
 import fcntl, json, os, signal, stat, subprocess, sys, time
 
-state_path, payload, provider, dispatcher, raw_timeout, log_dir, log_path = sys.argv[1:]
+state_path, payload, provider, dispatcher, raw_timeout, log_dir, log_path, supervisor_pid_file = sys.argv[1:]
 
 def regular_open(path, flags, mode=0o600):
     fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), mode)
@@ -50,14 +51,40 @@ lock_path = state_path + ".dispatch.lock"
 children = []
 try:
     os.makedirs(os.path.dirname(lock_path), mode=0o700, exist_ok=True)
-    lock_fd = regular_open(lock_path, os.O_RDWR | os.O_CREAT)
-    os.fchmod(lock_fd, 0o600)
-    with os.fdopen(lock_fd, "a+", encoding="utf-8") as lock:
-        os.chmod(lock_path, 0o600)
+    try:
+        lock_fd = regular_open(lock_path, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        # A worker that crashed before cleanup is recoverable only after its
+        # bounded timeout window; an active worker remains the sole owner.
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+            info = os.lstat(lock_path)
+            if stat.S_ISREG(info.st_mode) and time.time() - info.st_mtime > 15:
+                os.unlink(lock_path)
+                lock_fd = regular_open(lock_path, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+            else:
+                raise SystemExit(0)
+        except FileNotFoundError:
             raise SystemExit(0)
+    os.fchmod(lock_fd, 0o600)
+    pid = os.fork()
+    if pid:
+        os.close(lock_fd)
+        raise SystemExit(0)
+    try:
+        os.setsid()
+    except OSError:
+        pass
+    if supervisor_pid_file:
+        try:
+            fd = regular_open(supervisor_pid_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+            try:
+                os.fchmod(fd, 0o600)
+                os.write(fd, f"{os.getpid()}\n".encode())
+            finally:
+                os.close(fd)
+        except Exception:
+            pass
+    try:
         def start(argv):
             try:
                 return subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -101,6 +128,12 @@ try:
                 child.wait(timeout=0.2)
             except Exception:
                 pass
+    finally:
+        os.close(lock_fd)
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
 except Exception:
     pass
 PY

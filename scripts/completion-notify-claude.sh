@@ -8,8 +8,8 @@ import json, sys
 try: source=json.loads(sys.argv[1])
 except Exception: raise SystemExit(0)
 if not isinstance(source, dict): raise SystemExit(0)
-value=source.get("last_assistant_message", source.get("last-assistant-message", ""))
-print(json.dumps({"type":"agent-turn-complete","runtime":"claude","cwd":source.get("cwd"),"last-assistant-message":value}))
+# Claude completion events intentionally project no assistant response fields.
+print(json.dumps({"type":"agent-turn-complete","runtime":"claude","cwd":source.get("cwd")}))
 PY
 )"
 [ -n "$event" ] && "$BASE/dispatcher" "$event" || true

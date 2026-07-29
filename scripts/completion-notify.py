@@ -106,12 +106,12 @@ def fsync_directory(path: Path) -> None:
         os.close(fd)
 
 
-def atomic_write(path: Path, value: str | bytes, created_dirs: list[Path], default_mode: int = 0o600) -> None:
+def atomic_write(path: Path, value: str | bytes, created_dirs: list[Path], default_mode: int = 0o600, preserve_existing_mode: bool = False) -> None:
     """Replace one regular file without predictable temporary names."""
     reject_symlink(path, str(path))
     ensure_dir(path.parent, created_dirs)
     existing = path.stat().st_mode if path.exists() else None
-    mode = stat.S_IMODE(existing) if existing is not None else default_mode
+    destination_mode = stat.S_IMODE(existing) if preserve_existing_mode and existing is not None else default_mode
     payload = value.encode("utf-8") if isinstance(value, str) else value
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp = Path(temp_name)
@@ -121,8 +121,8 @@ def atomic_write(path: Path, value: str | bytes, created_dirs: list[Path], defau
             destination.write(payload)
             destination.flush()
             os.fsync(destination.fileno())
-        os.chmod(temp, mode)
         os.replace(temp, path)
+        os.chmod(path, destination_mode)
         fsync_directory(path.parent)
     except Exception:
         try:
@@ -206,7 +206,7 @@ def set_codex_notify(config: Path, command: list[str] | None, created_dirs: list
         raw = raw[:span[0]] + replacement + raw[span[1]:]
     elif command:
         raw = replacement + raw
-    atomic_write(config, raw, created_dirs)
+    atomic_write(config, raw, created_dirs, preserve_existing_mode=True)
     parse_toml(config)
 
 
@@ -279,7 +279,26 @@ def dispatcher_realpath(p: dict[str, Path]) -> str:
     return os.path.realpath(p["dispatcher"])
 
 
+def managed_provider_realpaths(p: dict[str, Path]) -> set[str]:
+    return {os.path.realpath(path) for path in (p["dispatcher"], p["codex"])}
+
+
+def is_managed_provider_path(p: dict[str, Path], value: str) -> bool:
+    expanded = os.path.expanduser(value)
+    absolute = os.path.abspath(os.path.normpath(expanded))
+    return absolute in {os.path.abspath(os.path.normpath(str(p["dispatcher"]))), os.path.abspath(os.path.normpath(str(p["codex"])))} or os.path.realpath(absolute) in managed_provider_realpaths(p)
+
+
+def validate_previous_codex_notify(p: dict[str, Path], previous: list[str] | None) -> None:
+    if previous is None:
+        return
+    command_array(previous, "saved previous notify")
+    if is_managed_provider_path(p, previous[0]):
+        raise ValueError("saved previous notify points to a managed provider")
+
+
 def state_from_install(p: dict[str, Path], previous: list[str] | None, hook: dict) -> dict:
+    validate_previous_codex_notify(p, previous)
     return {
         "version": STATE_VERSION,
         "adapter_version": ADAPTER_VERSION,
@@ -307,8 +326,7 @@ def read_state(p: dict[str, Path]) -> tuple[dict | None, bool]:
 
 def validate_state(p: dict[str, Path], state: dict) -> tuple[dict, bool]:
     previous = state.get("previous_codex_notify")
-    if previous is not None:
-        command_array(previous, "saved previous notify")
+    validate_previous_codex_notify(p, previous)
     if state.get("dispatcher") != str(p["dispatcher"]) or state.get("dispatcher_realpath", dispatcher_realpath(p)) != dispatcher_realpath(p):
         raise ValueError("saved dispatcher identity does not match this installation")
     if state.get("version") == 1:
@@ -409,7 +427,7 @@ def install(args: argparse.Namespace) -> int:
 
     created_dirs: list[Path] = []
     created_backups: list[Path] = []
-    managed_files = [p["codex_config"], p["claude_settings"], p["state"], p["dispatcher"], p["macos"], p["codex"], p["claude"]]
+    managed_files = [p["codex_config"], p["claude_settings"], p["state"], p["state_lock"], p["log"], p["dispatcher"], p["macos"], p["codex"], p["claude"]]
     try:
         snapshot = capture(managed_files)
         for config in (p["codex_config"], p["claude_settings"]):
@@ -417,8 +435,12 @@ def install(args: argparse.Namespace) -> int:
             if item:
                 created_backups.append(item)
         copy_runtime(p, created_dirs)
+        if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") == "after-runtime":
+            raise RuntimeError("injected transaction failure")
         if current != expected_dispatcher:
             set_codex_notify(p["codex_config"], expected_dispatcher, created_dirs)
+        if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") == "after-config":
+            raise RuntimeError("injected transaction failure")
         merge_claude(p["claude_settings"], hook, created_dirs)
         if migrate_state:
             atomic_write(p["state"], json.dumps(state, ensure_ascii=False, indent=2) + "\n", created_dirs)
@@ -426,6 +448,8 @@ def install(args: argparse.Namespace) -> int:
             raise RuntimeError("injected transaction failure")
         if test(argparse.Namespace()) != 0:
             raise RuntimeError("synthetic dispatcher test failed")
+        if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") in ("after-self-test", "after-log", "after-lock"):
+            raise RuntimeError("injected transaction failure")
     except Exception as error:
         restore(snapshot, created_dirs, created_backups)
         say(f"completion notify: failed and restored the installation transaction: {error}")
@@ -458,7 +482,13 @@ def test(_args: argparse.Namespace) -> int:
         return 1
     payload = json.dumps({"type": "agent-turn-complete", "cwd": "/safe/project"})
     try:
-        result = subprocess.run([str(p["dispatcher"]), payload], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=2)
+        with tempfile.TemporaryDirectory(prefix="oh-my-ai-completion-notify-self-test.") as root:
+            fixture = Path(root) / "notifications"
+            (fixture / "adapters").mkdir(parents=True, mode=0o700)
+            adapter = fixture / "adapters/macos"
+            atomic_write(adapter, "#!/usr/bin/env bash\nexit 0\n", [], default_mode=0o700)
+            os.chmod(adapter, 0o700)
+            result = subprocess.run([str(p["dispatcher"]), payload], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=2, env={**os.environ, "OH_MY_AI_NOTIFY_HOME": str(fixture), "XDG_STATE_HOME": str(Path(root) / "state")})
     except subprocess.TimeoutExpired:
         say("completion notify test: dispatcher timeout")
         return 1
@@ -493,6 +523,13 @@ def uninstall(_args: argparse.Namespace) -> int:
     try:
         state, present = read_state(p)
         if not present:
+            _, parsed = parse_toml(p["codex_config"])
+            notify = command_array(parsed.get("notify"), "top-level notify")
+            data, stop = load_claude(p["claude_settings"])
+            managed_hook = any(contains_managed_adapter(hook) for hook in stop)
+            runtime_artifact = any(path.exists() or path.is_symlink() for path in (p["data"], p["dispatcher"], p["macos"], p["codex"], p["claude"], p["state_lock"], p["log"]))
+            if notify == installed_dispatcher_command(p) or notify == [str(p["codex"])] or managed_hook or runtime_artifact:
+                raise ValueError("PARTIAL_INSTALLATION: managed artifacts exist without state")
             say("completion notify uninstall: already absent; nothing changed")
             return 0
         assert state is not None
