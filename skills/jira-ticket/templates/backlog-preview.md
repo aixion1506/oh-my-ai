@@ -91,9 +91,10 @@ returned-result verification gates.
 
 ## Approval Boundary
 
-Show a separate Single Ticket Create Preview only when every selected Child has
-verified sources and valid Contract Validation. No group approval authorizes
-multiple Create calls; do not create a virtual Issue Key or URL.
-
-Do not call Jira or Confluence, create an Epic, Child Ticket, Parent Link,
-Issue Key, URL, branch, code change, commit, push, or PR.
+- **Child Ticket Preview:** Each Child Ticket requires a separate Single Ticket Create Preview.
+- **Child Ticket Approval:** Each Child Ticket requires a separate explicit current-preview approval.
+- **Group Approval:** Group Approval must not authorize multiple Jira Create calls.
+- **Virtual Issue Key:** Do not create a virtual Issue Key before an actual Jira Create result.
+- **Virtual Issue URL:** Do not create a virtual Issue URL before an actual Jira Create result.
+- **External Writes:** Backlog Preview must not perform a Jira Write or a Confluence Write.
+- **Local Git Mutations:** Backlog Preview must not create a branch, change code, commit, push, or create a PR.
