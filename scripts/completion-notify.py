@@ -455,14 +455,9 @@ def install(args: argparse.Namespace) -> int:
         return 1
 
     created_dirs: list[Path] = []
-    created_backups: list[Path] = []
     managed_files = [p["codex_config"], p["claude_settings"], p["state"], p["claude_backup"], p["state_lock"], p["log"], p["dispatcher"], p["macos"], p["codex"], p["claude"]]
     try:
         snapshot = capture(managed_files)
-        for config in (p["codex_config"], p["claude_settings"]):
-            item = backup(config, created_dirs)
-            if item:
-                created_backups.append(item)
         copy_runtime(p, created_dirs)
         if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") == "after-runtime":
             raise RuntimeError("injected transaction failure")
@@ -486,7 +481,7 @@ def install(args: argparse.Namespace) -> int:
         if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") in ("after-self-test", "after-log", "after-lock"):
             raise RuntimeError("injected transaction failure")
     except Exception as error:
-        restore(snapshot, created_dirs, created_backups)
+        restore(snapshot, created_dirs, [])
         say(f"completion notify: failed and restored the installation transaction: {error}")
         return 1
     say("completion notify: installed; Codex config parsed and synthetic event dispatched")
@@ -603,6 +598,45 @@ def remove_empty_managed_dirs(p: dict[str, Path]) -> None:
             pass
 
 
+def require_safe_optional_file(path: Path, label: str) -> None:
+    """Reject links and non-regular managed artifacts before uninstall writes."""
+    if path.exists() or path.is_symlink():
+        read_regular_bytes(path, label)
+
+
+def validate_uninstall_preflight(p: dict[str, Path], state: dict) -> None:
+    """Prove every managed surface is removable before changing any surface."""
+    restore = state["claude_restore"]
+    current_claude = read_regular_bytes(p["claude_settings"], "Claude settings")
+    if current_claude is None or digest(current_claude) != restore["postimage_digest"]:
+        raise ValueError(f"Claude settings changed after install; backup retained at {restore.get('backup_path')}")
+
+    _, parsed = parse_toml(p["codex_config"])
+    if command_array(parsed.get("notify"), "top-level notify") != installed_dispatcher_command(p):
+        raise ValueError("Codex notify changed after install; state and backup retained for manual recovery")
+
+    for key, filename in {"dispatcher": "completion-notify-dispatcher.sh", "macos": "completion-notify-macos.sh", "codex": "completion-notify-codex.sh", "claude": "completion-notify-claude.sh"}.items():
+        installed = read_regular_bytes(p[key], f"managed {key} runtime")
+        if installed is None or digest(installed) != digest((REPO / "scripts" / filename).read_bytes()):
+            raise ValueError(f"managed {key} runtime is missing or changed")
+        if not os.access(p[key], os.X_OK):
+            raise ValueError(f"managed {key} runtime is not executable")
+    for key, label in (("log", "managed completion log"), ("state_lock", "dispatcher lock")):
+        require_safe_optional_file(p[key], label)
+    for directory in (p["data"], p["state_root"], p["data"] / "adapters"):
+        reject_symlink(directory, str(directory))
+        if not directory.is_dir():
+            raise ValueError(f"managed directory is not a directory: {directory}")
+
+
+def unlink_managed(path: Path, label: str) -> None:
+    if path.exists() or path.is_symlink():
+        reject_symlink(path, label)
+        if not path.is_file():
+            raise ValueError(f"{label} is not a regular file")
+        path.unlink()
+
+
 def uninstall(_args: argparse.Namespace) -> int:
     p = paths()
     try:
@@ -623,19 +657,17 @@ def uninstall(_args: argparse.Namespace) -> int:
         say(f"completion notify uninstall: state not verifiable; no settings changed: {error}")
         return 1
 
-    # Verify the user-owned Claude file before changing *any* managed artifact.
-    # A byte mismatch means a post-install user edit; preserving it wins over
-    # independent cleanup of another runtime.
+    # This is deliberately one preflight: independent restore leaves an
+    # unrecoverable mixed lifecycle when another user-owned surface diverged.
     try:
-        restore = state["claude_restore"]
-        current_claude = read_regular_bytes(p["claude_settings"], "Claude settings")
-        if current_claude is None or digest(current_claude) != restore["postimage_digest"]:
-            raise ValueError(f"Claude settings changed after install; backup retained at {restore.get('backup_path')}")
+        validate_uninstall_preflight(p, state)
     except ValueError as error:
         say(f"completion notify uninstall: state not verifiable; no settings changed: {error}")
         return 1
 
     created_dirs: list[Path] = []
+    managed_files = [p["codex_config"], p["claude_settings"], p["state"], p["claude_backup"], p["state_lock"], p["log"], p["dispatcher"], p["macos"], p["codex"], p["claude"]]
+    snapshot = capture(managed_files)
     try:
         lock_fd = acquire_dispatch_lock(p, created_dirs)
     except ActiveDispatcherLock:
@@ -645,41 +677,26 @@ def uninstall(_args: argparse.Namespace) -> int:
         say(f"completion notify uninstall: lock not verifiable; no settings changed: {error}")
         return 1
 
-    pending = False
-    outcomes: list[str] = []
     try:
-        try:
-            _, parsed = parse_toml(p["codex_config"])
-            current = command_array(parsed.get("notify"), "top-level notify")
-            if current == installed_dispatcher_command(p):
-                backup(p["codex_config"], created_dirs)
-                set_codex_notify(p["codex_config"], state["previous_codex_notify"], created_dirs)
-                outcomes.append("Codex restored")
-            else:
-                pending = True
-                outcomes.append("Codex diverged; preserved")
-        except Exception as error:
-            pending = True
-            outcomes.append(f"Codex unreadable; preserved ({error})")
-
+        set_codex_notify(p["codex_config"], state["previous_codex_notify"], created_dirs)
         restore = state["claude_restore"]
         if restore["existed"]:
             backup_bytes = read_regular_bytes(p["claude_backup"], "Claude settings preimage backup")
             assert backup_bytes is not None
             atomic_write(p["claude_settings"], backup_bytes, created_dirs, default_mode=restore["preimage_mode"])
             os.chmod(p["claude_settings"], restore["preimage_mode"])
-            outcomes.append("Claude preimage restored byte-exact")
         else:
-            p["claude_settings"].unlink()
-            outcomes.append("Claude managed settings removed")
-
-        if not pending:
-            p["claude_backup"].unlink(missing_ok=True)
-        if not pending and remove_runtime(p) and remove_held_dispatch_lock(p, lock_fd):
-            remove_empty_managed_dirs(p)
-            say("completion notify uninstall: " + "; ".join(outcomes) + "; local runtime removed")
-            return 0
-        say("completion notify uninstall: " + "; ".join(outcomes) + "; manual recovery required; state/runtime retained")
+            unlink_managed(p["claude_settings"], "Claude settings")
+        for key, label in (("claude_backup", "Claude settings preimage backup"), ("dispatcher", "dispatcher"), ("macos", "macOS adapter"), ("codex", "Codex adapter"), ("claude", "Claude adapter"), ("state", "completion notification state"), ("log", "managed completion log")):
+            unlink_managed(p[key], label)
+        if not remove_held_dispatch_lock(p, lock_fd):
+            raise ValueError("dispatcher lock changed during uninstall")
+        remove_empty_managed_dirs(p)
+        say("completion notify uninstall: Codex restored; Claude preimage restored byte-exact; local runtime removed")
+        return 0
+    except Exception as error:
+        restore(snapshot, created_dirs, [])
+        say(f"completion notify uninstall: failed and restored the uninstall transaction; manual recovery required: {error}")
         return 1
     finally:
         release_dispatch_lock(lock_fd)
