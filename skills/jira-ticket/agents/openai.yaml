@@ -1,4 +1,4 @@
 interface:
-  display_name: "Jira Ticket Preview"
-  short_description: "Jira 티켓 계약과 Backlog Preview를 안전하게 계획"
-  default_prompt: "Use $jira-ticket to draft a validated Jira ticket or backlog preview without creating issues."
+  display_name: "Jira Ticket Create"
+  short_description: "중복 검색·승인·반환 검증을 거쳐 Jira 티켓을 안전하게 생성"
+  default_prompt: "Use $jira-ticket to validate one Ticket Contract, search for duplicates, preview it, wait for current-preview approval, and create through a connected Jira MCP/Plugin only after approval."

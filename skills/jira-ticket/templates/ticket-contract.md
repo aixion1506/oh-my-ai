@@ -1,13 +1,15 @@
-# Ticket Contract Preview
+# Ticket Contract
 
-> Preview only. This is not a Jira Issue, a creation approval, a branch, or an
-> implementation command. Replace template markers only with verified sources.
+> This 14-field Contract is the source for a Jira MCP-backed Create Preview.
+> It is not an Issue, approval, branch, or implementation command until the
+> Workflow has passed its Capability, Duplicate Search, and approval gates.
 
 ## Issue Type Candidate
 
 - **Purpose:** Record a semantic candidate only: Feature, Story, Task, Bug,
   Research, or Tech Debt.
-- **Preview value:** `Issue Type Decision Required` when the type is unknown.
+- **Rule:** An unknown type is `Issue Type Decision Required`; do not invent a
+  Project-specific type.
 
 ## Summary
 
@@ -22,7 +24,7 @@
 ## Goal
 
 - **Purpose:** Define the observable outcome to achieve.
-- **Rule:** Do not describe a Jira creation as the product goal.
+- **Rule:** Do not describe Jira creation as the product goal.
 
 ## Source of Truth
 
@@ -33,7 +35,7 @@
 
 ## In Scope
 
-- **Purpose:** List work this Ticket Candidate permits.
+- **Purpose:** List work this Ticket permits.
 - **Rule:** Keep it compatible with Out of Scope and Do Not Touch.
 
 ## Out of Scope
@@ -49,20 +51,17 @@
 ## Repository
 
 - **Purpose:** Name the one repository that may later be changed.
-- **Rule:** Use `Repository Required` when unknown; do not assume from a
-  Confluence URL or conversation.
+- **Rule:** Use `Repository Required` when unknown.
 
 ## Base Branch
 
 - **Purpose:** Identify the verified branch against which future work begins.
-- **Rule:** Use `Base Branch Required` when unknown; do not inspect or create a
-  branch in this skill.
+- **Rule:** Use `Base Branch Required` when unknown.
 
 ## Expected Branch Name
 
-- **Purpose:** Show a preview candidate only.
-- **Rule:** Use `<ISSUE-KEY>` before a real Jira key exists. Never create a
-  branch, invent a key, or romanize an unstable non-ASCII slug.
+- **Purpose:** Show a branch candidate, never a branch command.
+- **Rule:** Preserve `<ISSUE-KEY>` until a returned Jira Key exists.
 
 ## Dependencies
 
@@ -81,9 +80,9 @@
 
 ## Definition of Done
 
-- **Purpose:** State the required implementation, verification, Git, PR, and
-  future Jira evidence conditions.
-- **Rule:** Do not claim this Preview has satisfied those conditions.
+- **Purpose:** State required implementation, verification, Git, PR, and Jira
+  evidence conditions.
+- **Rule:** Do not claim the Preview has satisfied those conditions.
 
 ## Contract Validation
 
@@ -96,15 +95,4 @@
 ## Blocking Items
 
 - List every unresolved source, contract conflict, or decision needed before a
-  complete Ticket Preview is possible.
-
-## External Write Status
-
-`Unavailable in this implementation phase`
-
-## Approval Boundary
-
-Show `이 구성으로 Jira에 생성할까요?` only after Contract Validation is valid.
-If approved, record approval in conversation only and report that Jira Write
-Integration is not implemented. Do not create an Issue, key, URL, link,
-comment, transition, branch, code change, commit, push, or PR.
+  Create Preview can be shown.

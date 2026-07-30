@@ -82,17 +82,19 @@ Contracts must be Valid for the whole Backlog to be Valid. If any Child is
 Invalid or contains a Blocking Sentinel, do not show the Jira creation approval
 question.
 
-## External Write Status
+## Jira MCP-backed Create boundary
 
-`Unavailable in this implementation phase`
+This Backlog Preview does not create an Epic or Child Issue as a group. Expand
+each Child into a separate valid Single Ticket Create Preview, then apply its
+own Capability, Duplicate Search, current-preview approval, Create, and
+returned-result verification gates.
 
 ## Approval Boundary
 
-Show `이 구성으로 Jira에 생성할까요?` only when every candidate has verified
-sources and valid Contract Validation. This asks only for approval of the
-proposed Ticket configuration. It does not perform Jira Write in this
-implementation phase. Approval is recorded in conversation only; do not create
-a virtual Issue Key or URL.
-
-Do not call Jira or Confluence, create an Epic, Child Ticket, Parent Link,
-Issue Key, URL, branch, code change, commit, push, or PR.
+- **Child Ticket Preview:** Each Child Ticket requires a separate Single Ticket Create Preview.
+- **Child Ticket Approval:** Each Child Ticket requires a separate explicit current-preview approval.
+- **Group Approval:** Group Approval must not authorize multiple Jira Create calls.
+- **Virtual Issue Key:** Do not create a virtual Issue Key before an actual Jira Create result.
+- **Virtual Issue URL:** Do not create a virtual Issue URL before an actual Jira Create result.
+- **External Writes:** Backlog Preview must not perform a Jira Write or a Confluence Write.
+- **Local Git Mutations:** Backlog Preview must not create a branch, change code, commit, push, or create a PR.

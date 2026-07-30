@@ -169,4 +169,18 @@ assert_consumer_parity "FX-RT-030/missing-metadata" "$missing_metadata_index" "a
 assert_consumer_parity "FX-RT-030/partial-metadata" "$partial_metadata_index" "alpha"
 echo "passed: FX-RT-030 consumer-status-parity"
 
+# The generated Skill index must route an explicit Jira Create request to the
+# optional workflow without invoking it or claiming any Jira mutation.
+real_index="$REPO/skills/skill-index.json"
+work_json="$(run_work_start_consumer "$real_index" "이 작업 Jira 티켓으로 만들어줘")"
+prompt_json="$(run_prompt_consumer "$real_index" "이 작업 Jira 티켓으로 만들어줘")"
+assert_field "FX-RT-040" "$work_json" routing_status matched
+assert_field "FX-RT-040" "$work_json" skill_candidates 1
+assert_consumer_parity "FX-RT-040" "$real_index" "이 작업 Jira 티켓으로 만들어줘"
+printf '%s' "$work_json" | node -e '
+  const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  if (input.skill_candidates?.[0]?.name !== "jira-ticket") process.exit(1);
+' || fail "FX-RT-040: expected jira-ticket candidate"
+echo "passed: FX-RT-040-explicit-jira-create-routing"
+
 echo "all routing fixtures passed"

@@ -12,6 +12,7 @@ import {
   resolveCheckpoint,
 } from "./lib/context-checkpoint-state.mjs";
 import { rememberWorkStartExecution } from "./lib/work-start-execution-state.mjs";
+import { handleJiraTicketRuntimeInput } from "./lib/jira-ticket-runtime-entry.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -22,8 +23,34 @@ if (command === "hook") {
   runContextCheckpoint(args.slice(1));
 } else if (command === "work-start") {
   runWorkStart(args.slice(1));
+} else if (command === "jira-ticket") {
+  runJiraTicket(args.slice(1));
 } else {
   usage(command ? `unknown command: ${command}` : "");
+}
+
+function runJiraTicket(args) {
+  if (args.length !== 2 || args[0] !== "--json") {
+    process.stderr.write("usage: oh-my-ai jira-ticket --json <runtime-protocol-json>\n");
+    process.exit(2);
+  }
+  let input;
+  try {
+    input = JSON.parse(args[1]);
+  } catch {
+    process.stderr.write("jira-ticket input must be valid JSON\n");
+    process.exit(2);
+  }
+  if (!['codex', 'claude'].includes(input.runtime) && input.event === 'start') {
+    process.stderr.write("jira-ticket start runtime must be codex or claude\n");
+    process.exit(2);
+  }
+  try {
+    process.stdout.write(`${JSON.stringify(handleJiraTicketRuntimeInput(input))}\n`);
+  } catch (error) {
+    process.stderr.write(`jira-ticket runtime protocol failed: ${error.message}\n`);
+    process.exit(2);
+  }
 }
 
 function runWorkStart(args) {
@@ -349,5 +376,6 @@ function usage(error) {
   process.stderr.write("usage: oh-my-ai hook <codex|claude> <event>\n");
   process.stderr.write("       oh-my-ai context-checkpoint <status|handoff-preflight|resolve> ...\n");
   process.stderr.write("       oh-my-ai work-start -- <task>\n");
+  process.stderr.write("       oh-my-ai jira-ticket --json <runtime-protocol-json>\n");
   process.exit(error ? 2 : 0);
 }
