@@ -100,6 +100,24 @@ assert_live_pids_at_most() {
   [ "$live" -le "$maximum" ] || fail "$label has $live live processes; maximum is $maximum"
 }
 
+live_pid_count() {
+  local file="$1" live=0 pid status
+  [ -f "$file" ] || { printf 0; return; }
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    status="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+    [ -z "$status" ] || [[ "$status" == *Z* ]] || live=$((live + 1))
+  done <"$file"
+  printf '%s' "$live"
+}
+
+sample_maxima() {
+  local current
+  current="$(live_pid_count "$TEMP_ROOT/supervisors")"; [ "$current" -le "$max_supervisor" ] || max_supervisor="$current"
+  current="$(live_pid_count "$TEMP_ROOT/macos-pids")"; [ "$current" -le "$max_macos" ] || max_macos="$current"
+  current="$(live_pid_count "$TEMP_ROOT/downstream-pids")"; [ "$current" -le "$max_downstream" ] || max_downstream="$current"
+}
+
 use_home boundary
 seed_settings
 before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
@@ -183,9 +201,10 @@ assert len(stop) == 2 and sum('oh-my-ai/notifications/adapters/claude' in json.d
 assert all('matcher' not in x for x in stop if 'oh-my-ai/notifications/adapters/claude' in json.dumps(x))
 for path, expected in ((h/'.codex/config.toml',0o600),(h/'.claude/settings.json',0o600),(root,0o700),(root/'state',0o700),(root/'state/completion-notify.json',0o600),(root/'dispatcher',0o700),(root/'adapters/macos',0o700),(root/'adapters/claude',0o700)):
     assert stat.S_IMODE(path.stat().st_mode) == expected, (path, oct(stat.S_IMODE(path.stat().st_mode)))
-assert list((h/'.codex').glob('config.toml.oh-my-ai-completion-notify.*.bak'))
-assert all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in (h/'.codex').glob('config.toml.oh-my-ai-completion-notify.*.bak'))
-assert all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in (h/'.claude').glob('settings.json.oh-my-ai-completion-notify.*.bak'))
+backup=root/'state/claude-settings.preimage.bak'
+assert backup.is_file() and stat.S_IMODE(backup.stat().st_mode) == 0o600
+assert not list((h/'.codex').glob('config.toml.oh-my-ai-completion-notify.*.bak'))
+assert not list((h/'.claude').glob('settings.json.oh-my-ai-completion-notify.*.bak'))
 PY
 [ ! -e "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "install self-test created a production log"
 [ ! -e "$(state_path).dispatch.lock" ] || fail "install self-test created a production lock"
@@ -317,23 +336,35 @@ export DOWN_PID_FILE="$TEMP_ROOT/downstream-pids"
 : >"$(state_path).dispatch.lock"
 touch -d '2 days ago' "$(state_path).dispatch.lock"
 gate="$TEMP_ROOT/dispatch-release"
-for _ in $(seq 1 20); do
-  (while [ ! -e "$gate" ]; do sleep 0.01; done; OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}') &
+ready_root="$TEMP_ROOT/dispatch-ready"; mkdir -p "$ready_root"
+for worker in $(seq 1 20); do
+  ( : >"$ready_root/$worker"; while [ ! -e "$gate" ]; do sleep 0.01; done; OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}') &
 done
+for _ in $(seq 1 500); do
+  [ "$(find "$ready_root" -type f | wc -l)" -eq 20 ] && break
+  sleep 0.01
+done
+[ "$(find "$ready_root" -type f | wc -l)" -eq 20 ] || fail "20-worker barrier did not reach ready state"
+ready_count="$(find "$ready_root" -type f | wc -l)"
+release_at="$(date +%s%N)"
 : >"$gate"
+max_supervisor=0; max_macos=0; max_downstream=0
+while [ "$(jobs -pr | wc -l)" -gt 0 ]; do sample_maxima; sleep 0.01; done
 wait
-sleep 0.05
-[ "$(grep -cve '^$' "$TEMP_ROOT/supervisors")" -eq 1 ] || fail "barrier race started more than one supervisor"
-assert_live_pids_at_most "$TEMP_ROOT/macos-pids" macOS-provider 1
-assert_live_pids_at_most "$TEMP_ROOT/downstream-pids" codex-downstream 1
-printf 'max_live_supervisor=1\nmax_live_macos_provider<=1\nmax_live_codex_downstream<=1\n'
+sample_maxima
+[ "$max_supervisor" -eq 1 ] || fail "measured max_live_supervisor=$max_supervisor (expected 1)"
+[ "$max_macos" -le 1 ] || fail "measured max_live_macos_provider=$max_macos (expected <=1)"
+[ "$max_downstream" -le 1 ] || fail "measured max_live_codex_downstream=$max_downstream (expected <=1)"
+printf 'ready_count=%s\nrelease_at=%s\nmax_live_supervisor=%s\nmax_live_macos_provider=%s\nmax_live_codex_downstream=%s\n' "$ready_count" "$release_at" "$max_supervisor" "$max_macos" "$max_downstream"
 for _ in $(seq 1 100); do OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}' & done
 wait
 sleep 3
 assert_dead_pids "$TEMP_ROOT/macos-pids" macOS-provider
 assert_dead_pids "$TEMP_ROOT/downstream-pids" codex-downstream
 assert_dead_pids "$TEMP_ROOT/supervisors" supervisor
-printf 'final_live_supervisor=0\nfinal_live_macos_provider=0\nfinal_live_codex_downstream=0\nrecursive_dispatcher=0\n'
+final_supervisor="$(live_pid_count "$TEMP_ROOT/supervisors")"; final_macos="$(live_pid_count "$TEMP_ROOT/macos-pids")"; final_downstream="$(live_pid_count "$TEMP_ROOT/downstream-pids")"
+[ "$final_supervisor" -eq 0 ] && [ "$final_macos" -eq 0 ] && [ "$final_downstream" -eq 0 ] || fail "child processes remained after burst"
+printf 'final_live_supervisor=%s\nfinal_live_macos_provider=%s\nfinal_live_codex_downstream=%s\nrecursive_dispatcher=0\n' "$final_supervisor" "$final_macos" "$final_downstream"
 pass "FX-CN-006 stable flock barrier race and 100-call burst cap every child"
 
 use_home lock-active
@@ -377,30 +408,38 @@ pass "FX-CN-007 fixed body contains zero assistant-summary characters"
 
 use_home privacy
 fake_mac="$TEMP_ROOT/privacy-mac"; fake_down="$TEMP_ROOT/privacy-down"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >>"$PRIVACY_MAC"\n' >"$fake_mac"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >>"$PRIVACY_DOWN"\n' >"$fake_down"
+printf '#!/usr/bin/env bash\npython3 - "$PRIVACY_MAC" "$1" <<"PY"\nimport datetime,json,os,sys\npayload=json.loads(sys.argv[2]); print(json.dumps({"invocation_id":f"mac-{os.getpid()}","pid":os.getpid(),"runtime":payload.get("runtime","codex"),"payload":payload,"timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}), file=open(sys.argv[1],"a"))\nPY\n' >"$fake_mac"
+printf '#!/usr/bin/env bash\npython3 - "$PRIVACY_DOWN" "$1" <<"PY"\nimport datetime,json,os,sys\npayload=json.loads(sys.argv[2]); print(json.dumps({"invocation_id":f"down-{os.getpid()}","pid":os.getpid(),"runtime":payload.get("runtime","codex"),"payload":payload,"timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}), file=open(sys.argv[1],"a"))\nPY\n' >"$fake_down"
 chmod 700 "$fake_mac" "$fake_down"
 seed_settings "\"$fake_down\""
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
-printf '%s' '{"cwd":"/repo/claude","last_assistant_message":"SECRET-last","last-assistant-message":"SECRET-kebab","prompt":"SECRET-prompt","transcript":"SECRET-transcript","response":"SECRET-response","output":"SECRET-output","result":"SECRET-result"}' | PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(runtime_root)/adapters/claude"
+privacy_stdout="$TEMP_ROOT/privacy.stdout"; privacy_stderr="$TEMP_ROOT/privacy.stderr"
+printf '%s' '{"cwd":"/tmp/claude","last_assistant_message":"MARKER-last","last-assistant-message":"MARKER-kebab","prompt":"MARKER-prompt","transcript":"MARKER-transcript","response":"MARKER-response","output":"MARKER-output","result":"MARKER-result"}' | PRIVACY_MAC="$TEMP_ROOT/privacy-mac.jsonl" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.jsonl" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(runtime_root)/adapters/claude" >"$privacy_stdout" 2>"$privacy_stderr"
 sleep 1
-[ -f "$TEMP_ROOT/privacy-mac.json" ] || fail "Claude event did not reach macOS provider"
-[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.json")" -eq 1 ] || fail "Claude event called macOS provider more than once"
-[ ! -e "$TEMP_ROOT/privacy-down.json" ] || fail "Claude event created a Codex downstream provider"
-python3 - "$TEMP_ROOT/privacy-mac.json" <<'PY'
+[ -f "$TEMP_ROOT/privacy-mac.jsonl" ] || fail "Claude event did not reach macOS provider"
+[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.jsonl")" -eq 1 ] || fail "Claude event called macOS provider more than once"
+[ ! -e "$TEMP_ROOT/privacy-down.jsonl" ] || fail "Claude event created a Codex downstream provider"
+python3 - "$TEMP_ROOT/privacy-mac.jsonl" <<'PY'
 import json, sys
 rows=[json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-assert rows == [{"type":"agent-turn-complete","runtime":"claude","cwd":"/repo/claude"}], rows
+assert len(rows) == 1 and rows[0]["pid"] > 0 and rows[0]["runtime"] == "claude", rows
+assert rows[0]["payload"] == {"type":"agent-turn-complete","runtime":"claude","cwd":"/tmp/claude"}, rows
 PY
-grep -Eq 'SECRET|last_assistant_message|last-assistant-message|prompt|transcript|response|output|result' "$TEMP_ROOT/privacy-mac.json" && fail "Claude assistant field leaked to macOS provider"
-PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","runtime":"unknown","cwd":"/repo/unknown"}'
+grep -R -I -E 'MARKER-|last_assistant_message|last-assistant-message|"prompt"|"transcript"|"response"|"output"|"result"' "$TEMP_ROOT/privacy" "$TEMP_ROOT/privacy-mac.jsonl" "$TEMP_ROOT/privacy.stdout" "$TEMP_ROOT/privacy.stderr" 2>/dev/null && fail "privacy marker leaked to fixture surface"
+PRIVACY_MAC="$TEMP_ROOT/privacy-mac.jsonl" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.jsonl" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","runtime":"unknown","cwd":"/repo/unknown"}'
 sleep 1
-[ ! -e "$TEMP_ROOT/privacy-down.json" ] || fail "unknown runtime created a Codex downstream provider"
-PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/codex"}'
+[ ! -e "$TEMP_ROOT/privacy-down.jsonl" ] || fail "unknown runtime created a Codex downstream provider"
+PRIVACY_MAC="$TEMP_ROOT/privacy-mac.jsonl" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.jsonl" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/codex"}'
 sleep 1
-[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.json")" -eq 3 ] || fail "native Codex event did not call macOS provider exactly once"
-[ -f "$TEMP_ROOT/privacy-down.json" ] || fail "native Codex event did not call existing downstream"
-[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-down.json")" -eq 1 ] || fail "native Codex event called downstream more than once"
+[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.jsonl")" -eq 3 ] || fail "runtime provider invocation count is not exact"
+[ -f "$TEMP_ROOT/privacy-down.jsonl" ] && [ "$(grep -cve '^$' "$TEMP_ROOT/privacy-down.jsonl")" -eq 1 ] || fail "native Codex downstream invocation/PID count is not exact"
+python3 - "$TEMP_ROOT/privacy-mac.jsonl" "$TEMP_ROOT/privacy-down.jsonl" <<'PY'
+import json,sys
+mac=[json.loads(x) for x in open(sys.argv[1]) if x.strip()]; down=[json.loads(x) for x in open(sys.argv[2]) if x.strip()]
+assert [x['runtime'] for x in mac] == ['claude','unknown','codex'], mac
+assert len({x['pid'] for x in mac}) >= 1 and down[0]['pid'] > 0 and down[0]['runtime'] == 'codex' and down[0]['payload']['cwd'] == '/repo/codex', (mac,down)
+PY
+find "$TEMP_ROOT" -type f -print0 | xargs -0 grep -I -E 'MARKER-|last_assistant_message|last-assistant-message|"prompt"|"transcript"|"response"|"output"|"result"' -l 2>/dev/null | grep -q . && fail "privacy marker leaked to a fixture regular-file surface"
 pass "FX-CN-007b Claude exact payload and unknown runtime never reach Codex downstream"
 
 for stage in after-runtime after-config after-state after-self-test after-log after-lock; do
@@ -419,7 +458,9 @@ python3 - "$CLAUDE_DIR/settings.json" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop'][-1]['hooks'][0]['command'] += '; user-change'; open(p,'w').write(json.dumps(d))
 PY
+claude_diverged_manifest="$(manifest)"
 if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "modified Claude hook was treated as removable"; fi
+[ "$claude_diverged_manifest" = "$(manifest)" ] || fail "Claude divergence changed the managed transaction manifest"
 grep -q 'user-change' "$CLAUDE_DIR/settings.json" || fail "modified Claude hook was removed"
 grep -q 'oh-my-ai/notifications/dispatcher' "$CODEX_DIR/config.toml" || fail "Claude divergence mutated Codex configuration"
 pass "FX-CN-009 Claude divergence fails closed without independent runtime mutation"
@@ -428,29 +469,46 @@ use_home codex-diverged
 seed_settings
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 printf 'notify = ["user-owned"]\n' >"$CODEX_DIR/config.toml"
+codex_diverged_manifest="$(manifest)"
 if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "Codex divergence was treated as fully removed"; fi
+[ "$codex_diverged_manifest" = "$(manifest)" ] || fail "Codex divergence partially restored another surface"
 grep -q 'user-owned' "$CODEX_DIR/config.toml" || fail "Codex divergence was overwritten"
-if grep -q 'oh-my-ai/notifications/adapters/claude' "$CLAUDE_DIR/settings.json"; then fail "exact Claude hook was not removed independently"; fi
-pass "FX-CN-010 Codex divergence preserves Codex while Claude cleans independently"
+grep -q 'oh-my-ai/notifications/adapters/claude' "$CLAUDE_DIR/settings.json" || fail "Codex divergence removed Claude state"
+python3 - "$CODEX_DIR/config.toml" "$(dispatcher)" <<'PY'
+import json,sys
+open(sys.argv[1],'w').write('notify = '+json.dumps([sys.argv[2]])+'\n')
+PY
+"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "Codex convergence did not permit atomic cleanup"
+"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "post-cleanup uninstall was not idempotent"
+pass "FX-CN-010 Codex divergence preserves the complete transaction until convergence"
 
 use_home uninstall
 seed_settings "\"$fake_downstream\", \"--keep\""
+uninstall_before="$(manifest)"
+cp "$CODEX_DIR/config.toml" "$TEMP_ROOT/uninstall-codex.before"; cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/uninstall-claude.before"
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/uninstall"}'
 sleep 1
 [ -f "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "production dispatch did not create its log"
 printf 'keep this unrelated log\n' >"$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log"
 other_log_hash="$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
+other_log_mode="$(mode "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "first uninstall failed"
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "second uninstall was not a no-op success"
+first_uninstall_manifest="$(manifest)"
+second_uninstall_output="$("$REPO/scripts/completion-notify.py" uninstall)" || fail "second uninstall was not a no-op success"
+[ "$first_uninstall_manifest" = "$(manifest)" ] || fail "second uninstall changed the filesystem manifest"
+case "$second_uninstall_output" in *"already absent"*) ;; *) fail "second uninstall did not report already absent";; esac
 python3 - "$CODEX_DIR/config.toml" <<'PY'
 import sys, tomllib
 assert tomllib.loads(open(sys.argv[1]).read())['notify'][0].endswith('downstream-fast')
 PY
-[ ! -e "$(state_path)" ] && [ ! -e "$(dispatcher)" ] && [ ! -e "$(state_path).dispatch.lock" ] || fail "successful uninstall retained state, runtime, or lock"
+[ ! -e "$(state_path)" ] && [ ! -e "$(dispatcher)" ] && [ ! -e "$(runtime_root)/adapters/macos" ] && [ ! -e "$(runtime_root)/adapters/codex" ] && [ ! -e "$(runtime_root)/adapters/claude" ] && [ ! -e "$(state_path).dispatch.lock" ] && [ ! -e "$(state_path | sed 's/completion-notify.json$/claude-settings.preimage.bak/')" ] || fail "successful uninstall retained state, adapter, backup, or lock"
 [ ! -e "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "successful uninstall retained managed log"
 [ "$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")" = "$other_log_hash" ] || fail "uninstall changed an unrelated oh-my-ai log"
-pass "FX-CN-011 production log/lock cleanup, unrelated-log preservation, and repeat uninstall no-op"
+[ "$(mode "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")" = "$other_log_mode" ] || fail "uninstall changed unrelated log mode"
+cmp -s "$TEMP_ROOT/uninstall-codex.before" "$CODEX_DIR/config.toml" || fail "Codex config was not byte-exact after uninstall"
+cmp -s "$TEMP_ROOT/uninstall-claude.before" "$CLAUDE_DIR/settings.json" || fail "Claude settings were not byte-exact after uninstall"
+pass "FX-CN-011 dispatch/uninstall full manifest removes only managed artifacts and repeats as a no-op"
 
 use_home managed-without-state
 seed_settings "\"$XDG_DATA_HOME/oh-my-ai/notifications/dispatcher\""
