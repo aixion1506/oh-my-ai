@@ -186,7 +186,8 @@ call:
 { "status": "approved", "preview_id": "<current SHA-256 preview_id>" }
 ```
 
-The `preview_id` is SHA-256 over canonical Contract, Create Metadata, duplicate
+The `preview_id` is SHA-256 over canonical Contract, Create Metadata (including
+Technical Labels), duplicate
 search/reuse result, Branch/PR/HEAD, runtime, and capability evidence. A
 Contract, Metadata, or search-result change invalidates earlier approval.
 Do not infer approval from general positivity, a previous session, Contract
@@ -209,7 +210,11 @@ Allowed Next Step: 누락 Metadata 보완
 
 Branch and Current HEAD remain Description evidence, not minimum Create input.
 
-After approval, call `jira.create` exactly once with Project `RPL`, Issue Type,
+After approval, derive the Create request only from that approved canonical
+Preview Snapshot; do not reread mutable Contract or Metadata. Technical Labels
+are canonicalized as a trimmed, deduplicated, lexically sorted set, so their
+order is not meaningful but an addition, removal, or value change is stale.
+Call `jira.create` exactly once with Project `RPL`, Issue Type,
 Summary, Description, Assignee, Priority, and needed technical Labels. No
 custom field is created. Description starts with:
 

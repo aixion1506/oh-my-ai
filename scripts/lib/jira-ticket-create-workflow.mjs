@@ -62,6 +62,14 @@ function canonicalize(value) {
   return value ?? null;
 }
 
+// Jira labels are a set for this workflow: whitespace and duplicates have no
+// semantic meaning, and order must not invalidate an otherwise current Preview.
+function canonicalLabels(labels) {
+  if (!Array.isArray(labels)) return [];
+  return [...new Set(labels.filter((label) => typeof label === "string").map((label) => label.trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
 function previewPayload(state, search) {
   return canonicalize({
     contract: Object.fromEntries(CONTRACT_FIELDS.map((field) => [field, state.contract[field]])),
@@ -69,6 +77,7 @@ function previewPayload(state, search) {
     issue_type: state.metadata.issue_type,
     assignee: state.metadata.assignee,
     priority: state.metadata.priority,
+    labels: canonicalLabels(state.metadata.labels),
     product: state.metadata.product,
     primary_repository: state.metadata.repository,
     area: state.metadata.area,
@@ -87,14 +96,14 @@ function previewId(payload) {
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
-function createDescription(contract, metadata) {
+function createDescription(snapshot) {
   const header = [
-    `Product: ${metadata.product}`, `Primary Repository: ${metadata.repository}`, `Area: ${metadata.area}`,
-    `Assignee: ${metadata.assignee}`, `Priority: ${metadata.priority}`,
-    `Branch: ${normalizedText(metadata.branch) || "Not Verifiable"}`,
-    `PR: ${metadata.pr ?? "Not created"}`, `Current HEAD: ${metadata.current_head ?? "Not Verifiable"}`,
+    `Product: ${snapshot.product}`, `Primary Repository: ${snapshot.primary_repository}`, `Area: ${snapshot.area}`,
+    `Assignee: ${snapshot.assignee}`, `Priority: ${snapshot.priority}`,
+    `Branch: ${normalizedText(snapshot.branch) || "Not Verifiable"}`,
+    `PR: ${snapshot.pr ?? "Not created"}`, `Current HEAD: ${snapshot.current_head ?? "Not Verifiable"}`,
   ];
-  return [...header, "", ...CONTRACT_FIELDS.map((field) => `## ${field}\n${contract[field]}`)].join("\n");
+  return [...header, "", ...CONTRACT_FIELDS.map((field) => `## ${field}\n${snapshot.contract[field]}`)].join("\n");
 }
 
 function searchRequest(contract, metadata) {
@@ -112,11 +121,11 @@ function terminal(state, patch) {
   return { state, report: state.report, required_action: null };
 }
 
-function createRequest(state) {
+function createRequest(snapshot) {
   return {
-    project: "RPL", issue_type: state.metadata.issue_type, summary: state.contract.Summary,
-    description: createDescription(state.contract, state.metadata), assignee: state.metadata.assignee,
-    priority: state.metadata.priority, labels: state.metadata.labels ?? [],
+    project: snapshot.project, issue_type: snapshot.issue_type, summary: snapshot.contract.Summary,
+    description: createDescription(snapshot), assignee: snapshot.assignee,
+    priority: snapshot.priority, labels: snapshot.labels,
   };
 }
 
@@ -196,7 +205,8 @@ export function applyJiraSearchResult(state, search) {
 
 /** Approval is valid only for the exact canonical Preview emitted above. */
 export function applyJiraPreviewApproval(state, approval) {
-  const currentPreviewId = state.search ? previewId(previewPayload(state, state.search)) : null;
+  const currentSnapshot = state.search ? previewPayload(state, state.search) : null;
+  const currentPreviewId = currentSnapshot ? previewId(currentSnapshot) : null;
   if (approval?.status === "pending") return terminal(state, {
     approval_status: "pending", allowed_next_step: "Obtain explicit approval for this Create Preview",
   });
@@ -209,7 +219,9 @@ export function applyJiraPreviewApproval(state, approval) {
     });
   }
   state.report.approval_status = "approved";
-  return { state, report: state.report, required_action: { type: "jira.create_required", request: createRequest(state), preview_id: state.preview_id } };
+  // The request is derived exclusively from the approved immutable snapshot,
+  // never from mutable state.contract or state.metadata after approval.
+  return { state, report: state.report, required_action: { type: "jira.create_required", request: createRequest(state.preview), preview_id: state.preview_id } };
 }
 
 /** Validates a runtime-normalized Create result without constructing a Jira URL or Key. */
@@ -254,4 +266,4 @@ export async function runJiraTicketCreateWorkflow({ adapter, contract, metadata,
   return applyJiraCreateResult(step.state, created).report;
 }
 
-export { BLOCKING_SENTINELS, CONTRACT_FIELDS, createDescription, missingCreateMetadata, previewId, searchRequest };
+export { BLOCKING_SENTINELS, CONTRACT_FIELDS, canonicalLabels, createDescription, missingCreateMetadata, previewId, searchRequest };
