@@ -27,7 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python >= 3.11 is required
     tomllib = None
 
 REPO = Path(__file__).resolve().parent.parent
-STATE_VERSION = 2
+STATE_VERSION = 3
 ADAPTER_VERSION = 2
 
 
@@ -41,6 +41,7 @@ def paths() -> dict[str, Path]:
         "data": data,
         "state_root": state_root,
         "state": state_root / "completion-notify.json",
+        "claude_backup": state_root / "claude-settings.preimage.bak",
         "state_lock": state_root / "completion-notify.json.dispatch.lock",
         "dispatcher": data / "dispatcher",
         "macos": data / "adapters/macos",
@@ -298,7 +299,23 @@ def validate_previous_codex_notify(p: dict[str, Path], previous: list[str] | Non
         raise ValueError("saved previous notify points to a managed provider")
 
 
-def state_from_install(p: dict[str, Path], previous: list[str] | None, hook: dict) -> dict:
+def digest(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def claude_restore_metadata(p: dict[str, Path], original: bytes | None, mode: int | None, postimage: bytes) -> dict:
+    if original is not None:
+        atomic_write(p["claude_backup"], original, [], default_mode=0o600)
+    return {
+        "existed": original is not None,
+        "backup_path": str(p["claude_backup"]) if original is not None else None,
+        "preimage_digest": digest(original) if original is not None else None,
+        "preimage_mode": mode,
+        "postimage_digest": digest(postimage),
+    }
+
+
+def state_from_install(p: dict[str, Path], previous: list[str] | None, hook: dict, restore: dict | None = None) -> dict:
     validate_previous_codex_notify(p, previous)
     return {
         "version": STATE_VERSION,
@@ -309,6 +326,7 @@ def state_from_install(p: dict[str, Path], previous: list[str] | None, hook: dic
         "previous_codex_notify": previous,
         "claude_hook": hook,
         "claude_hook_fingerprint": fingerprint(hook),
+        "claude_restore": restore,
     }
 
 
@@ -326,18 +344,28 @@ def read_state(p: dict[str, Path]) -> tuple[dict | None, bool]:
 
 
 def validate_state(p: dict[str, Path], state: dict) -> tuple[dict, bool]:
+    if stat.S_IMODE(p["state"].stat().st_mode) != 0o600:
+        raise ValueError("completion notification state mode is not private")
     previous = state.get("previous_codex_notify")
     validate_previous_codex_notify(p, previous)
     if state.get("dispatcher") != str(p["dispatcher"]) or state.get("dispatcher_realpath", dispatcher_realpath(p)) != dispatcher_realpath(p):
         raise ValueError("saved dispatcher identity does not match this installation")
-    if state.get("version") == 1:
-        hook = managed_claude_hook(p["claude"])
-        return state_from_install(p, previous, hook), True
     hook = state.get("claude_hook")
     if state.get("version") != STATE_VERSION or state.get("adapter_version") != ADAPTER_VERSION:
         raise ValueError("completion notification state version is unsupported")
     if not isinstance(hook, dict) or state.get("claude_hook_fingerprint") != fingerprint(hook):
         raise ValueError("saved Claude hook identity is invalid")
+    restore = state.get("claude_restore")
+    if not isinstance(restore, dict) or not isinstance(restore.get("existed"), bool) or not isinstance(restore.get("postimage_digest"), str):
+        raise ValueError("saved Claude restore boundary is invalid")
+    if restore["existed"]:
+        if restore.get("backup_path") != str(p["claude_backup"]) or not isinstance(restore.get("preimage_digest"), str) or not isinstance(restore.get("preimage_mode"), int):
+            raise ValueError("saved Claude preimage ownership is invalid")
+        backup_bytes = read_regular_bytes(p["claude_backup"], "Claude settings preimage backup")
+        if backup_bytes is None or stat.S_IMODE(p["claude_backup"].stat().st_mode) != 0o600 or digest(backup_bytes) != restore["preimage_digest"]:
+            raise ValueError("saved Claude preimage backup is invalid")
+    elif restore.get("backup_path") is not None or restore.get("preimage_digest") is not None or restore.get("preimage_mode") is not None:
+        raise ValueError("saved absent Claude settings boundary is invalid")
     return state, False
 
 
@@ -428,7 +456,7 @@ def install(args: argparse.Namespace) -> int:
 
     created_dirs: list[Path] = []
     created_backups: list[Path] = []
-    managed_files = [p["codex_config"], p["claude_settings"], p["state"], p["state_lock"], p["log"], p["dispatcher"], p["macos"], p["codex"], p["claude"]]
+    managed_files = [p["codex_config"], p["claude_settings"], p["state"], p["claude_backup"], p["state_lock"], p["log"], p["dispatcher"], p["macos"], p["codex"], p["claude"]]
     try:
         snapshot = capture(managed_files)
         for config in (p["codex_config"], p["claude_settings"]):
@@ -442,8 +470,14 @@ def install(args: argparse.Namespace) -> int:
             set_codex_notify(p["codex_config"], expected_dispatcher, created_dirs)
         if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") == "after-config":
             raise RuntimeError("injected transaction failure")
+        original_claude = read_regular_bytes(p["claude_settings"], "Claude settings")
+        original_claude_mode = stat.S_IMODE(p["claude_settings"].stat().st_mode) if original_claude is not None else None
         merge_claude(p["claude_settings"], hook, created_dirs)
         if migrate_state:
+            state["claude_restore"] = claude_restore_metadata(
+                p, original_claude, original_claude_mode,
+                read_regular_bytes(p["claude_settings"], "managed Claude settings") or b"",
+            )
             atomic_write(p["state"], json.dumps(state, ensure_ascii=False, indent=2) + "\n", created_dirs)
         if os.environ.get("OH_MY_AI_NOTIFY_TEST_FAIL_AT") == "after-state":
             raise RuntimeError("injected transaction failure")
@@ -589,6 +623,18 @@ def uninstall(_args: argparse.Namespace) -> int:
         say(f"completion notify uninstall: state not verifiable; no settings changed: {error}")
         return 1
 
+    # Verify the user-owned Claude file before changing *any* managed artifact.
+    # A byte mismatch means a post-install user edit; preserving it wins over
+    # independent cleanup of another runtime.
+    try:
+        restore = state["claude_restore"]
+        current_claude = read_regular_bytes(p["claude_settings"], "Claude settings")
+        if current_claude is None or digest(current_claude) != restore["postimage_digest"]:
+            raise ValueError(f"Claude settings changed after install; backup retained at {restore.get('backup_path')}")
+    except ValueError as error:
+        say(f"completion notify uninstall: state not verifiable; no settings changed: {error}")
+        return 1
+
     created_dirs: list[Path] = []
     try:
         lock_fd = acquire_dispatch_lock(p, created_dirs)
@@ -616,27 +662,19 @@ def uninstall(_args: argparse.Namespace) -> int:
             pending = True
             outcomes.append(f"Codex unreadable; preserved ({error})")
 
-        try:
-            data, stop = load_claude(p["claude_settings"])
-            expected = state["claude_hook"]
-            exact = [hook for hook in stop if hook == expected]
-            similar = [hook for hook in stop if contains_managed_adapter(hook) and hook != expected]
-            if len(exact) > 1:
-                raise ValueError("duplicate exact managed Claude hooks")
-            if similar:
-                pending = True
-                outcomes.append("Claude hook diverged; preserved")
-            elif exact:
-                backup(p["claude_settings"], created_dirs)
-                data["hooks"]["Stop"] = [hook for hook in stop if hook != expected]
-                atomic_write(p["claude_settings"], json.dumps(data, ensure_ascii=False, indent=2) + "\n", created_dirs, preserve_existing_mode=True)
-                outcomes.append("Claude managed hook removed")
-            else:
-                outcomes.append("Claude managed hook already absent")
-        except Exception as error:
-            pending = True
-            outcomes.append(f"Claude unreadable; preserved ({error})")
+        restore = state["claude_restore"]
+        if restore["existed"]:
+            backup_bytes = read_regular_bytes(p["claude_backup"], "Claude settings preimage backup")
+            assert backup_bytes is not None
+            atomic_write(p["claude_settings"], backup_bytes, created_dirs, default_mode=restore["preimage_mode"])
+            os.chmod(p["claude_settings"], restore["preimage_mode"])
+            outcomes.append("Claude preimage restored byte-exact")
+        else:
+            p["claude_settings"].unlink()
+            outcomes.append("Claude managed settings removed")
 
+        if not pending:
+            p["claude_backup"].unlink(missing_ok=True)
         if not pending and remove_runtime(p) and remove_held_dispatch_lock(p, lock_fd):
             remove_empty_managed_dirs(p)
             say("completion notify uninstall: " + "; ".join(outcomes) + "; local runtime removed")
