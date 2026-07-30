@@ -363,7 +363,7 @@
           ],
           "source": {
             "type": "manual_fixture",
-            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json claude-adapter"
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json FX-JT-MCP-CLAUDE-SEARCH"
           },
           "evidence_refs": [
             "FX-JT-MCP-CLAUDE-SEARCH"
@@ -392,7 +392,7 @@
           ],
           "source": {
             "type": "manual_fixture",
-            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json claude-adapter"
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json FX-JT-MCP-CLAUDE-CREATE"
           },
           "evidence_refs": [
             "FX-JT-MCP-CLAUDE-CREATE"
@@ -785,7 +785,7 @@
           ],
           "source": {
             "type": "manual_fixture",
-            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json codex-adapter"
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json FX-JT-MCP-CODEX-SEARCH"
           },
           "evidence_refs": [
             "FX-JT-MCP-CODEX-SEARCH"
@@ -814,7 +814,7 @@
           ],
           "source": {
             "type": "manual_fixture",
-            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json codex-adapter"
+            "reference": "fixtures/jira-ticket/mcp-create-workflow-fixtures.json FX-JT-MCP-CODEX-CREATE"
           },
           "evidence_refs": [
             "FX-JT-MCP-CODEX-CREATE"

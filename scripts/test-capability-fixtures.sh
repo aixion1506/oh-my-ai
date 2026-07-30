@@ -90,14 +90,18 @@ fx_cap_003() {
   node - "$REAL_FILE" <<'NODE' || fail "FX-CAP-003: Jira MCP semantic capabilities are incomplete"
 const fs = require("fs");
 const doc = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const workflow = JSON.parse(fs.readFileSync("fixtures/jira-ticket/mcp-create-workflow-fixtures.json", "utf8"));
 function bindingIsExact(runtime, id, capability) {
   const label = runtime.toUpperCase();
   const verb = id.split(".")[1].toUpperCase();
+  const fixtureId = `FX-JT-MCP-${label}-${verb}`;
   return capability?.declared_status === "conditional"
     && capability.required_for_advertised_support === false
     && capability.conditions?.[0] === `A ${runtime === "codex" ? "Codex" : "Claude"} Jira MCP/Plugin exposes a semantic Jira ${id.split(".")[1]} operation in the active runtime`
-    && capability.source?.reference === `fixtures/jira-ticket/mcp-create-workflow-fixtures.json ${runtime}-adapter`
-    && capability.evidence_refs?.[0] === `FX-JT-MCP-${label}-${verb}`;
+    && capability.source?.reference === `fixtures/jira-ticket/mcp-create-workflow-fixtures.json ${fixtureId}`
+    && Array.isArray(capability.evidence_refs) && capability.evidence_refs.length === 1
+    && capability.evidence_refs[0] === fixtureId
+    && workflow.scenarios.some((scenario) => scenario.id === fixtureId && scenario.runtime === runtime);
 }
 for (const runtime of ["codex", "claude"]) {
   for (const id of ["jira.search", "jira.create"]) {

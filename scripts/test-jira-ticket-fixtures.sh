@@ -92,7 +92,7 @@ const legacy = new Set([
   "structural-improvement", "multi-repository-specification", "before-approval",
   "connector-unavailable", "ambiguous-intent", "canonical-source-conflict",
   "repository-required", "blank-or-whitespace-field", "scope-conflict",
-  "secret-bearing-input", "before-jira-key",
+  "secret-bearing-input", "before-jira-key", "telemetry-fail-open",
 ]);
 if (preview.contract !== "jira-ticket-pure-contract-preview-v1" || preview.network || preview.external_write || preview.artifact_write) process.exit(1);
 const previewIds = new Set(preview.scenarios.map((scenario) => scenario.id));
@@ -105,7 +105,8 @@ const required = [
   "preview-write-evidence-separated", "description-header", "fourteen-field-contract-regression",
   "project-missing", "issue-type-missing", "assignee-missing", "priority-missing",
   "product-repository-area-missing", "metadata-whitespace", "metadata-not-verifiable",
-  "all-required-metadata-normal",
+  "all-required-metadata-normal", "FX-JT-MCP-CODEX-SEARCH", "FX-JT-MCP-CODEX-CREATE",
+  "FX-JT-MCP-CLAUDE-SEARCH", "FX-JT-MCP-CLAUDE-CREATE",
 ];
 const fields = [
   "search_attempted", "search_result", "duplicate_status", "approval_status", "create_attempted",

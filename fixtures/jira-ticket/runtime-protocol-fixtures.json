@@ -4,5 +4,12 @@
   "identity_cases": ["abc-key", "url-key-mismatch", "invalid-key", "invalid-host", "key-only", "url-only", "summary-mismatch", "project-mismatch", "verified"],
   "minor_cases": ["search-only-exact", "search-only-similar", "wrong-project", "metadata-sentinel-case-insensitive"],
   "search_only": true,
-  "required_action_types": ["jira.search_required", "preview_required", "jira.create_required"]
+  "required_action_types": ["jira.search_required", "preview_required", "jira.create_required"],
+  "normalization_cases": [
+    { "id": "codex-search-normalization", "runtime": "codex", "operation": "search", "raw": { "toolCallCount": 1, "outcome": "none" }, "expected": { "status": "none", "tool_call_count": 1 } },
+    { "id": "codex-create-normalization", "runtime": "codex", "operation": "create", "raw": { "toolCallCount": 1, "issue": { "key": "RPL-1", "url": "https://jira.example/browse/RPL-1", "project": "RPL", "summary": "Runtime protocol ticket" } }, "expected": { "kind": "created", "tool_call_count": 1, "key": "RPL-1", "url": "https://jira.example/browse/RPL-1", "project": "RPL", "summary": "Runtime protocol ticket" } },
+    { "id": "claude-search-normalization", "runtime": "claude", "operation": "search", "raw": { "calls": [{}], "result": { "status": "none" } }, "expected": { "status": "none", "tool_call_count": 1 } },
+    { "id": "claude-create-normalization", "runtime": "claude", "operation": "create", "raw": { "calls": [{}], "createdIssue": { "key": "RPL-1", "url": "https://jira.example/browse/RPL-1", "project": "RPL", "summary": "Runtime protocol ticket" } }, "expected": { "kind": "created", "tool_call_count": 1, "key": "RPL-1", "url": "https://jira.example/browse/RPL-1", "project": "RPL", "summary": "Runtime protocol ticket" } },
+    { "id": "runtime-required-field-missing-fails-closed", "runtime": "claude", "operation": "create", "raw": { "calls": [{}], "createdIssue": { "key": "RPL-1" } }, "expected": { "kind": "invalid", "tool_call_count": 0 } }
+  ]
 }

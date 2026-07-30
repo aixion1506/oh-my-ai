@@ -9,6 +9,7 @@ import {
   applyJiraSearchResult,
   beginJiraTicketCreateWorkflow,
 } from "./lib/jira-ticket-create-workflow.mjs";
+import { normalizeJiraRuntimeResult } from "./lib/jira-ticket-runtime-normalization.mjs";
 
 const fixture = JSON.parse(fs.readFileSync(new URL("../fixtures/jira-ticket/runtime-protocol-fixtures.json", import.meta.url), "utf8"));
 const contract = Object.fromEntries(CONTRACT_FIELDS.map((field) => [field, field === "Summary" ? "Runtime protocol ticket" : `Verified ${field}`]));
@@ -54,11 +55,15 @@ const approvalA = { status: "approved", preview_id: step.state.preview_id };
 for (const [name, mutate] of [
   ["contract-stale", (state) => { state.contract.Summary = "Contract B"; }],
   ["metadata-stale", (state) => { state.metadata.priority = "Low"; }],
+  ["labels-replaced-stale", (state) => { state.metadata.labels = ["b"]; }],
+  ["labels-added-stale", (state) => { state.metadata.labels = ["a", "b"]; }],
+  ["labels-removed-stale", (state) => { state.metadata.labels = []; }],
   ["search-stale", (state) => { state.search = { status: "none", tool_call_count: 1, observed_at: "changed" }; }],
 ]) {
-  step = previewState();
+  step = previewState(name.startsWith("labels-") ? { metadata: { labels: ["a"] } } : {});
+  const currentApproval = { status: "approved", preview_id: step.state.preview_id };
   mutate(step.state);
-  const result = applyJiraPreviewApproval(step.state, approvalA);
+  const result = applyJiraPreviewApproval(step.state, currentApproval);
   assert.equal(result.required_action, null, name);
   assert.equal(result.report.create_attempted, false, name);
   assert.equal(result.report.create_call_count, 0, name);
@@ -67,6 +72,32 @@ for (const [name, mutate] of [
   assert.equal(result.report.allowed_next_step, "현재 Preview를 다시 승인", name);
   console.log(`passed: ${name}`);
 }
+const labelOrderA = previewState({ metadata: { labels: ["b", "a", "a", " "] } });
+const labelOrderB = previewState({ metadata: { labels: ["a", "b"] } });
+assert.equal(labelOrderA.state.preview_id, labelOrderB.state.preview_id, "label order and duplicates are canonicalized");
+approved = applyJiraPreviewApproval(labelOrderA.state, { status: "approved", preview_id: labelOrderA.state.preview_id });
+assert.deepEqual(approved.required_action.request.labels, ["a", "b"]);
+const currentLabelCreate = applyJiraCreateResult(approved.state, { kind: "created", tool_call_count: 1, key: "RPL-30", url: "https://jira.example/browse/RPL-30", project: "RPL", summary: contract.Summary });
+assert.equal(currentLabelCreate.report.create_call_count, 1, "current label snapshot permits exactly one Create result");
+console.log("passed: labels-canonical-order-and-current-snapshot");
+
+const differentContract = previewState({ contract: { Summary: "Different contract" } });
+step = previewState();
+let staleReuse = applyJiraPreviewApproval(step.state, { status: "approved", preview_id: differentContract.state.preview_id });
+assert.equal(staleReuse.required_action, null);
+const differentMetadata = previewState({ metadata: { priority: "Low" } });
+staleReuse = applyJiraPreviewApproval(step.state, { status: "approved", preview_id: differentMetadata.state.preview_id });
+assert.equal(staleReuse.required_action, null);
+console.log("passed: other-contract-and-metadata-approval-reuse-blocked");
+
+step = previewState({ metadata: { labels: ["a"] } });
+approved = applyJiraPreviewApproval(step.state, { status: "approved", preview_id: step.state.preview_id });
+const approvedRequest = structuredClone(approved.required_action.request);
+step.state.metadata.labels = ["b"];
+step.state.metadata.priority = "Low";
+step.state.contract.Summary = "Mutable replacement";
+assert.deepEqual(approved.required_action.request, approvedRequest, "approved request is detached from mutable state");
+console.log("passed: approved-request-is-snapshot-derived");
 for (const approval of [{ status: "approved" }, { status: "approved", preview_id: "wrong" }]) {
   step = previewState();
   const result = applyJiraPreviewApproval(step.state, approval);
@@ -130,4 +161,16 @@ console.log("passed: verified-issue-identity");
 
 assert.deepEqual(fixture.required_action_types, ["jira.search_required", "preview_required", "jira.create_required"]);
 assert.deepEqual(fixture.minor_cases, ["search-only-exact", "search-only-similar", "wrong-project", "metadata-sentinel-case-insensitive"]);
+for (const scenario of fixture.normalization_cases) {
+  const actual = normalizeJiraRuntimeResult(scenario.runtime, scenario.operation, scenario.raw);
+  assert.deepEqual(actual, scenario.expected, scenario.id);
+  console.log(`passed: ${scenario.id}`);
+}
+const codexSearch = normalizeJiraRuntimeResult("codex", "search", { toolCallCount: 1, outcome: "none" });
+const claudeSearch = normalizeJiraRuntimeResult("claude", "search", { calls: [{}], result: { status: "none" } });
+assert.deepEqual(codexSearch, claudeSearch, "search results share Core semantic schema");
+const issue = { key: "RPL-1", url: "https://jira.example/browse/RPL-1", project: "RPL", summary: contract.Summary };
+const codexCreate = normalizeJiraRuntimeResult("codex", "create", { toolCallCount: 1, issue });
+const claudeCreate = normalizeJiraRuntimeResult("claude", "create", { calls: [{}], createdIssue: issue });
+assert.deepEqual(codexCreate, claudeCreate, "create results share Core semantic schema");
 console.log("jira-ticket runtime protocol fixtures passed");
