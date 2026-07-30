@@ -17,9 +17,11 @@ Center.
 - `FX-CN-007`: the rendered body is fixed text and contains no assistant summary.
 - `FX-CN-007b`: Claude is macOS-only; native Codex alone retains the existing
   downstream provider contract.
-- `FX-CN-008` through `012`: transaction rollback, independent runtime cleanup,
-  production log/lock cleanup, exact Claude identity, repeat uninstall, and
-  missing-state fail-closed paths.
+- `FX-CN-008` through `012`: transaction rollback; an all-surface uninstall
+  preflight with zero mutation on divergence or an active lock; all-or-nothing
+  settings, runtime, backup, production log, and lock cleanup; exact Claude
+  identity; repeat `already absent` uninstall; and missing-state fail-closed
+  paths.
 - `FX-CN-013`: Claude Stop payload maps structurally without reading a user HOME.
 
 The fixture exports disposable HOME/XDG/Codex/Claude paths before invoking any

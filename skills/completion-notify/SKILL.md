@@ -42,12 +42,13 @@ asynchronous downstream provider; Claude events are macOS-only. Claude's
 forwards assistant-response text downstream. Failure restores the complete
 installation transaction.
 
-`uninstall` restores a Runtime only when its exact stored managed identity still
-matches. A user-modified Runtime is preserved and reported for manual recovery;
-other exact managed Runtimes are cleaned independently. It refuses to mutate
-while a dispatcher holds its stable lock, then removes the managed log, lock,
-state, and empty dedicated directories. Provider delivery is bounded, fail-open,
-and cannot accumulate children indefinitely.
+`uninstall` preflights Codex, Claude, state, runtime, backup, log, and lock before
+it mutates any surface. A divergence or active dispatcher lock preserves the
+complete installation with zero mutation for manual recovery. When every
+surface is safe, one all-or-nothing transaction restores both Runtime settings
+and removes all managed artifacts; a repeated uninstall is an `already absent`
+no-op. Provider delivery is bounded, fail-open, and cannot accumulate children
+indefinitely.
 
 Manual E2E is separate: use an explicitly approved macOS configuration or a
 disposable HOME. Fixtures never call Notification Center or modify real user

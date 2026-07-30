@@ -484,26 +484,35 @@ pass "FX-CN-010 Codex divergence preserves the complete transaction until conver
 
 use_home uninstall
 seed_settings "\"$fake_downstream\", \"--keep\""
-uninstall_before="$(manifest)"
+mkdir -p "$XDG_DATA_HOME/oh-my-ai" "$XDG_STATE_HOME/oh-my-ai"
+chmod 700 "$XDG_DATA_HOME" "$XDG_DATA_HOME/oh-my-ai" "$XDG_STATE_HOME" "$XDG_STATE_HOME/oh-my-ai"
+printf 'keep this unrelated log\n' >"$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log"
+cp "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log" "$TEMP_ROOT/uninstall-other-log.before"
+other_log_hash="$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
+other_log_mode="$(mode "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 cp "$CODEX_DIR/config.toml" "$TEMP_ROOT/uninstall-codex.before"; cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/uninstall-claude.before"
+pre_install_manifest="$(manifest)"
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/uninstall"}'
 sleep 1
 [ -f "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "production dispatch did not create its log"
-printf 'keep this unrelated log\n' >"$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log"
-other_log_hash="$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
-other_log_mode="$(mode "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "first uninstall failed"
-first_uninstall_manifest="$(manifest)"
+if ! [ "$pre_install_manifest" = "$(manifest)" ]; then
+  first_uninstall_manifest="$(manifest)"
+  diff -u <(printf '%s\n' "$pre_install_manifest") <(printf '%s\n' "$first_uninstall_manifest") >&2 || true
+  fail "first uninstall did not restore the pre-install filesystem manifest"
+fi
+before_second_uninstall="$(manifest)"
 second_uninstall_output="$("$REPO/scripts/completion-notify.py" uninstall)" || fail "second uninstall was not a no-op success"
-[ "$first_uninstall_manifest" = "$(manifest)" ] || fail "second uninstall changed the filesystem manifest"
+[ "$before_second_uninstall" = "$(manifest)" ] || fail "second uninstall changed the filesystem manifest"
 case "$second_uninstall_output" in *"already absent"*) ;; *) fail "second uninstall did not report already absent";; esac
 python3 - "$CODEX_DIR/config.toml" <<'PY'
 import sys, tomllib
 assert tomllib.loads(open(sys.argv[1]).read())['notify'][0].endswith('downstream-fast')
 PY
-[ ! -e "$(state_path)" ] && [ ! -e "$(dispatcher)" ] && [ ! -e "$(runtime_root)/adapters/macos" ] && [ ! -e "$(runtime_root)/adapters/codex" ] && [ ! -e "$(runtime_root)/adapters/claude" ] && [ ! -e "$(state_path).dispatch.lock" ] && [ ! -e "$(state_path | sed 's/completion-notify.json$/claude-settings.preimage.bak/')" ] || fail "successful uninstall retained state, adapter, backup, or lock"
+[ ! -e "$(runtime_root)" ] && [ ! -e "$(state_path)" ] && [ ! -e "$(dispatcher)" ] && [ ! -e "$(runtime_root)/adapters/macos" ] && [ ! -e "$(runtime_root)/adapters/codex" ] && [ ! -e "$(runtime_root)/adapters/claude" ] && [ ! -e "$(state_path).dispatch.lock" ] && [ ! -e "$(state_path | sed 's/completion-notify.json$/claude-settings.preimage.bak/')" ] || fail "successful uninstall retained state, runtime, adapter, backup, or lock"
 [ ! -e "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "successful uninstall retained managed log"
+cmp -s "$TEMP_ROOT/uninstall-other-log.before" "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log" || fail "uninstall changed unrelated log bytes"
 [ "$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")" = "$other_log_hash" ] || fail "uninstall changed an unrelated oh-my-ai log"
 [ "$(mode "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")" = "$other_log_mode" ] || fail "uninstall changed unrelated log mode"
 cmp -s "$TEMP_ROOT/uninstall-codex.before" "$CODEX_DIR/config.toml" || fail "Codex config was not byte-exact after uninstall"
