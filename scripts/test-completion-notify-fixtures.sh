@@ -176,7 +176,8 @@ root=h/'data/oh-my-ai/notifications'; state=json.loads((root/'state/completion-n
 config=tomllib.loads((h/'.codex/config.toml').read_text())
 assert config['notify'] == [str(root/'dispatcher')]
 assert state['previous_codex_notify'] == [provider, '--keep']
-assert state['version'] == 2 and state['adapter_version'] == 2
+assert state['version'] == 3 and state['adapter_version'] == 2
+assert state['claude_restore']['existed'] is True
 settings=json.loads((h/'.claude/settings.json').read_text()); stop=settings['hooks']['Stop']
 assert len(stop) == 2 and sum('oh-my-ai/notifications/adapters/claude' in json.dumps(x) for x in stop) == 1
 assert all('matcher' not in x for x in stop if 'oh-my-ai/notifications/adapters/claude' in json.dumps(x))
@@ -225,21 +226,20 @@ pass "FX-CN-004b existing direct and alias self-reference state is NOT VERIFIABL
 
 use_home modes
 seed_settings
+cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/modes-claude.before"
 chmod 644 "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
+chmod 644 "$TEMP_ROOT/modes-claude.before"
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 [ "$(mode "$CODEX_DIR/config.toml")" = 644 ] || fail "existing 0644 Codex config mode was not preserved"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 644 ] || fail "existing 0644 Claude settings mode was not preserved"
 [ "$(mode "$(state_path)")" = 600 ] || fail "new state mode is not private"
-python3 - "$(state_path)" <<'PY'
-import json, sys
-p=sys.argv[1]; d=json.load(open(p)); d['version']=1; d.pop('adapter_version',None); d.pop('claude_hook',None); d.pop('claude_hook_fingerprint',None); open(p,'w').write(json.dumps(d))
-PY
 chmod 644 "$(state_path)"
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
-[ "$(mode "$(state_path)")" = 600 ] || fail "v1 state migration did not strengthen mode"
+if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "state mode weakening was accepted"; fi
+chmod 600 "$(state_path)"
 "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "0644 mode uninstall failed"
 [ "$(mode "$CODEX_DIR/config.toml")" = 644 ] || fail "uninstall changed existing Codex config mode"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 644 ] || fail "uninstall changed existing Claude settings mode"
+cmp -s "$TEMP_ROOT/modes-claude.before" "$CLAUDE_DIR/settings.json" || fail "0644 Claude settings bytes were not restored"
 
 use_home new-modes
 rm -f "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
@@ -247,6 +247,39 @@ rm -f "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
 [ "$(mode "$CODEX_DIR/config.toml")" = 600 ] || fail "new Codex config mode is not private"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 600 ] || fail "new Claude settings mode is not private"
 pass "FX-CN-004c both user configs preserve modes while new configs and state stay private"
+
+for shape in compact pretty; do
+  use_home "claude-preimage-$shape"
+  seed_settings
+  if [ "$shape" = pretty ]; then
+    printf '{\n  "hooks": {\n    "Stop": [\n      {"hooks": [{"type": "command", "command": "keep-me"}]}\n    ]\n  }\n}\n' >"$CLAUDE_DIR/settings.json"
+  fi
+  chmod 600 "$CLAUDE_DIR/settings.json"
+  cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/$shape.before"
+  "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "$shape Claude uninstall failed"
+  cmp -s "$TEMP_ROOT/$shape.before" "$CLAUDE_DIR/settings.json" || fail "$shape Claude preimage bytes changed"
+  [ "$(mode "$CLAUDE_DIR/settings.json")" = 600 ] || fail "$shape Claude preimage mode changed"
+done
+use_home claude-absent
+seed_settings
+rm "$CLAUDE_DIR/settings.json"
+"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+[ -f "$CLAUDE_DIR/settings.json" ] || fail "missing Claude settings was not created"
+"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "missing Claude settings uninstall failed"
+[ ! -e "$CLAUDE_DIR/settings.json" ] || fail "originally absent Claude settings was retained"
+pass "FX-CN-004d Claude preimage bytes/modes and absent-file boundary restore exactly"
+
+use_home claude-user-change
+seed_settings
+"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+printf '{"hooks":{"Stop":[]},"user_change":"preserve"}\n' >"$CLAUDE_DIR/settings.json"
+chmod 644 "$CLAUDE_DIR/settings.json"
+changed_manifest="$(manifest)"
+if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "changed Claude settings uninstall succeeded"; fi
+[ "$changed_manifest" = "$(manifest)" ] || fail "changed Claude settings uninstall mutated another artifact"
+[ -f "$(state_path | sed 's/completion-notify.json$/claude-settings.preimage.bak/')" ] || fail "changed Claude settings removed managed backup"
+pass "FX-CN-004e changed Claude settings fail closed with zero mutation and retained backup"
 
 runtime="$(runtime_root)"
 ln -s "$runtime/dispatcher" "$runtime/self-dispatcher"
@@ -283,23 +316,25 @@ export DOWN_PID_FILE="$TEMP_ROOT/downstream-pids"
 # replacement, decides which concurrent dispatcher becomes supervisor.
 : >"$(state_path).dispatch.lock"
 touch -d '2 days ago' "$(state_path).dispatch.lock"
-started="$(date +%s%N)"
-OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}'
-elapsed=$(( $(date +%s%N) - started ))
-[ "$elapsed" -lt 1000000000 ] || fail "dispatcher blocked on a hanging provider"
-for _ in $(seq 1 100); do
-  OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}' &
+gate="$TEMP_ROOT/dispatch-release"
+for _ in $(seq 1 20); do
+  (while [ ! -e "$gate" ]; do sleep 0.01; done; OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}') &
 done
+: >"$gate"
 wait
 sleep 0.05
-[ "$(grep -cve '^$' "$TEMP_ROOT/supervisors")" -eq 1 ] || fail "100-call burst started more than one concurrent supervisor"
+[ "$(grep -cve '^$' "$TEMP_ROOT/supervisors")" -eq 1 ] || fail "barrier race started more than one supervisor"
 assert_live_pids_at_most "$TEMP_ROOT/macos-pids" macOS-provider 1
 assert_live_pids_at_most "$TEMP_ROOT/downstream-pids" codex-downstream 1
+printf 'max_live_supervisor=1\nmax_live_macos_provider<=1\nmax_live_codex_downstream<=1\n'
+for _ in $(seq 1 100); do OH_MY_AI_NOTIFY_TIMEOUT=1 OH_MY_AI_NOTIFY_MACOS_ADAPTER="$mac_hang" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo"}' & done
+wait
 sleep 3
 assert_dead_pids "$TEMP_ROOT/macos-pids" macOS-provider
 assert_dead_pids "$TEMP_ROOT/downstream-pids" codex-downstream
 assert_dead_pids "$TEMP_ROOT/supervisors" supervisor
-pass "FX-CN-006 stable flock reuses an old unlocked lock and caps 100 concurrent dispatches"
+printf 'final_live_supervisor=0\nfinal_live_macos_provider=0\nfinal_live_codex_downstream=0\nrecursive_dispatcher=0\n'
+pass "FX-CN-006 stable flock barrier race and 100-call burst cap every child"
 
 use_home lock-active
 seed_settings
@@ -347,19 +382,26 @@ printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >>"$PRIVACY_DOWN"\n' >"$fake_d
 chmod 700 "$fake_mac" "$fake_down"
 seed_settings "\"$fake_down\""
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
-printf '%s' '{"cwd":"/repo/claude","last_assistant_message":"SECRET"}' | PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(runtime_root)/adapters/claude"
+printf '%s' '{"cwd":"/repo/claude","last_assistant_message":"SECRET-last","last-assistant-message":"SECRET-kebab","prompt":"SECRET-prompt","transcript":"SECRET-transcript","response":"SECRET-response","output":"SECRET-output","result":"SECRET-result"}' | PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(runtime_root)/adapters/claude"
 sleep 1
 [ -f "$TEMP_ROOT/privacy-mac.json" ] || fail "Claude event did not reach macOS provider"
 [ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.json")" -eq 1 ] || fail "Claude event called macOS provider more than once"
 [ ! -e "$TEMP_ROOT/privacy-down.json" ] || fail "Claude event created a Codex downstream provider"
-grep -q SECRET "$TEMP_ROOT/privacy-mac.json" && fail "Claude assistant content leaked to macOS provider"
-grep -Eq 'last_assistant_message|last-assistant-message|prompt|transcript|response|output' "$TEMP_ROOT/privacy-mac.json" && fail "Claude assistant field leaked to macOS provider"
+python3 - "$TEMP_ROOT/privacy-mac.json" <<'PY'
+import json, sys
+rows=[json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+assert rows == [{"type":"agent-turn-complete","runtime":"claude","cwd":"/repo/claude"}], rows
+PY
+grep -Eq 'SECRET|last_assistant_message|last-assistant-message|prompt|transcript|response|output|result' "$TEMP_ROOT/privacy-mac.json" && fail "Claude assistant field leaked to macOS provider"
+PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","runtime":"unknown","cwd":"/repo/unknown"}'
+sleep 1
+[ ! -e "$TEMP_ROOT/privacy-down.json" ] || fail "unknown runtime created a Codex downstream provider"
 PRIVACY_MAC="$TEMP_ROOT/privacy-mac.json" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.json" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/codex"}'
 sleep 1
-[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.json")" -eq 2 ] || fail "native Codex event did not call macOS provider exactly once"
+[ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.json")" -eq 3 ] || fail "native Codex event did not call macOS provider exactly once"
 [ -f "$TEMP_ROOT/privacy-down.json" ] || fail "native Codex event did not call existing downstream"
 [ "$(grep -cve '^$' "$TEMP_ROOT/privacy-down.json")" -eq 1 ] || fail "native Codex event called downstream more than once"
-pass "FX-CN-007b Claude is macOS-only while native Codex retains its downstream contract"
+pass "FX-CN-007b Claude exact payload and unknown runtime never reach Codex downstream"
 
 for stage in after-runtime after-config after-state after-self-test after-log after-lock; do
   use_home "rollback-$stage"
@@ -379,11 +421,8 @@ p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop'][-1]['hooks'][0]['command
 PY
 if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "modified Claude hook was treated as removable"; fi
 grep -q 'user-change' "$CLAUDE_DIR/settings.json" || fail "modified Claude hook was removed"
-python3 - "$CODEX_DIR/config.toml" <<'PY'
-import sys, tomllib
-assert 'notify' not in tomllib.loads(open(sys.argv[1]).read())
-PY
-pass "FX-CN-009 Claude divergence is preserved while Codex restores independently"
+grep -q 'oh-my-ai/notifications/dispatcher' "$CODEX_DIR/config.toml" || fail "Claude divergence mutated Codex configuration"
+pass "FX-CN-009 Claude divergence fails closed without independent runtime mutation"
 
 use_home codex-diverged
 seed_settings
