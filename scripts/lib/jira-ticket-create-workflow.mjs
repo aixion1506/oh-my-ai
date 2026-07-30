@@ -207,21 +207,27 @@ export function applyJiraSearchResult(state, search) {
 export function applyJiraPreviewApproval(state, approval) {
   const currentSnapshot = state.search ? previewPayload(state, state.search) : null;
   const currentPreviewId = currentSnapshot ? previewId(currentSnapshot) : null;
+  // state.preview is untrusted protocol state after it leaves the renderer.
+  // It proves that the displayed Preview is still current, but never supplies
+  // data for the Jira mutation request.
+  const storedPreviewId = state.preview ? previewId(state.preview) : null;
   if (approval?.status === "pending") return terminal(state, {
     approval_status: "pending", allowed_next_step: "Obtain explicit approval for this Create Preview",
   });
   if (approval?.status === "rejected") return terminal(state, {
     approval_status: "rejected", allowed_next_step: "Keep the preview without creating a Jira Issue",
   });
-  if (approval?.status !== "approved" || !approval.preview_id || approval.preview_id !== state.preview_id || approval.preview_id !== currentPreviewId) {
+  if (approval?.status !== "approved" || !approval.preview_id || approval.preview_id !== state.preview_id || approval.preview_id !== currentPreviewId || storedPreviewId !== currentPreviewId) {
     return terminal(state, {
       approval_status: "stale_or_missing", verification_status: "not_verifiable", allowed_next_step: "현재 Preview를 다시 승인",
     });
   }
   state.report.approval_status = "approved";
-  // The request is derived exclusively from the approved immutable snapshot,
-  // never from mutable state.contract or state.metadata after approval.
-  return { state, report: state.report, required_action: { type: "jira.create_required", request: createRequest(state.preview), preview_id: state.preview_id } };
+  // Snapshot through the JSON protocol boundary before emitting the mutation.
+  // The Create request and later result verification share this exact snapshot;
+  // neither rereads mutable state.preview, state.contract, or state.metadata.
+  state.approved_snapshot = JSON.parse(JSON.stringify(currentSnapshot));
+  return { state, report: state.report, required_action: { type: "jira.create_required", request: createRequest(state.approved_snapshot), preview_id: state.preview_id } };
 }
 
 /** Validates a runtime-normalized Create result without constructing a Jira URL or Key. */
@@ -235,7 +241,7 @@ export function applyJiraCreateResult(state, created) {
   if (created?.url) state.report.write_evidence.push(`Returned Issue URL: ${created.url}`);
   const keyValid = /^RPL-[1-9][0-9]*$/.test(created?.key ?? "");
   const verified = created?.kind === "created" && created?.tool_call_count === 1 && keyValid
-    && created.project === "RPL" && created.summary === state.contract.Summary
+    && created.project === "RPL" && created.summary === state.approved_snapshot?.contract?.Summary
     && issueUrlMatches(created.url, state.runtime_evidence.jira_site_origin, created.key);
   if (!verified) return terminal(state, {
     mutation_status: "possibly_applied", verification_status: "not_verifiable",

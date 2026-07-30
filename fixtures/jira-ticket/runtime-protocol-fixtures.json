@@ -3,6 +3,19 @@
   "approval_cases": ["approved-current", "contract-stale", "metadata-stale", "search-stale", "missing-preview-id", "wrong-preview-id"],
   "identity_cases": ["abc-key", "url-key-mismatch", "invalid-key", "invalid-host", "key-only", "url-only", "summary-mismatch", "project-mismatch", "verified"],
   "minor_cases": ["search-only-exact", "search-only-similar", "wrong-project", "metadata-sentinel-case-insensitive"],
+  "approval_snapshot_request": {
+    "id": "approved-current-snapshot-create-request",
+    "metadata": { "labels": ["b", "a", "a", " "] },
+    "expected": {
+      "project": "RPL",
+      "issue_type": "Task",
+      "summary": "Runtime protocol ticket",
+      "description": "Product: Dev Harness\nPrimary Repository: aixion1506/oh-my-ai\nArea: Jira Workflow\nAssignee: Park\nPriority: High\nBranch: feat/RPL-21\nPR: #75\nCurrent HEAD: 4a6f967\n\n## Summary\nRuntime protocol ticket\n## Context\nVerified Context\n## Goal\nVerified Goal\n## Source of Truth\nVerified Source of Truth\n## In Scope\nVerified In Scope\n## Out of Scope\nVerified Out of Scope\n## Acceptance Criteria\nVerified Acceptance Criteria\n## Repository\nVerified Repository\n## Base Branch\nVerified Base Branch\n## Expected Branch Name\nVerified Expected Branch Name\n## Dependencies\nVerified Dependencies\n## Verification\nVerified Verification\n## Do Not Touch\nVerified Do Not Touch\n## Definition of Done\nVerified Definition of Done",
+      "assignee": "Park",
+      "priority": "High",
+      "labels": ["a", "b"]
+    }
+  },
   "search_only": true,
   "required_action_types": ["jira.search_required", "preview_required", "jira.create_required"],
   "normalization_cases": [

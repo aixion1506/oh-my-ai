@@ -26,6 +26,30 @@ function previewState(overrides = {}) {
   return step;
 }
 
+function createRequestFromSnapshot(snapshot) {
+  const description = [
+    `Product: ${snapshot.product}`,
+    `Primary Repository: ${snapshot.primary_repository}`,
+    `Area: ${snapshot.area}`,
+    `Assignee: ${snapshot.assignee}`,
+    `Priority: ${snapshot.priority}`,
+    `Branch: ${snapshot.branch}`,
+    `PR: ${snapshot.pr}`,
+    `Current HEAD: ${snapshot.current_head}`,
+    "",
+    ...CONTRACT_FIELDS.map((field) => `## ${field}\n${snapshot.contract[field]}`),
+  ].join("\n");
+  return {
+    project: snapshot.project,
+    issue_type: snapshot.issue_type,
+    summary: snapshot.contract.Summary,
+    description,
+    assignee: snapshot.assignee,
+    priority: snapshot.priority,
+    labels: snapshot.labels,
+  };
+}
+
 function invokeRuntime(input) {
   const cli = spawnSync(process.execPath, ["scripts/oh-my-ai.mjs", "jira-ticket", "--json", JSON.stringify(input)], { encoding: "utf8" });
   assert.equal(cli.status, 0, cli.stderr);
@@ -51,6 +75,18 @@ assert.deepEqual(approved.required_action.request, {
 for (const field of CONTRACT_FIELDS) assert.ok(approved.required_action.request.description.includes(`## ${field}\n`), `description missing ${field}`);
 console.log("passed: approved-current-preview-emits-one-create-action");
 
+const snapshotRequestFixture = fixture.approval_snapshot_request;
+step = previewState({ metadata: snapshotRequestFixture.metadata });
+const currentSnapshot = structuredClone(step.state.preview);
+const jsonRoundTrippedState = JSON.parse(JSON.stringify(step.state));
+approved = applyJiraPreviewApproval(jsonRoundTrippedState, { status: "approved", preview_id: jsonRoundTrippedState.preview_id });
+assert.deepEqual(approved.required_action?.request, snapshotRequestFixture.expected, snapshotRequestFixture.id);
+assert.deepEqual(approved.required_action?.request, createRequestFromSnapshot(currentSnapshot), `${snapshotRequestFixture.id}: request uses the exact current Snapshot`);
+const currentSnapshotCreate = applyJiraCreateResult(approved.state, { kind: "created", tool_call_count: 1, key: "RPL-31", url: "https://jira.example/browse/RPL-31", project: "RPL", summary: currentSnapshot.contract.Summary });
+assert.equal(currentSnapshotCreate.report.create_call_count, 1, `${snapshotRequestFixture.id}: exactly one Create result`);
+assert.equal(currentSnapshotCreate.report.verification_status, "verified", `${snapshotRequestFixture.id}: current snapshot remains verifiable`);
+console.log(`passed: ${snapshotRequestFixture.id}`);
+
 const approvalA = { status: "approved", preview_id: step.state.preview_id };
 for (const [name, mutate] of [
   ["contract-stale", (state) => { state.contract.Summary = "Contract B"; }],
@@ -63,6 +99,23 @@ for (const [name, mutate] of [
   step = previewState(name.startsWith("labels-") ? { metadata: { labels: ["a"] } } : {});
   const currentApproval = { status: "approved", preview_id: step.state.preview_id };
   mutate(step.state);
+  const result = applyJiraPreviewApproval(step.state, currentApproval);
+  assert.equal(result.required_action, null, name);
+  assert.equal(result.report.create_attempted, false, name);
+  assert.equal(result.report.create_call_count, 0, name);
+  assert.equal(result.report.mutation_status, "0", name);
+  assert.equal(result.report.verification_status, "not_verifiable", name);
+  assert.equal(result.report.allowed_next_step, "현재 Preview를 다시 승인", name);
+  console.log(`passed: ${name}`);
+}
+for (const [name, mutate] of [
+  ["preview-contract-only-tamper", (preview) => { preview.contract.Summary = "Tampered summary"; }],
+  ["preview-labels-only-tamper", (preview) => { preview.labels = ["b"]; }],
+  ["preview-contract-and-labels-tamper", (preview) => { preview.contract.Summary = "Tampered summary"; preview.labels = ["b"]; }],
+]) {
+  step = previewState({ metadata: { labels: ["a"] } });
+  const currentApproval = { status: "approved", preview_id: step.state.preview_id };
+  mutate(step.state.preview);
   const result = applyJiraPreviewApproval(step.state, currentApproval);
   assert.equal(result.required_action, null, name);
   assert.equal(result.report.create_attempted, false, name);
@@ -160,6 +213,7 @@ assert.equal(verified.report.verification_status, "verified");
 console.log("passed: verified-issue-identity");
 
 assert.deepEqual(fixture.required_action_types, ["jira.search_required", "preview_required", "jira.create_required"]);
+assert.equal(snapshotRequestFixture.id, "approved-current-snapshot-create-request");
 assert.deepEqual(fixture.minor_cases, ["search-only-exact", "search-only-similar", "wrong-project", "metadata-sentinel-case-insensitive"]);
 for (const scenario of fixture.normalization_cases) {
   const actual = normalizeJiraRuntimeResult(scenario.runtime, scenario.operation, scenario.raw);
