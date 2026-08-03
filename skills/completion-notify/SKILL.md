@@ -21,6 +21,14 @@ make doctor-completion-notify
 make uninstall-completion-notify
 ```
 
+These commands require Python 3.11+ (`tomllib`) and fail fast with exit 2 and
+zero mutation otherwise. If the default `python3` is older, pass a 3.11+
+interpreter explicitly:
+
+```bash
+make install-completion-notify PYTHON=/opt/homebrew/bin/python3.11 ENABLE_COMPLETION_NOTIFY=1
+```
+
 `make install` and `make install-completion-notify` ask for consent only on an
 interactive TTY. Non-interactive installation requires
 `ENABLE_COMPLETION_NOTIFY=1` and is safely skipped outside macOS.

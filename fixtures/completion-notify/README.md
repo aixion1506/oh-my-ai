@@ -23,6 +23,14 @@ Center.
   identity; repeat `already absent` uninstall; and missing-state fail-closed
   paths.
 - `FX-CN-013`: Claude Stop payload maps structurally without reading a user HOME.
+- `FX-CN-014`: a discoverable Python 3.11+ interpreter completes the full
+  install/status/test/uninstall/repeat-uninstall happy path through the
+  Makefile's `PYTHON` override; otherwise falls back to a static check that
+  the preflight gate exists in source.
+- `FX-CN-015`: a pre-3.11 default `/usr/bin/python3` fails every managed
+  command (`install`, `status`, `test`, `doctor`, `uninstall`) closed with
+  exit 2, one shared message, and zero mutation of the disposable HOME;
+  otherwise falls back to the same static check.
 
 The fixture exports disposable HOME/XDG/Codex/Claude paths before invoking any
 runtime, rejects a non-disposable test environment, leaves no source-tree

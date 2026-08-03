@@ -65,6 +65,24 @@ make doctor-strict
 
 ### Optional local completion notifications (macOS first)
 
+The completion notification management commands (`install-completion-notify`,
+`completion-notify-status`, `test-completion-notify`, `doctor-completion-notify`,
+`uninstall-completion-notify`, and `install`'s optional opt-in) require
+**Python 3.11 or newer** (they parse Codex's TOML config with the standard
+library `tomllib`). macOS ships `/usr/bin/python3` at 3.9 by default, which
+fails a startup check with a clear error instead of installing/removing
+anything. If your default `python3` is older than 3.11, install one and pass
+it explicitly via the Makefile's `PYTHON` override — no other oh-my-ai command
+requires this:
+
+```bash
+brew install python@3.11
+
+make install-completion-notify \
+  PYTHON="$(brew --prefix python@3.11)/bin/python3.11" \
+  ENABLE_COMPLETION_NOTIFY=1
+```
+
 `make install` preserves its existing shared-install behavior and, on an
 interactive terminal, asks before adding this optional integration:
 
