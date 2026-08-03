@@ -99,6 +99,9 @@ make install-completion-notify ENABLE_COMPLETION_NOTIFY=1
 
 Running `make install-completion-notify` without `ENABLE_COMPLETION_NOTIFY=1` exits
 with code 2 and performs no completion-notification mutation.
+Internally, direct installer invocation is non-interactive and requires both
+`ENABLE_COMPLETION_NOTIFY=1` and `--yes`; the Make targets pass `--yes` only
+after their literal environment-value gate succeeds.
 
 If your default `python3` is older than 3.11, use a 3.11+ interpreter explicitly for
 the completion-notification install path:

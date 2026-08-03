@@ -61,13 +61,13 @@ test-v1-fixtures: test-install-fixtures test-completion-notify-fixtures test-rou
 test-v1x-fixtures: test-v1-fixtures test-context-checkpoint-fixtures
 
 install: install-shared
-	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then $(PYTHON) ./scripts/completion-notify.py install --yes; else printf '%s\n' 'completion notify: skipped (explicit ENABLE_COMPLETION_NOTIFY=1 required)'; fi
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ENABLE_COMPLETION_NOTIFY=1 $(PYTHON) ./scripts/completion-notify.py install --yes; else printf '%s\n' 'completion notify: skipped (explicit ENABLE_COMPLETION_NOTIFY=1 required)'; fi
 
 install-shared: instructions
 	./setup.sh --install-shared
 
 install-completion-notify:
-	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then $(PYTHON) ./scripts/completion-notify.py install --yes; else printf '%s\n' 'completion notify: consent required; rerun with ENABLE_COMPLETION_NOTIFY=1' >&2; exit 2; fi
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ENABLE_COMPLETION_NOTIFY=1 $(PYTHON) ./scripts/completion-notify.py install --yes; else printf '%s\n' 'completion notify: consent required; rerun with ENABLE_COMPLETION_NOTIFY=1' >&2; exit 2; fi
 
 completion-notify-status:
 	$(PYTHON) ./scripts/completion-notify.py status

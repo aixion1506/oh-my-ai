@@ -33,7 +33,8 @@ Completion installation is authorized only by the literal
 `ENABLE_COMPLETION_NOTIFY=1`. Plain `make install` skips completion installation
 without prompting; `make install-completion-notify` without that literal exits
 with a consent-required message and changes nothing. Preview, status, doctor,
-and uninstall do not require the variable.
+and uninstall do not require the variable. Direct installer invocation is
+non-interactive and requires both `ENABLE_COMPLETION_NOTIFY=1` and `--yes`.
 
 The notification means **Codex Turn 완료** or **Claude Turn 완료**, never an
 overall task success. It shows only the normalized working-directory basename

@@ -5,9 +5,10 @@ HOME, XDG data/state directories, fake Codex/Claude configuration, and fake
 providers. It never reads or modifies a real user configuration or Notification
 Center.
 
-- `FX-CN-001`: only literal `ENABLE_COMPLETION_NOTIFY=1` permits installation;
-  plain `make install` skips completion without prompting or creating artifacts,
-  and every unapproved standalone value rejects without mutation.
+- `FX-CN-001`: only literal `ENABLE_COMPLETION_NOTIFY=1` plus `--yes` permits
+  direct installation; a real pseudo-TTY proves empty Enter and no-input cases
+  exit 2 without prompts or mutation. Plain `make install` skips completion
+  without creating artifacts, and every unapproved standalone value rejects.
 - `FX-CN-001` through `003`: explicit opt-in, unsupported-platform, malformed
   TOML, duplicate notify, config symlink, and predictable-temp attacks fail
   without a mutation.

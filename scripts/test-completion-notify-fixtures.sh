@@ -140,10 +140,144 @@ sample_maxima() {
   current="$(live_pid_count "$TEMP_ROOT/downstream-pids")"; [ "$current" -le "$max_downstream" ] || max_downstream="$current"
 }
 
+install_approved() {
+  ENABLE_COMPLETION_NOTIFY=1 "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes "$@"
+}
+
+run_direct_tty_install() {
+  local input_mode="$1" output_path="$2"
+  shift 2
+  "$PYTHON_BIN" - "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" "$input_mode" "$output_path" "$@" <<'PY'
+import errno
+import os
+import pty
+import select
+import subprocess
+import sys
+import termios
+import time
+from pathlib import Path
+
+python_bin, script, input_mode, output_path, *install_args = sys.argv[1:]
+master, slave = pty.openpty()
+terminal = termios.tcgetattr(slave)
+terminal[3] &= ~termios.ECHO
+termios.tcsetattr(slave, termios.TCSANOW, terminal)
+process = subprocess.Popen(
+    [python_bin, script, "install", *install_args],
+    stdin=slave,
+    stdout=slave,
+    stderr=slave,
+    start_new_session=True,
+)
+os.close(slave)
+if input_mode == "newline":
+    try:
+        os.write(master, b"\n")
+    except OSError:
+        pass
+
+captured = bytearray()
+deadline = time.monotonic() + 1.5
+while process.poll() is None and time.monotonic() < deadline:
+    readable, _, _ = select.select([master], [], [], 0.05)
+    if not readable:
+        continue
+    try:
+        chunk = os.read(master, 4096)
+    except OSError as error:
+        if error.errno == errno.EIO:
+            break
+        raise
+    if not chunk:
+        break
+    captured.extend(chunk)
+
+try:
+    process.wait(timeout=max(0.05, deadline - time.monotonic()))
+    timed_out = False
+except subprocess.TimeoutExpired:
+    timed_out = True
+    process.kill()
+    process.wait(timeout=1)
+while True:
+    readable, _, _ = select.select([master], [], [], 0)
+    if not readable:
+        break
+    try:
+        chunk = os.read(master, 4096)
+    except OSError as error:
+        if error.errno == errno.EIO:
+            break
+        raise
+    if not chunk:
+        break
+    captured.extend(chunk)
+os.close(master)
+Path(output_path).write_bytes(captured)
+raise SystemExit(124 if timed_out else process.returncode)
+PY
+}
+
+assert_direct_consent_rejected() {
+  local label="$1" consent_value="$2" input_mode="$3" output code=0 before_manifest actual_output
+  shift 3
+  use_home "direct-consent-$label"
+  seed_settings
+  rm -f "$TEMP_ROOT/supervisors"
+  before_manifest="$(manifest)"
+  output="$TEMP_ROOT/direct-consent-$label.out"
+  if [ "$consent_value" = unset ]; then
+    unset ENABLE_COMPLETION_NOTIFY
+  else
+    export ENABLE_COMPLETION_NOTIFY="$consent_value"
+  fi
+  run_direct_tty_install "$input_mode" "$output" "$@" || code=$?
+  unset ENABLE_COMPLETION_NOTIFY
+  [ "$code" = 2 ] || fail "direct consent case $label exited $code, expected 2"
+  actual_output="$(tr -d '\r' <"$output")"
+  [ "$actual_output" = 'completion notify: explicit consent required; set ENABLE_COMPLETION_NOTIFY=1 and pass --yes' ] || fail "direct consent case $label changed the consent-required message contract"
+  ! grep -q 'Codex·Claude Turn 완료 알림을 설정할까요?' "$output" || fail "direct consent case $label emitted an approval prompt"
+  ! grep -q 'Configuration Preview:' "$output" || fail "direct consent case $label reached installer preview"
+  [ "$before_manifest" = "$(manifest)" ] || fail "direct consent case $label mutated the disposable HOME"
+  completion_artifacts_absent "direct consent case $label"
+  [ ! -s "$TEMP_ROOT/supervisors" ] || fail "direct consent case $label spawned a supervisor"
+}
+
+assert_direct_consent_rejected unset-no-flag unset no-input
+assert_direct_consent_rejected unset-no-flag-enter unset newline
+assert_direct_consent_rejected unset-yes unset no-input --yes
+assert_direct_consent_rejected one-no-flag 1 no-input
+assert_direct_consent_rejected zero-yes 0 no-input --yes
+assert_direct_consent_rejected true-yes true no-input --yes
+assert_direct_consent_rejected yes-yes yes no-input --yes
+pass "FX-CN-001a direct pseudo-TTY install requires env literal 1 plus --yes without prompting or mutation"
+
+use_home direct-consent-approved
+seed_settings
+direct_approved_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
+direct_approved_output="$TEMP_ROOT/direct-consent-approved.out"
+direct_approved_code=0
+export ENABLE_COMPLETION_NOTIFY=1
+run_direct_tty_install no-input "$direct_approved_output" --yes || direct_approved_code=$?
+unset ENABLE_COMPLETION_NOTIFY
+[ "$direct_approved_code" = 0 ] || fail "direct env literal 1 plus --yes exited $direct_approved_code"
+grep -q 'completion notify: installed' "$direct_approved_output" || fail "direct env literal 1 plus --yes did not complete installation"
+! grep -q 'Codex·Claude Turn 완료 알림을 설정할까요?' "$direct_approved_output" || fail "approved direct install emitted an approval prompt"
+[ -e "$(runtime_root)" ] || fail "approved direct install created no managed runtime"
+assert_dead_pids "$TEMP_ROOT/supervisors" "approved direct install supervisor"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "approved direct install cleanup failed"
+[ "$direct_approved_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "approved direct install cleanup did not restore user settings byte-exact"
+completion_artifacts_absent "approved direct install cleanup"
+pass "FX-CN-001b direct env literal 1 plus --yes preserves the existing happy path"
+
 use_home boundary
 seed_settings
 before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install </dev/null >/dev/null
+direct_non_tty_code=0
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install </dev/null >"$TEMP_ROOT/direct-non-tty.out" 2>&1 || direct_non_tty_code=$?
+[ "$direct_non_tty_code" = 2 ] || fail "non-interactive direct install exited $direct_non_tty_code, expected 2"
+grep -q 'explicit consent required' "$TEMP_ROOT/direct-non-tty.out" || fail "non-interactive direct install omitted consent-required message"
 [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "non-interactive install mutated settings without opt-in"
 make -C "$REPO" install-completion-notify </dev/null >"$TEMP_ROOT/consent-required.out" 2>&1 && fail "standalone make target accepted missing consent"
 grep -q 'consent required' "$TEMP_ROOT/consent-required.out" || fail "standalone make target did not explain missing consent"
@@ -186,19 +320,19 @@ for consent_value in unset empty 0 true yes y; do
 done
 pass "FX-CN-001d only literal ENABLE_COMPLETION_NOTIFY=1 authorizes completion installation"
 
-if OH_MY_AI_NOTIFY_TEST_PLATFORM=Linux "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then :; else fail "unsupported OS explicit opt-in failed instead of safely skipping"; fi
+if OH_MY_AI_NOTIFY_TEST_PLATFORM=Linux install_approved >/dev/null; then :; else fail "unsupported OS explicit opt-in failed instead of safely skipping"; fi
 [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "unsupported OS opt-in mutated settings"
-pass "FX-CN-001b unsupported OS/headless explicit opt-in safe skip"
+pass "FX-CN-001e unsupported OS/headless explicit opt-in safe skip"
 
 use_home malformed
 seed_settings
 printf 'notify = ["unterminated"\n' >"$CODEX_DIR/config.toml"
 malformed_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "malformed TOML accepted"; fi
+if install_approved >/dev/null; then fail "malformed TOML accepted"; fi
 [ "$malformed_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "malformed TOML mutated settings"
 printf 'notify = ["one"]\nnotify = ["two"]\n' >"$CODEX_DIR/config.toml"
 duplicate_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "duplicate notify accepted"; fi
+if install_approved >/dev/null; then fail "duplicate notify accepted"; fi
 [ "$duplicate_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "duplicate notify mutated settings"
 pass "FX-CN-002 malformed TOML and duplicate notify reject before mutation"
 
@@ -208,7 +342,7 @@ victim="$TEMP_ROOT/symlink-victim"; printf 'unchanged' >"$victim"
 rm "$CODEX_DIR/config.toml"
 ln -s "$victim" "$CODEX_DIR/config.toml"
 ln -s "$victim" "$CODEX_DIR/.config.toml.tmp"
-if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "symlinked config accepted"; fi
+if install_approved >/dev/null; then fail "symlinked config accepted"; fi
 [ "$(cat "$victim")" = "unchanged" ] || fail "config or fixed temp symlink was followed"
 pass "FX-CN-003 config symlink and fixed-temp symlink are rejected without overwrite"
 
@@ -218,7 +352,7 @@ for provider_kind in dispatcher codex; do
   [ "$provider_kind" != codex ] || managed="$(runtime_root)/adapters/codex"
   seed_settings "\"$managed\""
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed $provider_kind initial provider was accepted"; fi
+  if install_approved >/dev/null; then fail "managed $provider_kind initial provider was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "managed $provider_kind initial provider mutated config"
   [ ! -e "$(state_path)" ] || fail "managed $provider_kind initial provider wrote state"
 done
@@ -230,7 +364,7 @@ for provider_kind in dispatcher codex; do
   ln -s "$managed" "$(runtime_root)/alias"
   seed_settings "\"$(runtime_root)/alias\""
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed $provider_kind alias was accepted"; fi
+  if install_approved >/dev/null; then fail "managed $provider_kind alias was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "managed $provider_kind alias mutated config"
   [ ! -e "$(state_path)" ] || fail "managed $provider_kind alias wrote state"
 done
@@ -243,7 +377,7 @@ chmod 700 "$fake_downstream"
 export PID_FILE="$TEMP_ROOT/pids"
 seed_settings "\"$fake_downstream\", \"--keep\""
 for attempt in 1 2 3; do
-  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null || fail "install $attempt failed"
+  install_approved >/dev/null || fail "install $attempt failed"
 done
 "$PYTHON_BIN" - "$HOME" "$fake_downstream" <<'PY'
 import json, os, stat, sys, tomllib
@@ -274,7 +408,7 @@ pass "FX-CN-004 three installs preserve first provider, one dispatcher, exact mo
 for provider_kind in dispatcher codex; do
   use_home "self-state-$provider_kind"
   seed_settings "\"$fake_downstream\""
-  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  install_approved >/dev/null
   managed="$(runtime_root)/$provider_kind"
   [ "$provider_kind" != codex ] || managed="$(runtime_root)/adapters/codex"
   "$PYTHON_BIN" - "$(state_path)" "$managed" <<'PY'
@@ -282,13 +416,13 @@ import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
 PY
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")"
-  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "direct self-reference state was accepted"; fi
+  if install_approved >/dev/null; then fail "direct self-reference state was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")" ] || fail "direct self-reference state mutated"
 done
 for provider_kind in dispatcher codex; do
   use_home "self-state-alias-$provider_kind"
   seed_settings "\"$fake_downstream\""
-  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  install_approved >/dev/null
   managed="$(runtime_root)/$provider_kind"
   [ "$provider_kind" != codex ] || managed="$(runtime_root)/adapters/codex"
   ln -s "$managed" "$(runtime_root)/state-alias"
@@ -297,7 +431,7 @@ import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
 PY
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")"
-  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "alias self-reference state was accepted"; fi
+  if install_approved >/dev/null; then fail "alias self-reference state was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")" ] || fail "alias self-reference state mutated"
 done
 pass "FX-CN-004b existing direct and alias self-reference state is NOT VERIFIABLE"
@@ -307,12 +441,12 @@ seed_settings
 cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/modes-claude.before"
 chmod 644 "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
 chmod 644 "$TEMP_ROOT/modes-claude.before"
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 [ "$(mode "$CODEX_DIR/config.toml")" = 0644 ] || fail "existing 0644 Codex config mode was not preserved"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 0644 ] || fail "existing 0644 Claude settings mode was not preserved"
 [ "$(mode "$(state_path)")" = 0600 ] || fail "new state mode is not private"
 chmod 644 "$(state_path)"
-if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "state mode weakening was accepted"; fi
+if install_approved >/dev/null; then fail "state mode weakening was accepted"; fi
 chmod 600 "$(state_path)"
 "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "0644 mode uninstall failed"
 [ "$(mode "$CODEX_DIR/config.toml")" = 0644 ] || fail "uninstall changed existing Codex config mode"
@@ -321,7 +455,7 @@ cmp -s "$TEMP_ROOT/modes-claude.before" "$CLAUDE_DIR/settings.json" || fail "064
 
 use_home new-modes
 rm -f "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 [ "$(mode "$CODEX_DIR/config.toml")" = 0600 ] || fail "new Codex config mode is not private"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 0600 ] || fail "new Claude settings mode is not private"
 pass "FX-CN-004c both user configs preserve modes while new configs and state stay private"
@@ -334,7 +468,7 @@ for shape in compact pretty; do
   fi
   chmod 600 "$CLAUDE_DIR/settings.json"
   cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/$shape.before"
-  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  install_approved >/dev/null
   "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "$shape Claude uninstall failed"
   cmp -s "$TEMP_ROOT/$shape.before" "$CLAUDE_DIR/settings.json" || fail "$shape Claude preimage bytes changed"
   [ "$(mode "$CLAUDE_DIR/settings.json")" = 0600 ] || fail "$shape Claude preimage mode changed"
@@ -342,7 +476,7 @@ done
 use_home claude-absent
 seed_settings
 rm "$CLAUDE_DIR/settings.json"
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 [ -f "$CLAUDE_DIR/settings.json" ] || fail "missing Claude settings was not created"
 "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "missing Claude settings uninstall failed"
 [ ! -e "$CLAUDE_DIR/settings.json" ] || fail "originally absent Claude settings was retained"
@@ -350,7 +484,7 @@ pass "FX-CN-004d Claude preimage bytes/modes and absent-file boundary restore ex
 
 use_home claude-user-change
 seed_settings
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 printf '{"hooks":{"Stop":[]},"user_change":"preserve"}\n' >"$CLAUDE_DIR/settings.json"
 chmod 644 "$CLAUDE_DIR/settings.json"
 changed_manifest="$(manifest)"
@@ -376,7 +510,7 @@ pass "FX-CN-005 dispatcher blocks exact and realpath self-invocation"
 
 use_home timeout
 seed_settings
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 mac_hang="$TEMP_ROOT/macos-hang"; down_hang="$TEMP_ROOT/downstream-hang"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$MAC_PID_FILE"\nsleep 5\n' >"$mac_hang"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$DOWN_PID_FILE"\nsleep 5\n' >"$down_hang"
@@ -437,7 +571,7 @@ pass "FX-CN-006 stable flock barrier race and 100-call burst cap every child"
 
 use_home lock-active
 seed_settings
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 lock_path="$(state_path).dispatch.lock"
 : >"$lock_path"
 "$PYTHON_BIN" - "$lock_path" <<'PY' &
@@ -457,7 +591,7 @@ pass "FX-CN-006b active flock blocks uninstall without mutation"
 
 use_home lock-symlink
 seed_settings
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 lock_path="$(state_path).dispatch.lock"; victim="$TEMP_ROOT/lock-victim"; fake_mac="$TEMP_ROOT/lock-symlink-mac"
 printf 'unchanged\n' >"$victim"
 rm -f "$lock_path"
@@ -480,7 +614,7 @@ printf '#!/usr/bin/env bash\n"$PYTHON_BIN" - "$PRIVACY_MAC" "$1" <<"PY"\nimport 
 printf '#!/usr/bin/env bash\n"$PYTHON_BIN" - "$PRIVACY_DOWN" "$1" <<"PY"\nimport datetime,json,os,sys\npayload=json.loads(sys.argv[2]); print(json.dumps({"invocation_id":f"down-{os.getpid()}","pid":os.getpid(),"runtime":payload.get("runtime","codex"),"payload":payload,"timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}), file=open(sys.argv[1],"a"))\nPY\n' >"$fake_down"
 chmod 700 "$fake_mac" "$fake_down"
 seed_settings "\"$fake_down\""
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 privacy_stdout="$TEMP_ROOT/privacy.stdout"; privacy_stderr="$TEMP_ROOT/privacy.stderr"
 printf '%s' '{"cwd":"/tmp/claude","last_assistant_message":"MARKER-last","last-assistant-message":"MARKER-kebab","prompt":"MARKER-prompt","transcript":"MARKER-transcript","response":"MARKER-response","output":"MARKER-output","result":"MARKER-result"}' | PRIVACY_MAC="$TEMP_ROOT/privacy-mac.jsonl" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.jsonl" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(runtime_root)/adapters/claude" >"$privacy_stdout" 2>"$privacy_stderr"
 sleep 1
@@ -514,14 +648,14 @@ for stage in after-runtime after-config after-state after-self-test after-log af
   use_home "rollback-$stage"
   seed_settings
   rollback_manifest="$(manifest)"
-  if OH_MY_AI_NOTIFY_TEST_FAIL_AT="$stage" "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "injected $stage transaction failure succeeded"; fi
+  if OH_MY_AI_NOTIFY_TEST_FAIL_AT="$stage" install_approved >/dev/null; then fail "injected $stage transaction failure succeeded"; fi
   [ "$rollback_manifest" = "$(manifest)" ] || fail "transaction rollback left an artifact after $stage"
 done
 pass "FX-CN-008 transaction rollback restores exact filesystem manifests at every boundary"
 
 use_home claude-diverged
 seed_settings
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 "$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop'][-1]['hooks'][0]['command'] += '; user-change'; open(p,'w').write(json.dumps(d))
@@ -535,7 +669,7 @@ pass "FX-CN-009 Claude divergence fails closed without independent runtime mutat
 
 use_home codex-diverged
 seed_settings
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 printf 'notify = ["user-owned"]\n' >"$CODEX_DIR/config.toml"
 codex_diverged_manifest="$(manifest)"
 if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "Codex divergence was treated as fully removed"; fi
@@ -560,7 +694,7 @@ other_log_hash="$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 other_log_mode="$(mode "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 cp "$CODEX_DIR/config.toml" "$TEMP_ROOT/uninstall-codex.before"; cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/uninstall-claude.before"
 pre_install_manifest="$(manifest)"
-"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+install_approved >/dev/null
 "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/uninstall"}'
 sleep 1
 [ -f "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "production dispatch did not create its log"
@@ -589,13 +723,13 @@ pass "FX-CN-011 dispatch/uninstall full manifest removes only managed artifacts 
 
 use_home managed-without-state
 seed_settings "\"$XDG_DATA_HOME/oh-my-ai/notifications/dispatcher\""
-if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed notify without state was inferred"; fi
+if install_approved >/dev/null; then fail "managed notify without state was inferred"; fi
 pass "FX-CN-012 managed notify without valid state is NOT VERIFIABLE"
 
 for partial in config hook runtime config-runtime log-lock; do
   use_home "partial-$partial"
   seed_settings
-  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  install_approved >/dev/null
   case "$partial" in
     config)
       rm -rf "$(runtime_root)"; "$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
@@ -682,7 +816,7 @@ for malicious_name in "${malicious_path_names[@]}"; do
   seed_settings
   cp "$CODEX_DIR/config.toml" "$TEMP_ROOT/claude-hook-codex.before"
   cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/claude-hook-settings.before"
-  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null || fail "malicious-path install failed"
+  install_approved >/dev/null || fail "malicious-path install failed"
   claude_command="$("$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
 import json
 import sys

@@ -412,7 +412,7 @@ def preview(p: dict[str, Path]) -> dict:
     return {"codex_previous": codex_previous, "claude_stop_count": len(stop), "os": platform.system()}
 
 
-def install(args: argparse.Namespace) -> int:
+def install(_args: argparse.Namespace) -> int:
     p = paths()
     try:
         info = preview(p)
@@ -424,12 +424,6 @@ def install(args: argparse.Namespace) -> int:
     say(f"Existing notification configuration: Codex notify {'present' if info['codex_previous'] else 'absent'}; Claude Stop hook count {info['claude_stop_count']}")
     say("Configuration Preview: Codex top-level notify → oh-my-ai dispatcher; Claude Stop hook → additive adapter")
     say(f"Backup path: {p['codex_config']}.oh-my-ai-completion-notify.*.bak and {p['claude_settings']}.oh-my-ai-completion-notify.*.bak")
-    approved = args.yes
-    if not approved and sys.stdin.isatty() and sys.stdout.isatty():
-        approved = input("Codex·Claude Turn 완료 알림을 설정할까요? [Y/n] ").strip().lower() in ("", "y", "yes")
-    if not approved:
-        say("completion notify: skipped (explicit opt-in required; settings unchanged)")
-        return 0
     if os.environ.get("OH_MY_AI_NOTIFY_TEST_PLATFORM", platform.system()) != "Darwin":
         say("completion notify: skipped (macOS notification provider is the only supported provider; settings unchanged)")
         return 0
@@ -738,6 +732,15 @@ def main() -> int:
         print(
             "completion notify requires Python 3.11 or newer; "
             "run make with PYTHON=/path/to/python3.11",
+            file=sys.stderr,
+        )
+        return 2
+    if args.command == "install" and (
+        os.environ.get("ENABLE_COMPLETION_NOTIFY") != "1" or not args.yes
+    ):
+        print(
+            "completion notify: explicit consent required; "
+            "set ENABLE_COMPLETION_NOTIFY=1 and pass --yes",
             file=sys.stderr,
         )
         return 2
