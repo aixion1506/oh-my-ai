@@ -15,7 +15,7 @@
 - `skills/git-work-preflight/` — Git Mutation 전 공통으로 소비하는 읽기 전용 Repository 안전 Gate
 - `skills/handoff-prompt/` — 세션 전환 시 다음 AI 세션에 붙여넣을 handoff prompt를 사람이 직접 작성하도록 안내
 - `skills/harness-automation/` — 반복 업무를 감지하고 적절한 자동화 형태로 구조화
-- `skills/jira-ticket/` — Jira 생성 전 Source·Ticket Contract·Backlog Preview를 검증하는 optional planning workflow
+- `skills/jira-ticket/` — Jira MCP-backed Create Workflow로 중복·승인·반환 Evidence를 fail-closed 처리
 - `skills/jira-work/` — 기존 Jira Ticket Contract를 소비해 실행 전 Gate와 Preview만 제공하는 optional workflow
 - `skills/local-search/` — rg/find와 Jikji의 역할을 분리하는 로컬 파일·문서 탐색 플레이북
 - `skills/project-context/` — 세션 간 설계 배경과 작업 상태를 이어주는 컨텍스트 관리

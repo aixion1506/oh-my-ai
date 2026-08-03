@@ -208,13 +208,14 @@
     {
       "name": "jira-ticket",
       "path": "skills/jira-ticket/SKILL.md",
-      "description": "Optional Jira planning skill for drafting and validating a single Ticket Contract or an Epic-and-child backlog preview from explicit user requests or supplied specifications. Use for clear requests to prepare Jira tickets or break a specification into a Jira backlog. Preview only: do not create Jira issues, call Atlassian or Confluence, create Git branches, or start implementation.",
-      "summary": "Jira 생성 전 Source·Ticket Contract·Backlog Preview를 검증하는 optional planning workflow",
+      "description": "Use for an explicit request to create one Jira ticket from a valid Ticket Contract. Runs the Jira MCP-backed Create Workflow: capability gate, duplicate search, contract preview, current-preview approval, one Create request, and returned Issue verification.",
+      "summary": "Jira MCP-backed Create Workflow로 중복·승인·반환 Evidence를 fail-closed 처리",
       "routing": {
         "visibility": "optional",
         "risk_level": "medium",
         "task_types": [
           "jira_ticket_planning",
+          "jira_ticket_create",
           "jira_backlog_planning"
         ],
         "triggers": [
@@ -232,6 +233,7 @@
             "kind": "intent",
             "values": [
               "plan_jira_ticket",
+              "create_jira_ticket",
               "plan_jira_backlog"
             ]
           }
@@ -240,19 +242,20 @@
           "ko": [
             "Jira 티켓",
             "Jira 백로그",
-            "티켓으로 정리"
+            "티켓으로 정리",
+            "티켓으로 만들어줘"
           ],
           "en": [
             "jira ticket",
             "jira backlog",
-            "ticket preview"
+            "create jira ticket"
           ]
         },
         "use_when": [
-          "명시적으로 Jira Ticket Preview 또는 Jira Backlog 분해를 요청한 경우"
+          "명시적으로 Jira Ticket을 생성하거나 Ticket Preview 또는 Backlog 분해를 요청한 경우"
         ],
         "do_not_use_when": [
-          "Jira 연동 방식 설명, 가능성 상담, 또는 실제 Jira Write만 요구한 경우"
+          "Jira 연동 방식 설명 또는 Jira Issue와 무관한 일반 계획만 요청한 경우"
         ],
         "requires": [
           "explicit_jira_planning_intent"
