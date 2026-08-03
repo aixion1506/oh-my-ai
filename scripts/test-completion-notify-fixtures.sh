@@ -619,4 +619,67 @@ printf '%s' '{"cwd":"/repo/claude","last_assistant_message":"untrusted summary"}
 grep -q '"runtime": "claude"' "$claude_capture" || fail "Claude Stop payload was not structurally mapped"
 find "$REPO/scripts" -maxdepth 2 -type f -path '*/__pycache__/*' | grep -q . && fail "fixture created source-tree pycache"
 pass "FX-CN-013 Claude Stop mapping and source-tree pycache boundary"
+
+# FX-CN-014/015 exercise the Python 3.11+ runtime preflight added to
+# completion-notify.py's main(): a discoverable 3.11+ interpreter must
+# produce a full install/status/test/uninstall happy path via the
+# Makefile's PYTHON override, and a pre-3.11 default python3 must fail
+# every managed command closed (exit 2, zero mutation) with one shared
+# message. Neither scenario hardcodes an absolute interpreter path;
+# both fall back to a static source check when the relevant interpreter
+# isn't present on this machine.
+py311_path=""
+if [ -n "${OH_MY_AI_NOTIFY_TEST_PYTHON311:-}" ] && "${OH_MY_AI_NOTIFY_TEST_PYTHON311}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+  py311_path="$OH_MY_AI_NOTIFY_TEST_PYTHON311"
+elif command -v python3.11 >/dev/null 2>&1; then
+  py311_path="$(command -v python3.11)"
+elif python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+  py311_path="$(command -v python3)"
+elif command -v brew >/dev/null 2>&1; then
+  brew_prefix="$(brew --prefix python@3.11 2>/dev/null || true)"
+  [ -n "$brew_prefix" ] && [ -x "$brew_prefix/bin/python3.11" ] && py311_path="$brew_prefix/bin/python3.11"
+fi
+
+if [ -z "$py311_path" ]; then
+  grep -q 'sys.version_info < (3, 11)' "$REPO/scripts/completion-notify.py" || fail "no discoverable Python 3.11+ interpreter and preflight gate is missing from source"
+  pass "FX-CN-014 Python 3.11 happy path NOT APPLICABLE (no 3.11+ interpreter discoverable); static preflight-gate check only"
+else
+  use_home py311-happy
+  seed_settings
+  before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
+  make -C "$REPO" install-completion-notify PYTHON="$py311_path" ENABLE_COMPLETION_NOTIFY=1 >/dev/null || fail "3.11 happy path install failed"
+  make -C "$REPO" completion-notify-status PYTHON="$py311_path" >/dev/null || fail "3.11 happy path status failed"
+  make -C "$REPO" test-completion-notify PYTHON="$py311_path" >/dev/null || fail "3.11 happy path test failed"
+  make -C "$REPO" uninstall-completion-notify PYTHON="$py311_path" >/dev/null || fail "3.11 happy path uninstall failed"
+  [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "3.11 happy path uninstall did not restore user config byte-exact"
+  make -C "$REPO" uninstall-completion-notify PYTHON="$py311_path" >/dev/null || fail "3.11 happy path repeated uninstall was not idempotent"
+  [ "$(find "$XDG_DATA_HOME/oh-my-ai" -type f 2>/dev/null | wc -l | tr -d ' ')" = 0 ] || fail "3.11 happy path left managed artifact files behind"
+  pass "FX-CN-014 Python 3.11 happy path via Makefile PYTHON override"
+fi
+
+if /usr/bin/python3 -c 'import sys; raise SystemExit(0 if sys.version_info < (3, 11) else 1)' >/dev/null 2>&1; then
+  default_python3_version="$(/usr/bin/python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+  use_home py39-negative
+  seed_settings
+  before_manifest="$(manifest)"
+  run_negative() {
+    local target="$1"; shift
+    local code=0
+    make -C "$REPO" "$target" PYTHON=/usr/bin/python3 "$@" >"$TEMP_ROOT/py39-negative.out" 2>&1 || code=$?
+    [ "$code" = 2 ] || fail "$target under Python $default_python3_version exited $code, expected 2"
+    grep -q 'Python 3.11 or newer' "$TEMP_ROOT/py39-negative.out" || fail "$target under Python $default_python3_version missing fail-fast message"
+  }
+  run_negative install-completion-notify ENABLE_COMPLETION_NOTIFY=1
+  run_negative completion-notify-status
+  run_negative test-completion-notify
+  run_negative doctor-completion-notify
+  run_negative uninstall-completion-notify
+  [ "$before_manifest" = "$(manifest)" ] || fail "Python 3.9 negative contract mutated the disposable HOME"
+  /usr/bin/python3 "$REPO/scripts/completion-notify.py" --help >/dev/null 2>&1 || fail "--help must remain exit 0 under Python $default_python3_version"
+  pass "FX-CN-015 Python $default_python3_version negative contract fails closed with zero mutation"
+else
+  grep -q 'sys.version_info < (3, 11)' "$REPO/scripts/completion-notify.py" || fail "default /usr/bin/python3 is already 3.11+ and preflight gate is missing from source"
+  pass "FX-CN-015 Python 3.9 negative contract NOT APPLICABLE (default /usr/bin/python3 is already 3.11+); static preflight-gate check only"
+fi
+
 echo "all completion notification fixtures passed"

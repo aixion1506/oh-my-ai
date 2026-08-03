@@ -1,5 +1,9 @@
 REPO    := $(shell pwd)
 PROFILE ?=
+# Completion Notification management commands require Python 3.11+ (tomllib).
+# Override when the default python3 resolves to an older interpreter, e.g.:
+#   make install-completion-notify PYTHON=/opt/homebrew/bin/python3.11
+PYTHON  ?= python3
 
 .PHONY: install install-shared install-completion-notify completion-notify-status test-completion-notify doctor-completion-notify uninstall-completion-notify init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-completion-notify-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-jira-ticket-fixtures test-jira-work-fixtures test-git-work-preflight-fixtures test-context-checkpoint-codex-fixtures test-context-checkpoint-fixtures test-v1-fixtures test-v1x-fixtures
 
@@ -57,25 +61,25 @@ test-v1-fixtures: test-install-fixtures test-completion-notify-fixtures test-rou
 test-v1x-fixtures: test-v1-fixtures test-context-checkpoint-fixtures
 
 install: install-shared
-	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ./scripts/completion-notify.py install --yes; else ./scripts/completion-notify.py install; fi
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then $(PYTHON) ./scripts/completion-notify.py install --yes; else $(PYTHON) ./scripts/completion-notify.py install; fi
 
 install-shared: instructions
 	./setup.sh --install-shared
 
 install-completion-notify:
-	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ./scripts/completion-notify.py install --yes; else ./scripts/completion-notify.py install; fi
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then $(PYTHON) ./scripts/completion-notify.py install --yes; else $(PYTHON) ./scripts/completion-notify.py install; fi
 
 completion-notify-status:
-	./scripts/completion-notify.py status
+	$(PYTHON) ./scripts/completion-notify.py status
 
 test-completion-notify:
-	./scripts/completion-notify.py test
+	$(PYTHON) ./scripts/completion-notify.py test
 
 doctor-completion-notify:
-	./scripts/completion-notify.py doctor
+	$(PYTHON) ./scripts/completion-notify.py doctor
 
 uninstall-completion-notify:
-	./scripts/completion-notify.py uninstall
+	$(PYTHON) ./scripts/completion-notify.py uninstall
 
 test-completion-notify-fixtures:
 	./scripts/test-completion-notify-fixtures.sh

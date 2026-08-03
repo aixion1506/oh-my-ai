@@ -732,6 +732,13 @@ def main() -> int:
     for name, func in (("status", status), ("test", test), ("uninstall", uninstall), ("doctor", doctor)):
         sub.add_parser(name).set_defaults(func=func)
     args = parser.parse_args()
+    if sys.version_info < (3, 11) or tomllib is None:
+        print(
+            "completion notify requires Python 3.11 or newer; "
+            "run make with PYTHON=/path/to/python3.11",
+            file=sys.stderr,
+        )
+        return 2
     return args.func(args)
 
 
