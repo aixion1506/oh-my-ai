@@ -13,8 +13,8 @@ This is an explicit opt-in local integration, not an automatic Skill action.
 Use the Make commands from the oh-my-ai source repository:
 
 ```bash
-make install-completion-notify
 make install-completion-notify ENABLE_COMPLETION_NOTIFY=1
+make install ENABLE_COMPLETION_NOTIFY=1
 make completion-notify-status
 make test-completion-notify
 make doctor-completion-notify
@@ -29,9 +29,11 @@ interpreter explicitly:
 make install-completion-notify PYTHON=/opt/homebrew/bin/python3.11 ENABLE_COMPLETION_NOTIFY=1
 ```
 
-`make install` and `make install-completion-notify` ask for consent only on an
-interactive TTY. Non-interactive installation requires
-`ENABLE_COMPLETION_NOTIFY=1` and is safely skipped outside macOS.
+Completion installation is authorized only by the literal
+`ENABLE_COMPLETION_NOTIFY=1`. Plain `make install` skips completion installation
+without prompting; `make install-completion-notify` without that literal exits
+with a consent-required message and changes nothing. Preview, status, doctor,
+and uninstall do not require the variable.
 
 The notification means **Codex Turn 완료** or **Claude Turn 완료**, never an
 overall task success. It shows only the normalized working-directory basename

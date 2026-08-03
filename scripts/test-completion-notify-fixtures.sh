@@ -16,6 +16,9 @@ export CODEX_DIR="$HOME/.codex"
 export CLAUDE_DIR="$HOME/.claude"
 export PYTHONDONTWRITEBYTECODE=1
 export OH_MY_AI_NOTIFY_TEST_PLATFORM=Darwin
+# Fixtures exercise the real dispatcher but must not contact Notification Center.
+export OH_MY_AI_NOTIFY_RENDER_ONLY=1
+export PYTHON_BIN="${PYTHON:-python3}"
 
 fail() { echo "completion notification fixture failure: $*" >&2; exit 1; }
 pass() { echo "passed: $1"; }
@@ -25,7 +28,7 @@ manifest() { node -e 'const fs=require("fs"), path=require("path"), crypto=requi
 # via Python. Uses os.lstat (never follows symlinks) and always prints 4-digit
 # octal so Linux and macOS agree byte-for-byte.
 mode() {
-  python3 - "$1" <<'PY'
+  "$PYTHON_BIN" - "$1" <<'PY'
 import os
 import stat
 import sys
@@ -36,6 +39,9 @@ PY
 state_path() { printf '%s\n' "$XDG_DATA_HOME/oh-my-ai/notifications/state/completion-notify.json"; }
 runtime_root() { printf '%s\n' "$XDG_DATA_HOME/oh-my-ai/notifications"; }
 dispatcher() { printf '%s\n' "$(runtime_root)/dispatcher"; }
+completion_artifacts_absent() {
+  [ ! -e "$(runtime_root)" ] && [ ! -e "$(state_path)" ] && [ ! -e "$(state_path).dispatch.lock" ] || fail "$1 retained completion-managed artifacts"
+}
 
 cleanup() {
   if [ -f "$TEMP_ROOT/pids" ]; then
@@ -66,7 +72,7 @@ esac
 for file in "$REPO/scripts/completion-notify.py" "$REPO/scripts/completion-notify-dispatcher.sh" "$REPO/scripts/completion-notify-macos.sh" "$REPO/scripts/completion-notify-codex.sh" "$REPO/scripts/completion-notify-claude.sh"; do
   [ -f "$file" ] || fail "missing $file"
 done
-PYTHONPYCACHEPREFIX="$TEMP_ROOT/pycache" python3 -m py_compile "$REPO/scripts/completion-notify.py"
+PYTHONPYCACHEPREFIX="$TEMP_ROOT/pycache" "$PYTHON_BIN" -m py_compile "$REPO/scripts/completion-notify.py"
 bash -n "$REPO/scripts/completion-notify-dispatcher.sh" "$REPO/scripts/completion-notify-macos.sh" "$REPO/scripts/completion-notify-codex.sh" "$REPO/scripts/completion-notify-claude.sh"
 
 use_home() {
@@ -137,13 +143,50 @@ sample_maxima() {
 use_home boundary
 seed_settings
 before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-"$REPO/scripts/completion-notify.py" install </dev/null >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install </dev/null >/dev/null
 [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "non-interactive install mutated settings without opt-in"
-make -C "$REPO" install-completion-notify </dev/null >/dev/null
+make -C "$REPO" install-completion-notify </dev/null >"$TEMP_ROOT/consent-required.out" 2>&1 && fail "standalone make target accepted missing consent"
+grep -q 'consent required' "$TEMP_ROOT/consent-required.out" || fail "standalone make target did not explain missing consent"
 [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "standalone make target mutated settings without opt-in"
 pass "FX-CN-001 non-interactive explicit opt-in boundary, including standalone Make target"
 
-if OH_MY_AI_NOTIFY_TEST_PLATFORM=Linux "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then :; else fail "unsupported OS explicit opt-in failed instead of safely skipping"; fi
+# The default aggregate install may retain its own shared-install behavior, but
+# completion installation must not invoke its Python installer or add completion
+# state after the shared layer is already converged.
+use_home default-make-install
+seed_settings
+make -C "$REPO" install-shared >/dev/null
+before_default_install="$(manifest)"
+completion_python_capture="$TEMP_ROOT/default-make-install.python-calls"
+completion_python_wrapper="$TEMP_ROOT/default-make-install-python"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$*" >>"$COMPLETION_PYTHON_CAPTURE"\nexec "$COMPLETION_PYTHON_REAL" "$$@"\n' >"$completion_python_wrapper"
+chmod 700 "$completion_python_wrapper"
+COMPLETION_PYTHON_CAPTURE="$completion_python_capture" COMPLETION_PYTHON_REAL="$PYTHON_BIN" make -C "$REPO" install PYTHON="$completion_python_wrapper" </dev/null >"$TEMP_ROOT/default-make-install.out" 2>&1 || fail "default make install failed"
+[ ! -s "$completion_python_capture" ] || fail "default make install invoked completion installer"
+! grep -q 'Codex·Claude Turn 완료 알림을 설정할까요?' "$TEMP_ROOT/default-make-install.out" || fail "default make install prompted for completion consent"
+[ "$before_default_install" = "$(manifest)" ] || fail "default make install changed completion fixture state"
+completion_artifacts_absent "default make install"
+pass "FX-CN-001c default make install skips completion installer, prompt, and artifacts"
+
+for consent_value in unset empty 0 true yes y; do
+  use_home "consent-$consent_value"
+  seed_settings
+  before_consent="$(manifest)"
+  consent_code=0
+  case "$consent_value" in
+    unset) env -u ENABLE_COMPLETION_NOTIFY make -C "$REPO" install-completion-notify >"$TEMP_ROOT/consent-$consent_value.out" 2>&1 || consent_code=$? ;;
+    empty) ENABLE_COMPLETION_NOTIFY= make -C "$REPO" install-completion-notify >"$TEMP_ROOT/consent-$consent_value.out" 2>&1 || consent_code=$? ;;
+    *) ENABLE_COMPLETION_NOTIFY="$consent_value" make -C "$REPO" install-completion-notify >"$TEMP_ROOT/consent-$consent_value.out" 2>&1 || consent_code=$? ;;
+  esac
+  [ "$consent_code" -ne 0 ] || fail "ENABLE_COMPLETION_NOTIFY=$consent_value was accepted"
+  grep -q 'consent required' "$TEMP_ROOT/consent-$consent_value.out" || fail "ENABLE_COMPLETION_NOTIFY=$consent_value did not report consent required"
+  ! grep -q 'Codex·Claude Turn 완료 알림을 설정할까요?' "$TEMP_ROOT/consent-$consent_value.out" || fail "ENABLE_COMPLETION_NOTIFY=$consent_value prompted for consent"
+  [ "$before_consent" = "$(manifest)" ] || fail "ENABLE_COMPLETION_NOTIFY=$consent_value mutated the disposable HOME"
+  completion_artifacts_absent "ENABLE_COMPLETION_NOTIFY=$consent_value"
+done
+pass "FX-CN-001d only literal ENABLE_COMPLETION_NOTIFY=1 authorizes completion installation"
+
+if OH_MY_AI_NOTIFY_TEST_PLATFORM=Linux "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then :; else fail "unsupported OS explicit opt-in failed instead of safely skipping"; fi
 [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "unsupported OS opt-in mutated settings"
 pass "FX-CN-001b unsupported OS/headless explicit opt-in safe skip"
 
@@ -151,11 +194,11 @@ use_home malformed
 seed_settings
 printf 'notify = ["unterminated"\n' >"$CODEX_DIR/config.toml"
 malformed_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "malformed TOML accepted"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "malformed TOML accepted"; fi
 [ "$malformed_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "malformed TOML mutated settings"
 printf 'notify = ["one"]\nnotify = ["two"]\n' >"$CODEX_DIR/config.toml"
 duplicate_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "duplicate notify accepted"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "duplicate notify accepted"; fi
 [ "$duplicate_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "duplicate notify mutated settings"
 pass "FX-CN-002 malformed TOML and duplicate notify reject before mutation"
 
@@ -165,7 +208,7 @@ victim="$TEMP_ROOT/symlink-victim"; printf 'unchanged' >"$victim"
 rm "$CODEX_DIR/config.toml"
 ln -s "$victim" "$CODEX_DIR/config.toml"
 ln -s "$victim" "$CODEX_DIR/.config.toml.tmp"
-if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "symlinked config accepted"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "symlinked config accepted"; fi
 [ "$(cat "$victim")" = "unchanged" ] || fail "config or fixed temp symlink was followed"
 pass "FX-CN-003 config symlink and fixed-temp symlink are rejected without overwrite"
 
@@ -175,7 +218,7 @@ for provider_kind in dispatcher codex; do
   [ "$provider_kind" != codex ] || managed="$(runtime_root)/adapters/codex"
   seed_settings "\"$managed\""
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-  if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed $provider_kind initial provider was accepted"; fi
+  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed $provider_kind initial provider was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "managed $provider_kind initial provider mutated config"
   [ ! -e "$(state_path)" ] || fail "managed $provider_kind initial provider wrote state"
 done
@@ -187,7 +230,7 @@ for provider_kind in dispatcher codex; do
   ln -s "$managed" "$(runtime_root)/alias"
   seed_settings "\"$(runtime_root)/alias\""
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")"
-  if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed $provider_kind alias was accepted"; fi
+  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed $provider_kind alias was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json")" ] || fail "managed $provider_kind alias mutated config"
   [ ! -e "$(state_path)" ] || fail "managed $provider_kind alias wrote state"
 done
@@ -200,9 +243,9 @@ chmod 700 "$fake_downstream"
 export PID_FILE="$TEMP_ROOT/pids"
 seed_settings "\"$fake_downstream\", \"--keep\""
 for attempt in 1 2 3; do
-  "$REPO/scripts/completion-notify.py" install --yes >/dev/null || fail "install $attempt failed"
+  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null || fail "install $attempt failed"
 done
-python3 - "$HOME" "$fake_downstream" <<'PY'
+"$PYTHON_BIN" - "$HOME" "$fake_downstream" <<'PY'
 import json, os, stat, sys, tomllib
 from pathlib import Path
 h, provider = Path(sys.argv[1]), sys.argv[2]
@@ -231,30 +274,30 @@ pass "FX-CN-004 three installs preserve first provider, one dispatcher, exact mo
 for provider_kind in dispatcher codex; do
   use_home "self-state-$provider_kind"
   seed_settings "\"$fake_downstream\""
-  "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
   managed="$(runtime_root)/$provider_kind"
   [ "$provider_kind" != codex ] || managed="$(runtime_root)/adapters/codex"
-  python3 - "$(state_path)" "$managed" <<'PY'
+  "$PYTHON_BIN" - "$(state_path)" "$managed" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
 PY
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")"
-  if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "direct self-reference state was accepted"; fi
+  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "direct self-reference state was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")" ] || fail "direct self-reference state mutated"
 done
 for provider_kind in dispatcher codex; do
   use_home "self-state-alias-$provider_kind"
   seed_settings "\"$fake_downstream\""
-  "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
   managed="$(runtime_root)/$provider_kind"
   [ "$provider_kind" != codex ] || managed="$(runtime_root)/adapters/codex"
   ln -s "$managed" "$(runtime_root)/state-alias"
-  python3 - "$(state_path)" "$(runtime_root)/state-alias" <<'PY'
+  "$PYTHON_BIN" - "$(state_path)" "$(runtime_root)/state-alias" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
 PY
   before_hash="$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")"
-  if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "alias self-reference state was accepted"; fi
+  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "alias self-reference state was accepted"; fi
   [ "$before_hash" = "$(hash_files "$CODEX_DIR/config.toml" "$(state_path)")" ] || fail "alias self-reference state mutated"
 done
 pass "FX-CN-004b existing direct and alias self-reference state is NOT VERIFIABLE"
@@ -264,21 +307,21 @@ seed_settings
 cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/modes-claude.before"
 chmod 644 "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
 chmod 644 "$TEMP_ROOT/modes-claude.before"
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 [ "$(mode "$CODEX_DIR/config.toml")" = 0644 ] || fail "existing 0644 Codex config mode was not preserved"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 0644 ] || fail "existing 0644 Claude settings mode was not preserved"
 [ "$(mode "$(state_path)")" = 0600 ] || fail "new state mode is not private"
 chmod 644 "$(state_path)"
-if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "state mode weakening was accepted"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "state mode weakening was accepted"; fi
 chmod 600 "$(state_path)"
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "0644 mode uninstall failed"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "0644 mode uninstall failed"
 [ "$(mode "$CODEX_DIR/config.toml")" = 0644 ] || fail "uninstall changed existing Codex config mode"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 0644 ] || fail "uninstall changed existing Claude settings mode"
 cmp -s "$TEMP_ROOT/modes-claude.before" "$CLAUDE_DIR/settings.json" || fail "0644 Claude settings bytes were not restored"
 
 use_home new-modes
 rm -f "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 [ "$(mode "$CODEX_DIR/config.toml")" = 0600 ] || fail "new Codex config mode is not private"
 [ "$(mode "$CLAUDE_DIR/settings.json")" = 0600 ] || fail "new Claude settings mode is not private"
 pass "FX-CN-004c both user configs preserve modes while new configs and state stay private"
@@ -291,34 +334,34 @@ for shape in compact pretty; do
   fi
   chmod 600 "$CLAUDE_DIR/settings.json"
   cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/$shape.before"
-  "$REPO/scripts/completion-notify.py" install --yes >/dev/null
-  "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "$shape Claude uninstall failed"
+  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "$shape Claude uninstall failed"
   cmp -s "$TEMP_ROOT/$shape.before" "$CLAUDE_DIR/settings.json" || fail "$shape Claude preimage bytes changed"
   [ "$(mode "$CLAUDE_DIR/settings.json")" = 0600 ] || fail "$shape Claude preimage mode changed"
 done
 use_home claude-absent
 seed_settings
 rm "$CLAUDE_DIR/settings.json"
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 [ -f "$CLAUDE_DIR/settings.json" ] || fail "missing Claude settings was not created"
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "missing Claude settings uninstall failed"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "missing Claude settings uninstall failed"
 [ ! -e "$CLAUDE_DIR/settings.json" ] || fail "originally absent Claude settings was retained"
 pass "FX-CN-004d Claude preimage bytes/modes and absent-file boundary restore exactly"
 
 use_home claude-user-change
 seed_settings
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 printf '{"hooks":{"Stop":[]},"user_change":"preserve"}\n' >"$CLAUDE_DIR/settings.json"
 chmod 644 "$CLAUDE_DIR/settings.json"
 changed_manifest="$(manifest)"
-if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "changed Claude settings uninstall succeeded"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "changed Claude settings uninstall succeeded"; fi
 [ "$changed_manifest" = "$(manifest)" ] || fail "changed Claude settings uninstall mutated another artifact"
 [ -f "$(state_path | sed 's/completion-notify.json$/claude-settings.preimage.bak/')" ] || fail "changed Claude settings removed managed backup"
 pass "FX-CN-004e changed Claude settings fail closed with zero mutation and retained backup"
 
 runtime="$(runtime_root)"
 ln -s "$runtime/dispatcher" "$runtime/self-dispatcher"
-python3 - "$(state_path)" "$runtime/self-dispatcher" <<'PY'
+"$PYTHON_BIN" - "$(state_path)" "$runtime/self-dispatcher" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
 PY
@@ -333,12 +376,12 @@ pass "FX-CN-005 dispatcher blocks exact and realpath self-invocation"
 
 use_home timeout
 seed_settings
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 mac_hang="$TEMP_ROOT/macos-hang"; down_hang="$TEMP_ROOT/downstream-hang"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$MAC_PID_FILE"\nsleep 5\n' >"$mac_hang"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >>"$DOWN_PID_FILE"\nsleep 5\n' >"$down_hang"
 chmod 700 "$mac_hang" "$down_hang"
-python3 - "$(state_path)" "$down_hang" <<'PY'
+"$PYTHON_BIN" - "$(state_path)" "$down_hang" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['previous_codex_notify']=[sys.argv[2]]; open(p,'w').write(json.dumps(d))
 PY
@@ -352,7 +395,7 @@ export DOWN_PID_FILE="$TEMP_ROOT/downstream-pids"
 : >"$(state_path).dispatch.lock"
 # Age the lock 2 days back. BSD touch cannot parse GNU `touch -d '2 days ago'`,
 # so set the mtime via Python for identical Linux/macOS behavior.
-python3 - "$(state_path).dispatch.lock" <<'PY'
+"$PYTHON_BIN" - "$(state_path).dispatch.lock" <<'PY'
 import os
 import sys
 import time
@@ -394,10 +437,10 @@ pass "FX-CN-006 stable flock barrier race and 100-call burst cap every child"
 
 use_home lock-active
 seed_settings
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 lock_path="$(state_path).dispatch.lock"
 : >"$lock_path"
-python3 - "$lock_path" <<'PY' &
+"$PYTHON_BIN" - "$lock_path" <<'PY' &
 import fcntl, sys, time
 with open(sys.argv[1], 'r+') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
@@ -406,15 +449,15 @@ PY
 lock_holder=$!
 sleep 0.1
 before_manifest="$(manifest)"
-if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "uninstall ignored an active dispatcher lock"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "uninstall ignored an active dispatcher lock"; fi
 [ "$before_manifest" = "$(manifest)" ] || fail "active dispatcher lock allowed uninstall mutation"
 wait "$lock_holder"
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "uninstall did not recover after lock release"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "uninstall did not recover after lock release"
 pass "FX-CN-006b active flock blocks uninstall without mutation"
 
 use_home lock-symlink
 seed_settings
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 lock_path="$(state_path).dispatch.lock"; victim="$TEMP_ROOT/lock-victim"; fake_mac="$TEMP_ROOT/lock-symlink-mac"
 printf 'unchanged\n' >"$victim"
 rm -f "$lock_path"
@@ -433,18 +476,18 @@ pass "FX-CN-007 fixed body contains zero assistant-summary characters"
 
 use_home privacy
 fake_mac="$TEMP_ROOT/privacy-mac"; fake_down="$TEMP_ROOT/privacy-down"
-printf '#!/usr/bin/env bash\npython3 - "$PRIVACY_MAC" "$1" <<"PY"\nimport datetime,json,os,sys\npayload=json.loads(sys.argv[2]); print(json.dumps({"invocation_id":f"mac-{os.getpid()}","pid":os.getpid(),"runtime":payload.get("runtime","codex"),"payload":payload,"timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}), file=open(sys.argv[1],"a"))\nPY\n' >"$fake_mac"
-printf '#!/usr/bin/env bash\npython3 - "$PRIVACY_DOWN" "$1" <<"PY"\nimport datetime,json,os,sys\npayload=json.loads(sys.argv[2]); print(json.dumps({"invocation_id":f"down-{os.getpid()}","pid":os.getpid(),"runtime":payload.get("runtime","codex"),"payload":payload,"timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}), file=open(sys.argv[1],"a"))\nPY\n' >"$fake_down"
+printf '#!/usr/bin/env bash\n"$PYTHON_BIN" - "$PRIVACY_MAC" "$1" <<"PY"\nimport datetime,json,os,sys\npayload=json.loads(sys.argv[2]); print(json.dumps({"invocation_id":f"mac-{os.getpid()}","pid":os.getpid(),"runtime":payload.get("runtime","codex"),"payload":payload,"timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}), file=open(sys.argv[1],"a"))\nPY\n' >"$fake_mac"
+printf '#!/usr/bin/env bash\n"$PYTHON_BIN" - "$PRIVACY_DOWN" "$1" <<"PY"\nimport datetime,json,os,sys\npayload=json.loads(sys.argv[2]); print(json.dumps({"invocation_id":f"down-{os.getpid()}","pid":os.getpid(),"runtime":payload.get("runtime","codex"),"payload":payload,"timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}), file=open(sys.argv[1],"a"))\nPY\n' >"$fake_down"
 chmod 700 "$fake_mac" "$fake_down"
 seed_settings "\"$fake_down\""
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 privacy_stdout="$TEMP_ROOT/privacy.stdout"; privacy_stderr="$TEMP_ROOT/privacy.stderr"
 printf '%s' '{"cwd":"/tmp/claude","last_assistant_message":"MARKER-last","last-assistant-message":"MARKER-kebab","prompt":"MARKER-prompt","transcript":"MARKER-transcript","response":"MARKER-response","output":"MARKER-output","result":"MARKER-result"}' | PRIVACY_MAC="$TEMP_ROOT/privacy-mac.jsonl" PRIVACY_DOWN="$TEMP_ROOT/privacy-down.jsonl" OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_mac" "$(runtime_root)/adapters/claude" >"$privacy_stdout" 2>"$privacy_stderr"
 sleep 1
 [ -f "$TEMP_ROOT/privacy-mac.jsonl" ] || fail "Claude event did not reach macOS provider"
 [ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.jsonl")" -eq 1 ] || fail "Claude event called macOS provider more than once"
 [ ! -e "$TEMP_ROOT/privacy-down.jsonl" ] || fail "Claude event created a Codex downstream provider"
-python3 - "$TEMP_ROOT/privacy-mac.jsonl" <<'PY'
+"$PYTHON_BIN" - "$TEMP_ROOT/privacy-mac.jsonl" <<'PY'
 import json, sys
 rows=[json.loads(line) for line in open(sys.argv[1]) if line.strip()]
 assert len(rows) == 1 and rows[0]["pid"] > 0 and rows[0]["runtime"] == "claude", rows
@@ -458,7 +501,7 @@ PRIVACY_MAC="$TEMP_ROOT/privacy-mac.jsonl" PRIVACY_DOWN="$TEMP_ROOT/privacy-down
 sleep 1
 [ "$(grep -cve '^$' "$TEMP_ROOT/privacy-mac.jsonl")" -eq 3 ] || fail "runtime provider invocation count is not exact"
 [ -f "$TEMP_ROOT/privacy-down.jsonl" ] && [ "$(grep -cve '^$' "$TEMP_ROOT/privacy-down.jsonl")" -eq 1 ] || fail "native Codex downstream invocation/PID count is not exact"
-python3 - "$TEMP_ROOT/privacy-mac.jsonl" "$TEMP_ROOT/privacy-down.jsonl" <<'PY'
+"$PYTHON_BIN" - "$TEMP_ROOT/privacy-mac.jsonl" "$TEMP_ROOT/privacy-down.jsonl" <<'PY'
 import json,sys
 mac=[json.loads(x) for x in open(sys.argv[1]) if x.strip()]; down=[json.loads(x) for x in open(sys.argv[2]) if x.strip()]
 assert [x['runtime'] for x in mac] == ['claude','unknown','codex'], mac
@@ -471,20 +514,20 @@ for stage in after-runtime after-config after-state after-self-test after-log af
   use_home "rollback-$stage"
   seed_settings
   rollback_manifest="$(manifest)"
-  if OH_MY_AI_NOTIFY_TEST_FAIL_AT="$stage" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "injected $stage transaction failure succeeded"; fi
+  if OH_MY_AI_NOTIFY_TEST_FAIL_AT="$stage" "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "injected $stage transaction failure succeeded"; fi
   [ "$rollback_manifest" = "$(manifest)" ] || fail "transaction rollback left an artifact after $stage"
 done
 pass "FX-CN-008 transaction rollback restores exact filesystem manifests at every boundary"
 
 use_home claude-diverged
 seed_settings
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
-python3 - "$CLAUDE_DIR/settings.json" <<'PY'
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop'][-1]['hooks'][0]['command'] += '; user-change'; open(p,'w').write(json.dumps(d))
 PY
 claude_diverged_manifest="$(manifest)"
-if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "modified Claude hook was treated as removable"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "modified Claude hook was treated as removable"; fi
 [ "$claude_diverged_manifest" = "$(manifest)" ] || fail "Claude divergence changed the managed transaction manifest"
 grep -q 'user-change' "$CLAUDE_DIR/settings.json" || fail "modified Claude hook was removed"
 grep -q 'oh-my-ai/notifications/dispatcher' "$CODEX_DIR/config.toml" || fail "Claude divergence mutated Codex configuration"
@@ -492,19 +535,19 @@ pass "FX-CN-009 Claude divergence fails closed without independent runtime mutat
 
 use_home codex-diverged
 seed_settings
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 printf 'notify = ["user-owned"]\n' >"$CODEX_DIR/config.toml"
 codex_diverged_manifest="$(manifest)"
-if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "Codex divergence was treated as fully removed"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "Codex divergence was treated as fully removed"; fi
 [ "$codex_diverged_manifest" = "$(manifest)" ] || fail "Codex divergence partially restored another surface"
 grep -q 'user-owned' "$CODEX_DIR/config.toml" || fail "Codex divergence was overwritten"
 grep -q 'oh-my-ai/notifications/adapters/claude' "$CLAUDE_DIR/settings.json" || fail "Codex divergence removed Claude state"
-python3 - "$CODEX_DIR/config.toml" "$(dispatcher)" <<'PY'
+"$PYTHON_BIN" - "$CODEX_DIR/config.toml" "$(dispatcher)" <<'PY'
 import json,sys
 open(sys.argv[1],'w').write('notify = '+json.dumps([sys.argv[2]])+'\n')
 PY
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "Codex convergence did not permit atomic cleanup"
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "post-cleanup uninstall was not idempotent"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "Codex convergence did not permit atomic cleanup"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "post-cleanup uninstall was not idempotent"
 pass "FX-CN-010 Codex divergence preserves the complete transaction until convergence"
 
 use_home uninstall
@@ -517,21 +560,21 @@ other_log_hash="$(hash_files "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 other_log_mode="$(mode "$XDG_STATE_HOME/oh-my-ai/other-oh-my-ai.log")"
 cp "$CODEX_DIR/config.toml" "$TEMP_ROOT/uninstall-codex.before"; cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/uninstall-claude.before"
 pre_install_manifest="$(manifest)"
-"$REPO/scripts/completion-notify.py" install --yes >/dev/null
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
 "$(dispatcher)" '{"type":"agent-turn-complete","cwd":"/repo/uninstall"}'
 sleep 1
 [ -f "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "production dispatch did not create its log"
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "first uninstall failed"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "first uninstall failed"
 if ! [ "$pre_install_manifest" = "$(manifest)" ]; then
   first_uninstall_manifest="$(manifest)"
   diff -u <(printf '%s\n' "$pre_install_manifest") <(printf '%s\n' "$first_uninstall_manifest") >&2 || true
   fail "first uninstall did not restore the pre-install filesystem manifest"
 fi
 before_second_uninstall="$(manifest)"
-second_uninstall_output="$("$REPO/scripts/completion-notify.py" uninstall)" || fail "second uninstall was not a no-op success"
+second_uninstall_output="$("$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall)" || fail "second uninstall was not a no-op success"
 [ "$before_second_uninstall" = "$(manifest)" ] || fail "second uninstall changed the filesystem manifest"
 case "$second_uninstall_output" in *"already absent"*) ;; *) fail "second uninstall did not report already absent";; esac
-python3 - "$CODEX_DIR/config.toml" <<'PY'
+"$PYTHON_BIN" - "$CODEX_DIR/config.toml" <<'PY'
 import sys, tomllib
 assert tomllib.loads(open(sys.argv[1]).read())['notify'][0].endswith('downstream-fast')
 PY
@@ -546,49 +589,49 @@ pass "FX-CN-011 dispatch/uninstall full manifest removes only managed artifacts 
 
 use_home managed-without-state
 seed_settings "\"$XDG_DATA_HOME/oh-my-ai/notifications/dispatcher\""
-if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed notify without state was inferred"; fi
+if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "managed notify without state was inferred"; fi
 pass "FX-CN-012 managed notify without valid state is NOT VERIFIABLE"
 
 for partial in config hook runtime config-runtime log-lock; do
   use_home "partial-$partial"
   seed_settings
-  "$REPO/scripts/completion-notify.py" install --yes >/dev/null
+  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null
   case "$partial" in
     config)
-      rm -rf "$(runtime_root)"; python3 - "$CLAUDE_DIR/settings.json" <<'PY'
+      rm -rf "$(runtime_root)"; "$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop']=d['hooks']['Stop'][:1]; open(p,'w').write(json.dumps(d))
 PY
       ;;
     hook)
-      python3 - "$CODEX_DIR/config.toml" <<'PY'
+      "$PYTHON_BIN" - "$CODEX_DIR/config.toml" <<'PY'
 import sys
 open(sys.argv[1],'w').write('[features]\nhooks = true\n')
 PY
       rm -rf "$(runtime_root)"
       ;;
     runtime)
-      python3 - "$CODEX_DIR/config.toml" <<'PY'
+      "$PYTHON_BIN" - "$CODEX_DIR/config.toml" <<'PY'
 import sys
 open(sys.argv[1],'w').write('[features]\nhooks = true\n')
 PY
-      python3 - "$CLAUDE_DIR/settings.json" <<'PY'
+      "$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop']=d['hooks']['Stop'][:1]; open(p,'w').write(json.dumps(d))
 PY
       ;;
     config-runtime)
-      python3 - "$CLAUDE_DIR/settings.json" <<'PY'
+      "$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop']=d['hooks']['Stop'][:1]; open(p,'w').write(json.dumps(d))
 PY
       ;;
     log-lock)
-      python3 - "$CODEX_DIR/config.toml" <<'PY'
+      "$PYTHON_BIN" - "$CODEX_DIR/config.toml" <<'PY'
 import sys
 open(sys.argv[1],'w').write('[features]\nhooks = true\n')
 PY
-      python3 - "$CLAUDE_DIR/settings.json" <<'PY'
+      "$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
 import json, sys
 p=sys.argv[1]; d=json.load(open(p)); d['hooks']['Stop']=d['hooks']['Stop'][:1]; open(p,'w').write(json.dumps(d))
 PY
@@ -599,12 +642,12 @@ PY
   esac
   rm -f "$(state_path)"
   before_manifest="$(manifest)"
-  if "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "partial $partial uninstall claimed success"; fi
+  if "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null; then fail "partial $partial uninstall claimed success"; fi
   [ "$before_manifest" = "$(manifest)" ] || fail "partial $partial uninstall mutated artifacts"
 done
 use_home partial-absent
 seed_settings
-"$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "fully absent uninstall was not no-op success"
+"$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "fully absent uninstall was not no-op success"
 pass "FX-CN-012b state-less partial installs fail closed while absent is no-op"
 
 claude_capture="$TEMP_ROOT/claude.json"
@@ -620,6 +663,49 @@ grep -q '"runtime": "claude"' "$claude_capture" || fail "Claude Stop payload was
 find "$REPO/scripts" -maxdepth 2 -type f -path '*/__pycache__/*' | grep -q . && fail "fixture created source-tree pycache"
 pass "FX-CN-013 Claude Stop mapping and source-tree pycache boundary"
 
+# Claude stores the command as JSON but runs it at a POSIX shell boundary.  The
+# adapter path must remain one argument when HOME/XDG_DATA_HOME has shell syntax.
+injection_marker="$TEMP_ROOT/claude-hook-shell-injection.marker"
+fake_macos_provider="$TEMP_ROOT/claude-hook-fake-macos"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$fake_macos_provider"
+chmod 700 "$fake_macos_provider"
+malicious_path_names=(
+  'space path'
+  "single'quote"
+  'double"quote'
+  'semicolon;fragment'
+  "dollar-\$(touch $injection_marker)"
+  $'newline\nfragment'
+)
+for malicious_name in "${malicious_path_names[@]}"; do
+  use_home "claude-hook-$malicious_name"
+  seed_settings
+  cp "$CODEX_DIR/config.toml" "$TEMP_ROOT/claude-hook-codex.before"
+  cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/claude-hook-settings.before"
+  "$PYTHON_BIN" "$REPO/scripts/completion-notify.py" install --yes >/dev/null || fail "malicious-path install failed"
+  claude_command="$("$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
+import json
+import sys
+settings = json.load(open(sys.argv[1], encoding="utf-8"))
+print(settings["hooks"]["Stop"][-1]["hooks"][0]["command"])
+PY
+)"
+  "$PYTHON_BIN" - "$CLAUDE_DIR/settings.json" <<'PY'
+import json
+import sys
+json.load(open(sys.argv[1], encoding="utf-8"))
+PY
+  printf '%s' '{"cwd":"/repo/claude-hook"}' | OH_MY_AI_NOTIFY_MACOS_ADAPTER="$fake_macos_provider" /bin/sh -c "$claude_command"
+  sleep 1
+  [ ! -e "$injection_marker" ] || fail "Claude hook path executed shell syntax"
+  [ -f "$XDG_STATE_HOME/oh-my-ai/completion-notify.log" ] || fail "Claude hook command did not execute the adapter"
+  malicious_uninstall_output="$("$PYTHON_BIN" "$REPO/scripts/completion-notify.py" uninstall)" || fail "malicious-path uninstall failed for $malicious_name: $malicious_uninstall_output"
+  cmp -s "$TEMP_ROOT/claude-hook-codex.before" "$CODEX_DIR/config.toml" || fail "malicious-path uninstall did not restore Codex bytes"
+  cmp -s "$TEMP_ROOT/claude-hook-settings.before" "$CLAUDE_DIR/settings.json" || fail "malicious-path uninstall did not restore Claude bytes"
+  completion_artifacts_absent "malicious-path uninstall"
+done
+pass "FX-CN-013b Claude Hook shell command quotes malicious adapter paths and restores exactly"
+
 # FX-CN-014/015 exercise the Python 3.11+ runtime preflight added to
 # completion-notify.py's main(): a discoverable 3.11+ interpreter must
 # produce a full install/status/test/uninstall happy path via the
@@ -633,8 +719,8 @@ if [ -n "${OH_MY_AI_NOTIFY_TEST_PYTHON311:-}" ] && "${OH_MY_AI_NOTIFY_TEST_PYTHO
   py311_path="$OH_MY_AI_NOTIFY_TEST_PYTHON311"
 elif command -v python3.11 >/dev/null 2>&1; then
   py311_path="$(command -v python3.11)"
-elif python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
-  py311_path="$(command -v python3)"
+elif "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+  py311_path="$PYTHON_BIN"
 elif command -v brew >/dev/null 2>&1; then
   brew_prefix="$(brew --prefix python@3.11 2>/dev/null || true)"
   [ -n "$brew_prefix" ] && [ -x "$brew_prefix/bin/python3.11" ] && py311_path="$brew_prefix/bin/python3.11"

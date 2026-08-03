@@ -15,6 +15,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -221,7 +222,8 @@ def fingerprint(value: object) -> str:
 
 
 def claude_hook_command(adapter: Path) -> str:
-    return f'if [ -x "{adapter}" ]; then "{adapter}"; else cat >/dev/null 2>&1 || :; fi'
+    quoted_adapter = shlex.quote(str(adapter))
+    return f"if [ -x {quoted_adapter} ]; then {quoted_adapter}; else cat >/dev/null 2>&1 || :; fi"
 
 
 def managed_claude_hook(adapter: Path) -> dict:

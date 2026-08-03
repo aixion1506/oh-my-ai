@@ -5,7 +5,9 @@ HOME, XDG data/state directories, fake Codex/Claude configuration, and fake
 providers. It never reads or modifies a real user configuration or Notification
 Center.
 
-- `FX-CN-001`: non-interactive install changes nothing without explicit opt-in.
+- `FX-CN-001`: only literal `ENABLE_COMPLETION_NOTIFY=1` permits installation;
+  plain `make install` skips completion without prompting or creating artifacts,
+  and every unapproved standalone value rejects without mutation.
 - `FX-CN-001` through `003`: explicit opt-in, unsupported-platform, malformed
   TOML, duplicate notify, config symlink, and predictable-temp attacks fail
   without a mutation.
@@ -23,6 +25,9 @@ Center.
   identity; repeat `already absent` uninstall; and missing-state fail-closed
   paths.
 - `FX-CN-013`: Claude Stop payload maps structurally without reading a user HOME.
+- `FX-CN-013b`: the persisted Claude Hook command executes through `/bin/sh` with
+  spaces, quotes, semicolons, command-substitution syntax, and newlines in the
+  disposable path; no marker executes and uninstall restores bytes exactly.
 - `FX-CN-014`: a discoverable Python 3.11+ interpreter completes the full
   install/status/test/uninstall/repeat-uninstall happy path through the
   Makefile's `PYTHON` override; otherwise falls back to a static check that
