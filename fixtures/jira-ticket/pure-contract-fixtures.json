@@ -3,81 +3,23 @@
   "network": false,
   "external_write": false,
   "artifact_write": false,
+  "canonical_backlog_headings": ["## Source Status", "## Mode", "## Epic Candidate", "## Child Ticket Index Summary", "## Complete Child Ticket Contracts", "### Summary", "### Context", "### Goal", "### Source of Truth", "### In Scope", "### Out of Scope", "### Acceptance Criteria", "### Repository", "### Base Branch", "### Expected Branch Name", "### Dependencies", "### Verification", "### Do Not Touch", "### Definition of Done", "## Jira MCP-backed Create boundary", "## Approval Boundary"],
   "scenarios": [
-    {
-      "id": "single-technical-task",
-      "input_class": "explicit technical planning request",
-      "expected": "Task Candidate preview"
-    },
-    {
-      "id": "user-feature",
-      "input_class": "explicit user-facing feature request",
-      "expected": "Story or Feature Candidate preview"
-    },
-    {
-      "id": "existing-defect",
-      "input_class": "explicit existing behavior defect",
-      "expected": "Bug Candidate preview"
-    },
-    {
-      "id": "pre-implementation-research",
-      "input_class": "explicit investigation request",
-      "expected": "Research Candidate preview"
-    },
-    {
-      "id": "structural-improvement",
-      "input_class": "explicit structural debt request",
-      "expected": "Tech Debt Candidate preview"
-    },
-    {
-      "id": "multi-repository-specification",
-      "input_class": "large specification across repositories",
-      "expected": "Epic plus repository-separated Child Ticket Candidates"
-    },
-    {
-      "id": "before-approval",
-      "input_class": "valid preview before user approval",
-      "expected": "Jira Write 0"
-    },
-    {
-      "id": "connector-unavailable",
-      "input_class": "Confluence URL candidate without supplied content",
-      "expected": "Preview remains Not Verifiable and Jira creation claim is absent"
-    },
-    {
-      "id": "ambiguous-intent",
-      "input_class": "Jira possibility question",
-      "expected": "suggestion-only with Preview and Write 0"
-    },
-    {
-      "id": "canonical-source-conflict",
-      "input_class": "lower-priority request conflicts with accepted decision",
-      "expected": "Hard Stop"
-    },
-    {
-      "id": "repository-required",
-      "input_class": "contract without repository",
-      "expected": "Repository Required and not executable"
-    },
-    {
-      "id": "blank-or-whitespace-field",
-      "input_class": "required field is empty or whitespace-only",
-      "expected": "Contract Validation Failure"
-    },
-    {
-      "id": "scope-conflict",
-      "input_class": "In Scope overlaps Out of Scope",
-      "expected": "Contract Validation Failure"
-    },
-    {
-      "id": "secret-bearing-input",
-      "input_class": "secret-bearing input redacted before preview",
-      "expected": "no Artifact or Fixture Output persistence"
-    },
-    {
-      "id": "before-jira-key",
-      "input_class": "preview before external creation",
-      "expected": "<ISSUE-KEY> placeholder remains"
-    }
+    { "id": "single-technical-task", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "user-feature", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Feature", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Feature", "source_conflict": "Not Verifiable", "branch_fallback": "feat/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "existing-defect", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Bug", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Bug", "source_conflict": "Not Verifiable", "branch_fallback": "fix/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "pre-implementation-research", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Research", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Research", "source_conflict": "Not Verifiable", "branch_fallback": "research/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "structural-improvement", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Tech Debt", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Tech Debt", "source_conflict": "Not Verifiable", "branch_fallback": "refactor/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "multi-repository-specification", "input": { "mode": "Backlog", "epic_candidate": "Epic Candidate", "issue_type": "Task", "issue_key": "<ISSUE-KEY>", "children": [{}, {}] }, "expected": { "source_priority": "Valid", "mode": "Backlog", "contract_validation": "Valid", "epic_candidate": "Epic Candidate", "child_ticket_index": 2, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "before-approval", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "connector-unavailable", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>", "contract_overrides": { "Source of Truth": "Not Verifiable" } }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Contract Validation Failure", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create 0", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "ambiguous-intent", "input": { "mode": "Suggestion", "epic_candidate": "None", "issue_type": "Custom", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Suggestion", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Issue Type Decision Required", "source_conflict": "Not Verifiable", "branch_fallback": "Decision Required", "telemetry": "not_attempted" } },
+    { "id": "canonical-source-conflict", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>", "accepted_decision": "accepted", "lower_priority_source": "conflict" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create 0", "issue_type": "Task", "source_conflict": "Decision Required", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "repository-required", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>", "contract_overrides": { "Repository": "Repository Required" } }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Contract Validation Failure", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create 0", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "blank-or-whitespace-field", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>", "contract_overrides": { "Goal": "   " } }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Contract Validation Failure", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create 0", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "scope-conflict", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>", "contract_overrides": { "In Scope": "same", "Out of Scope": "same" } }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Contract Validation Failure", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create 0", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "secret-bearing-input", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "before-jira-key", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>" }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "not_attempted" } },
+    { "id": "telemetry-fail-open", "input": { "mode": "Single Ticket", "epic_candidate": "None", "issue_type": "Task", "issue_key": "<ISSUE-KEY>", "telemetry_failed": true }, "expected": { "source_priority": "Valid", "mode": "Single Ticket", "contract_validation": "Valid", "epic_candidate": "None", "child_ticket_index": 0, "complete_child_ticket_contracts": "Valid", "external_write": "Jira Write 0", "approval_boundary": "Create Preview eligible", "issue_type": "Task", "source_conflict": "Not Verifiable", "branch_fallback": "chore/<ISSUE-KEY>", "telemetry": "fail_open" } }
   ]
 }
