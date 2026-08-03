@@ -1,7 +1,7 @@
 REPO    := $(shell pwd)
 PROFILE ?=
 
-.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-jira-ticket-fixtures test-jira-work-fixtures test-git-work-preflight-fixtures test-context-checkpoint-codex-fixtures test-context-checkpoint-fixtures test-pending-handoff-core-fixtures test-pending-handoff-identity-fixtures test-v1-fixtures test-v1x-fixtures
+.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-jira-ticket-fixtures test-jira-work-fixtures test-git-work-preflight-fixtures test-context-checkpoint-codex-fixtures test-context-checkpoint-fixtures test-pending-handoff-core-fixtures test-pending-handoff-identity-fixtures test-pending-handoff-secret-provider-fixtures test-v1-fixtures test-v1x-fixtures
 
 instructions:
 	./scripts/render-instructions.sh
@@ -58,9 +58,12 @@ test-pending-handoff-core-fixtures:
 test-pending-handoff-identity-fixtures:
 	node ./scripts/test-pending-handoff-identity-fixtures.mjs
 
+test-pending-handoff-secret-provider-fixtures:
+	node ./scripts/test-pending-handoff-secret-provider-fixtures.mjs
+
 test-v1-fixtures: test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures
 
-test-v1x-fixtures: test-v1-fixtures test-context-checkpoint-fixtures test-pending-handoff-core-fixtures test-pending-handoff-identity-fixtures
+test-v1x-fixtures: test-v1-fixtures test-context-checkpoint-fixtures test-pending-handoff-core-fixtures test-pending-handoff-identity-fixtures test-pending-handoff-secret-provider-fixtures
 
 install: install-shared
 
