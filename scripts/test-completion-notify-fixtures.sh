@@ -2,7 +2,12 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/oh-my-ai-completion-notify.XXXXXX")"
+# Strip any trailing slash from the temp base: macOS $TMPDIR ends in "/", which
+# would produce a double-slash TEMP_ROOT. The installer normalizes managed paths,
+# so a double slash would make the fixture's reconstructed paths diverge from the
+# recorded managed values (breaks the FX-CN-010 convergence comparison).
+TEMP_BASE="${TMPDIR:-/tmp}"
+TEMP_ROOT="$(mktemp -d "${TEMP_BASE%/}/oh-my-ai-completion-notify.XXXXXX")"
 SOURCE_STATUS="$(git -C "$REPO" status --porcelain)"
 export HOME="$TEMP_ROOT/home"
 export XDG_DATA_HOME="$HOME/data"
@@ -16,7 +21,18 @@ fail() { echo "completion notification fixture failure: $*" >&2; exit 1; }
 pass() { echo "passed: $1"; }
 hash_files() { node -e 'const fs=require("fs"), crypto=require("crypto"); const hash=crypto.createHash("sha256"); for (const file of process.argv.slice(1)) hash.update(fs.readFileSync(file)); console.log(hash.digest("hex"));' "$@"; }
 manifest() { node -e 'const fs=require("fs"), path=require("path"), crypto=require("crypto"); const root=process.argv[1], out=[]; const visit=(p,rel)=>{const st=fs.lstatSync(p,{throwIfNoEntry:false}); if(!st)return; const row={path:rel,type:st.isSymbolicLink()?"symlink":st.isDirectory()?"dir":"file",mode:(st.mode&0o777).toString(8)}; if(st.isSymbolicLink())row.target=fs.readlinkSync(p); if(st.isFile())row.sha256=crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex"); out.push(row); if(st.isDirectory())for(const n of fs.readdirSync(p).sort())visit(path.join(p,n),path.join(rel,n));}; visit(root,"."); console.log(JSON.stringify(out));' "$HOME"; }
-mode() { stat -c '%a' "$1"; }
+# Portable file-mode probe: BSD stat lacks GNU `stat -c`, so resolve the mode
+# via Python. Uses os.lstat (never follows symlinks) and always prints 4-digit
+# octal so Linux and macOS agree byte-for-byte.
+mode() {
+  python3 - "$1" <<'PY'
+import os
+import stat
+import sys
+
+print(f"{stat.S_IMODE(os.lstat(sys.argv[1]).st_mode):04o}")
+PY
+}
 state_path() { printf '%s\n' "$XDG_DATA_HOME/oh-my-ai/notifications/state/completion-notify.json"; }
 runtime_root() { printf '%s\n' "$XDG_DATA_HOME/oh-my-ai/notifications"; }
 dispatcher() { printf '%s\n' "$(runtime_root)/dispatcher"; }
@@ -249,22 +265,22 @@ cp "$CLAUDE_DIR/settings.json" "$TEMP_ROOT/modes-claude.before"
 chmod 644 "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
 chmod 644 "$TEMP_ROOT/modes-claude.before"
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
-[ "$(mode "$CODEX_DIR/config.toml")" = 644 ] || fail "existing 0644 Codex config mode was not preserved"
-[ "$(mode "$CLAUDE_DIR/settings.json")" = 644 ] || fail "existing 0644 Claude settings mode was not preserved"
-[ "$(mode "$(state_path)")" = 600 ] || fail "new state mode is not private"
+[ "$(mode "$CODEX_DIR/config.toml")" = 0644 ] || fail "existing 0644 Codex config mode was not preserved"
+[ "$(mode "$CLAUDE_DIR/settings.json")" = 0644 ] || fail "existing 0644 Claude settings mode was not preserved"
+[ "$(mode "$(state_path)")" = 0600 ] || fail "new state mode is not private"
 chmod 644 "$(state_path)"
 if "$REPO/scripts/completion-notify.py" install --yes >/dev/null; then fail "state mode weakening was accepted"; fi
 chmod 600 "$(state_path)"
 "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "0644 mode uninstall failed"
-[ "$(mode "$CODEX_DIR/config.toml")" = 644 ] || fail "uninstall changed existing Codex config mode"
-[ "$(mode "$CLAUDE_DIR/settings.json")" = 644 ] || fail "uninstall changed existing Claude settings mode"
+[ "$(mode "$CODEX_DIR/config.toml")" = 0644 ] || fail "uninstall changed existing Codex config mode"
+[ "$(mode "$CLAUDE_DIR/settings.json")" = 0644 ] || fail "uninstall changed existing Claude settings mode"
 cmp -s "$TEMP_ROOT/modes-claude.before" "$CLAUDE_DIR/settings.json" || fail "0644 Claude settings bytes were not restored"
 
 use_home new-modes
 rm -f "$CODEX_DIR/config.toml" "$CLAUDE_DIR/settings.json"
 "$REPO/scripts/completion-notify.py" install --yes >/dev/null
-[ "$(mode "$CODEX_DIR/config.toml")" = 600 ] || fail "new Codex config mode is not private"
-[ "$(mode "$CLAUDE_DIR/settings.json")" = 600 ] || fail "new Claude settings mode is not private"
+[ "$(mode "$CODEX_DIR/config.toml")" = 0600 ] || fail "new Codex config mode is not private"
+[ "$(mode "$CLAUDE_DIR/settings.json")" = 0600 ] || fail "new Claude settings mode is not private"
 pass "FX-CN-004c both user configs preserve modes while new configs and state stay private"
 
 for shape in compact pretty; do
@@ -278,7 +294,7 @@ for shape in compact pretty; do
   "$REPO/scripts/completion-notify.py" install --yes >/dev/null
   "$REPO/scripts/completion-notify.py" uninstall >/dev/null || fail "$shape Claude uninstall failed"
   cmp -s "$TEMP_ROOT/$shape.before" "$CLAUDE_DIR/settings.json" || fail "$shape Claude preimage bytes changed"
-  [ "$(mode "$CLAUDE_DIR/settings.json")" = 600 ] || fail "$shape Claude preimage mode changed"
+  [ "$(mode "$CLAUDE_DIR/settings.json")" = 0600 ] || fail "$shape Claude preimage mode changed"
 done
 use_home claude-absent
 seed_settings
@@ -334,7 +350,16 @@ export DOWN_PID_FILE="$TEMP_ROOT/downstream-pids"
 # An unlocked, old lock is reusable. The stable flock, not its age or inode
 # replacement, decides which concurrent dispatcher becomes supervisor.
 : >"$(state_path).dispatch.lock"
-touch -d '2 days ago' "$(state_path).dispatch.lock"
+# Age the lock 2 days back. BSD touch cannot parse GNU `touch -d '2 days ago'`,
+# so set the mtime via Python for identical Linux/macOS behavior.
+python3 - "$(state_path).dispatch.lock" <<'PY'
+import os
+import sys
+import time
+
+when = time.time() - 2 * 86400
+os.utime(sys.argv[1], (when, when))
+PY
 gate="$TEMP_ROOT/dispatch-release"
 ready_root="$TEMP_ROOT/dispatch-ready"; mkdir -p "$ready_root"
 for worker in $(seq 1 20); do
