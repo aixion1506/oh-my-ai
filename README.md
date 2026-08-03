@@ -83,30 +83,43 @@ make install-completion-notify \
   ENABLE_COMPLETION_NOTIFY=1
 ```
 
-`make install` preserves its existing shared-install behavior and, on an
-interactive terminal, asks before adding this optional integration:
+`make install` preserves its existing shared-install behavior. Completion Notification
+is explicit opt-in only and prompt-free:
 
 ```bash
+# Shared install only; completion notification is skipped when not opted in
 make install
-# non-interactive explicit opt-in
+
+# Explicit opt-in: require literal ENABLE_COMPLETION_NOTIFY=1
 make install ENABLE_COMPLETION_NOTIFY=1
-# explicit standalone installation: prompt by default
-make install-completion-notify
-# non-interactive standalone installation
+
+# Prompt-free standalone install (requires literal ENABLE_COMPLETION_NOTIFY=1)
 make install-completion-notify ENABLE_COMPLETION_NOTIFY=1
+```
+
+Running `make install-completion-notify` without `ENABLE_COMPLETION_NOTIFY=1` exits
+with code 2 and performs no completion-notification mutation.
+
+If your default `python3` is older than 3.11, use a 3.11+ interpreter explicitly for
+the completion-notification install path:
+
+```bash
+make install \
+  PYTHON="$(brew --prefix python@3.11)/bin/python3.11" \
+  ENABLE_COMPLETION_NOTIFY=1
 ```
 
 It installs **Codex Turn 완료** and **Claude Turn 완료** notifications. A Turn
 notification is not proof that a task, validation, PR, or deployment
 succeeded. The title contains only the runtime and normalized project-directory
 basename; the body is always `응답이 완료되었습니다. 결과를 확인하세요.` It never
-shows assistant-response content, prompts, paths, code, diffs, branches, Jira
-keys, terminal output, or secrets.
+shows assistant-response content, paths, code, diffs, branches, Jira keys, terminal
+output, or secrets.
 The Claude adapter never reads or includes assistant-response text in the
 shared event; the macOS provider receives no response text from either runtime.
 
 Before changing configuration, the installer shows a preview and backup path,
-then requires approval. Codex's existing `notify` target is preserved as a
+then applies only on explicit opt-in. Codex's existing `notify` target is preserved as a
 bounded asynchronous downstream provider. That provider is a pre-existing
 user target and therefore keeps its original Codex event contract. Claude's
 `Stop` hook is merged additively and never creates a new downstream for
