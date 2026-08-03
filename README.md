@@ -114,10 +114,11 @@ make install \
 
 It installs **Codex Turn 완료** and **Claude Turn 완료** notifications. A Turn
 notification is not proof that a task, validation, PR, or deployment
-succeeded. The title contains only the runtime and normalized project-directory
-basename; the body is always `응답이 완료되었습니다. 결과를 확인하세요.` It never
-shows assistant-response content, paths, code, diffs, branches, Jira keys, terminal
-output, or secrets.
+succeeded. The title is the fixed runtime allowlist value `Codex Turn 완료` or
+`Claude Turn 완료` (`AI Turn 완료` for any unknown runtime); the body is always
+`응답이 완료되었습니다. 결과를 확인하세요.` It never includes cwd, project or
+path components, assistant-response content, prompts, code, diffs, branches,
+Jira keys, terminal output, or secrets.
 The Claude adapter never reads or includes assistant-response text in the
 shared event; the macOS provider receives no response text from either runtime.
 

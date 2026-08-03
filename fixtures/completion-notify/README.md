@@ -17,7 +17,8 @@ Center.
 - `FX-CN-006`: a stable flock reuses an old unlocked lock, rejects active-lock
   uninstall without mutation, rejects a lock symlink, and leaves no child alive
   after 100 concurrent dispatches.
-- `FX-CN-007`: the rendered body is fixed text and contains no assistant summary.
+- `FX-CN-007`: runtime-only fixed titles and the fixed body ignore cwd, project,
+  path, Jira-like, shell-syntax, newline, and unknown-runtime payload text.
 - `FX-CN-007b`: Claude is macOS-only; native Codex alone retains the existing
   downstream provider contract.
 - `FX-CN-008` through `012`: transaction rollback; an all-surface uninstall

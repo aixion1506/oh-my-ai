@@ -37,10 +37,11 @@ and uninstall do not require the variable. Direct installer invocation is
 non-interactive and requires both `ENABLE_COMPLETION_NOTIFY=1` and `--yes`.
 
 The notification means **Codex Turn 완료** or **Claude Turn 완료**, never an
-overall task success. It shows only the normalized working-directory basename
-and the fixed body `응답이 완료되었습니다. 결과를 확인하세요.` Assistant-response
-summaries are intentionally unsupported, so prompts, paths, code, diffs,
-branches, Jira identifiers, terminal output, and secrets are not projected.
+overall task success. The title is fixed by a runtime allowlist (`AI Turn 완료`
+for an unknown runtime), and the body is always `응답이 완료되었습니다. 결과를
+확인하세요.` Cwd, project or path components, assistant-response content,
+prompts, code, diffs, branches, Jira identifiers, terminal output, and secrets
+are never projected.
 The Claude adapter does not read or include assistant-response fields in the
 shared event, and the macOS adapter receives no response text from either
 runtime.

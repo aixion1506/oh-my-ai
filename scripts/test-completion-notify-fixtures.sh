@@ -604,9 +604,62 @@ sleep 0.2
 [ ! -e "$TEMP_ROOT/lock-symlink-provider" ] || fail "lock symlink started a provider"
 pass "FX-CN-006c lock symlink fails open without provider execution"
 
-rendered="$(OH_MY_AI_NOTIFY_RENDER_ONLY=1 "$REPO/scripts/completion-notify-macos.sh" '{"type":"agent-turn-complete","cwd":"/private/abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz","last-assistant-message":"SECRET=sk-live /Users/alice RPL-123 branch diff terminal"}')"
-[ "$rendered" = $'Codex Turn 완료 · abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefgh\n응답이 완료되었습니다. 결과를 확인하세요.' ] || fail "default notification contract leaked assistant content or project normalization changed"
-pass "FX-CN-007 fixed body contains zero assistant-summary characters"
+notification_payload() {
+  local runtime_value="$1" cwd_mode="$2" cwd_value="${3-}"
+  "$PYTHON_BIN" - "$runtime_value" "$cwd_mode" "$cwd_value" <<'PY'
+import json
+import sys
+
+runtime, cwd_mode, cwd = sys.argv[1:]
+event = {"type": "agent-turn-complete", "runtime": runtime}
+if cwd_mode == "present":
+    event["cwd"] = cwd
+print(json.dumps(event))
+PY
+}
+
+assert_fixed_notification() {
+  local label="$1" expected_title="$2" payload_value="$3" rendered_value
+  rendered_value="$(OH_MY_AI_NOTIFY_RENDER_ONLY=1 "$REPO/scripts/completion-notify-macos.sh" "$payload_value")"
+  [ "$rendered_value" = "$expected_title"$'\n응답이 완료되었습니다. 결과를 확인하세요.' ] || fail "$label changed the fixed title/body privacy contract: $rendered_value"
+}
+
+privacy_title_marker="$TEMP_ROOT/privacy-title-shell.marker"
+sensitive_cwds=(
+  '/private/CLIENT-RPL-123'
+  '/Users/test/customer-name'
+  '/tmp/project with spaces'
+  "/tmp/'quoted'"
+  "/tmp/\$(touch $privacy_title_marker)"
+  $'/tmp/newline\nSECRET-PROJECT'
+  ''
+)
+for sensitive_cwd in "${sensitive_cwds[@]}"; do
+  assert_fixed_notification \
+    "Codex sensitive cwd" \
+    "Codex Turn 완료" \
+    "$(notification_payload codex present "$sensitive_cwd")"
+done
+assert_fixed_notification \
+  "Codex missing cwd" \
+  "Codex Turn 완료" \
+  "$(notification_payload codex missing)"
+assert_fixed_notification \
+  "native Codex missing runtime" \
+  "Codex Turn 완료" \
+  '{"type":"agent-turn-complete","cwd":"/private/CLIENT-RPL-123"}'
+assert_fixed_notification \
+  "Claude sensitive cwd" \
+  "Claude Turn 완료" \
+  "$(notification_payload claude present '/Users/test/SECRET-PROJECT')"
+assert_fixed_notification \
+  "unknown runtime and sensitive cwd" \
+  "AI Turn 완료" \
+  "$(notification_payload CLIENT-RPL-123 present '/private/secret')"
+untyped_unknown_render="$(OH_MY_AI_NOTIFY_RENDER_ONLY=1 "$REPO/scripts/completion-notify-macos.sh" '{"runtime":"CLIENT-RPL-123","cwd":"/private/secret"}')"
+[ -z "$untyped_unknown_render" ] || fail "event without the required type exposed unknown runtime or cwd text"
+[ ! -e "$privacy_title_marker" ] || fail "sensitive cwd executed shell syntax"
+pass "FX-CN-007 runtime-only fixed titles ignore sensitive cwd and unknown runtime text"
 
 use_home privacy
 fake_mac="$TEMP_ROOT/privacy-mac"; fake_down="$TEMP_ROOT/privacy-down"
