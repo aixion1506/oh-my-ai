@@ -62,7 +62,10 @@ function build(overrides = {}) {
 function assertFailure(result, reason) {
   assert.deepEqual(result.ok, false);
   assert.equal(result.reason, reason);
-  assertExactOwnKeys(result, ["ok", "reason", "metadata"]);
+  assertExactPrototype(result, Object.prototype);
+  assertOwnDataPropertiesOnly(result, ["ok", "reason", "metadata"]);
+  assertExactPrototype(result.metadata, Object.prototype);
+  assertOwnDataPropertiesOnly(result.metadata, Reflect.ownKeys(result.metadata));
   assert.ok(Reflect.ownKeys(result.metadata).every(key => [
     "operation",
     "provider_version_present",
@@ -96,14 +99,42 @@ function assertExactOwnKeys(value, expectedKeys) {
   assert.deepEqual(Reflect.ownKeys(value), expectedKeys);
 }
 
+function assertExactPrototype(value, expectedPrototype) {
+  assert.equal(Object.getPrototypeOf(value), expectedPrototype);
+}
+
+function assertOwnDataPropertiesOnly(value, expectedKeys) {
+  assertExactOwnKeys(value, expectedKeys);
+  for (const key of expectedKeys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    assert.ok(descriptor);
+    assert.equal("value" in descriptor, true);
+    assert.equal("get" in descriptor, false);
+    assert.equal("set" in descriptor, false);
+  }
+}
+
 function assertBundleShape(result) {
   assert.equal(result.ok, true);
-  assertExactOwnKeys(result, ["ok", "value"]);
-  assertExactOwnKeys(result.value, ["current", "verification", "safe_equal"]);
-  assertExactOwnKeys(result.value.current, ["key_id", "keyed_digest"]);
+  assertExactPrototype(result, Object.prototype);
+  assertOwnDataPropertiesOnly(result, ["ok", "value"]);
+  assertExactPrototype(result.value, Object.prototype);
+  assertOwnDataPropertiesOnly(result.value, ["current", "verification", "safe_equal"]);
+  assertExactPrototype(result.value.current, Object.prototype);
+  assertOwnDataPropertiesOnly(result.value.current, ["key_id", "keyed_digest"]);
+  assertExactPrototype(result.value.verification, Array.prototype);
+  assertOwnDataPropertiesOnly(
+    result.value.verification,
+    [...result.value.verification.keys()].map(String).concat("length"),
+  );
   for (const entry of result.value.verification) {
-    assertExactOwnKeys(entry, ["key_id", "keyed_digest"]);
+    assertExactPrototype(entry, Object.prototype);
+    assertOwnDataPropertiesOnly(entry, ["key_id", "keyed_digest"]);
+    assertExactPrototype(entry.keyed_digest, Function.prototype);
+    assertOwnDataPropertiesOnly(entry.keyed_digest, ["length", "name"]);
   }
+  assertExactPrototype(result.value.safe_equal, Function.prototype);
+  assertOwnDataPropertiesOnly(result.value.safe_equal, ["length", "name"]);
 }
 
 function assertOriginalReferencesHidden(bundle, originalProvider) {
@@ -113,14 +144,29 @@ function assertOriginalReferencesHidden(bundle, originalProvider) {
     originalProvider.safe_equal,
     originalProvider.verification_key_ids,
   ];
-  const seen = new Set();
+  const builtinPrototypes = new Set([
+    Object.prototype,
+    Array.prototype,
+    Function.prototype,
+    null,
+  ]);
+  const seen = new WeakSet();
   const visit = value => {
     if ((typeof value !== "object" && typeof value !== "function") || value === null || seen.has(value)) return;
     assert.equal(forbidden.includes(value), false);
     seen.add(value);
+    const prototype = Object.getPrototypeOf(value);
+    assert.equal(forbidden.includes(prototype), false);
+    if (!builtinPrototypes.has(prototype)) visit(prototype);
     for (const key of Reflect.ownKeys(value)) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor && "value" in descriptor) visit(descriptor.value);
+      if (!descriptor) continue;
+      if ("value" in descriptor) {
+        visit(descriptor.value);
+      } else {
+        visit(descriptor.get);
+        visit(descriptor.set);
+      }
     }
   };
   visit(bundle);
@@ -243,6 +289,73 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
   assert.notEqual(bundle.current.keyed_digest, original.keyed_digest);
   assert.notEqual(bundle.safe_equal, original.safe_equal);
   assertOriginalReferencesHidden(bundle, original);
+
+  const leakedBundle = Object.create(original);
+  Object.defineProperties(leakedBundle, {
+    current: { value: bundle.current, enumerable: true },
+    verification: { value: bundle.verification, enumerable: true },
+    safe_equal: { value: bundle.safe_equal, enumerable: true },
+  });
+  Object.freeze(leakedBundle);
+  assert.throws(
+    () => assertExactPrototype(leakedBundle, Object.prototype),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () => assertOriginalReferencesHidden(leakedBundle, original),
+    assert.AssertionError,
+  );
+
+  const leakedDigestWrapper = input => bundle.current.keyed_digest(input);
+  Object.setPrototypeOf(leakedDigestWrapper, original.keyed_digest);
+  Object.freeze(leakedDigestWrapper);
+  assert.throws(
+    () => assertExactPrototype(leakedDigestWrapper, Function.prototype),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () => assertOriginalReferencesHidden(leakedDigestWrapper, original),
+    assert.AssertionError,
+  );
+
+  const leakedCompareWrapper = (left, right) => bundle.safe_equal(left, right);
+  Object.setPrototypeOf(leakedCompareWrapper, original.safe_equal);
+  Object.freeze(leakedCompareWrapper);
+  assert.throws(
+    () => assertExactPrototype(leakedCompareWrapper, Function.prototype),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () => assertOriginalReferencesHidden(leakedCompareWrapper, original),
+    assert.AssertionError,
+  );
+
+  const leakedVerification = [...bundle.verification];
+  Object.setPrototypeOf(leakedVerification, original.verification_key_ids);
+  Object.freeze(leakedVerification);
+  assert.throws(
+    () => assertExactPrototype(leakedVerification, Array.prototype),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () => assertOriginalReferencesHidden(leakedVerification, original),
+    assert.AssertionError,
+  );
+
+  const accessorLeak = {};
+  Object.defineProperties(accessorLeak, {
+    digest: { enumerable: true, get: original.keyed_digest },
+    compare: { enumerable: true, set: original.safe_equal },
+  });
+  Object.freeze(accessorLeak);
+  assert.throws(
+    () => assertOwnDataPropertiesOnly(accessorLeak, ["digest", "compare"]),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () => assertOriginalReferencesHidden(accessorLeak, original),
+    assert.AssertionError,
+  );
   assert.equal(JSON.stringify(bundle).includes(RAW_SECRET_MARKER), false);
 
   const next = createIdentitySecurityDependencies(original);
