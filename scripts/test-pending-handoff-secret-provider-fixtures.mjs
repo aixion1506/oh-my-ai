@@ -62,6 +62,14 @@ function build(overrides = {}) {
 function assertFailure(result, reason) {
   assert.deepEqual(result.ok, false);
   assert.equal(result.reason, reason);
+  assertExactOwnKeys(result, ["ok", "reason", "metadata"]);
+  assert.ok(Reflect.ownKeys(result.metadata).every(key => [
+    "operation",
+    "provider_version_present",
+    "provider_version_supported",
+    "key_id_present",
+    "verification_key_count",
+  ].includes(key)));
   assert.equal(Object.prototype.hasOwnProperty.call(result.metadata ?? {}, "raw"), false);
 }
 
@@ -82,6 +90,53 @@ function digest(entry, overrides = {}) {
     bytes: new Uint8Array([1, 2, 3]),
     ...overrides,
   });
+}
+
+function assertExactOwnKeys(value, expectedKeys) {
+  assert.deepEqual(Reflect.ownKeys(value), expectedKeys);
+}
+
+function assertBundleShape(result) {
+  assert.equal(result.ok, true);
+  assertExactOwnKeys(result, ["ok", "value"]);
+  assertExactOwnKeys(result.value, ["current", "verification", "safe_equal"]);
+  assertExactOwnKeys(result.value.current, ["key_id", "keyed_digest"]);
+  for (const entry of result.value.verification) {
+    assertExactOwnKeys(entry, ["key_id", "keyed_digest"]);
+  }
+}
+
+function assertOriginalReferencesHidden(bundle, originalProvider) {
+  const forbidden = [
+    originalProvider,
+    originalProvider.keyed_digest,
+    originalProvider.safe_equal,
+    originalProvider.verification_key_ids,
+  ];
+  const seen = new Set();
+  const visit = value => {
+    if ((typeof value !== "object" && typeof value !== "function") || value === null || seen.has(value)) return;
+    assert.equal(forbidden.includes(value), false);
+    seen.add(value);
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor && "value" in descriptor) visit(descriptor.value);
+    }
+  };
+  visit(bundle);
+}
+
+function assertDigestProviderConformance(bundle) {
+  assert.equal(digest(bundle.current), digest(bundle.current));
+  assert.notEqual(digest(bundle.current), digest(bundle.current, { bytes: new Uint8Array([1, 2, 4]) }));
+  if (bundle.verification.length === 2) {
+    assert.notEqual(digest(bundle.current), digest(bundle.verification[1]));
+  }
+}
+
+function assertConformanceFailure(result) {
+  assert.equal(result.ok, true);
+  assert.throws(() => assertDigestProviderConformance(result.value), assert.AssertionError);
 }
 
 function session(entry, rawSession = "session-001") {
@@ -129,27 +184,53 @@ test("Group 1 provider shape rejects non-exact reflection-safe objects", () => {
     safe_equal: { get: () => frozen((left, right) => left === right), enumerable: true },
   });
   Object.freeze(getter);
+  const setter = { ...provider() };
+  Object.defineProperty(setter, "safe_equal", { set: () => {}, enumerable: true });
+  Object.freeze(setter);
+  const nonEnumerable = { ...provider() };
+  Object.defineProperty(nonEnumerable, "version", { value: "phr-secret-provider-v1", enumerable: false });
+  Object.freeze(nonEnumerable);
   const custom = Object.freeze(Object.assign(Object.create(null), provider()));
   const trapping = new Proxy(provider(), { ownKeys() { throw new Error(RAW_EXCEPTION_MARKER); } });
 
-  for (const value of [extra, withSymbol, missing, getter, custom, trapping, null]) {
+  for (const value of [extra, withSymbol, missing, getter, setter, nonEnumerable, custom, trapping, null]) {
     assertFailure(createIdentitySecurityDependencies(value), "secret_provider_invalid");
   }
 });
 
-test("Group 2 requires a frozen snapshot and returns a fully frozen non-alias bundle", () => {
+test("Group 2 builds a static-only frozen non-alias bundle with exact safe shapes", () => {
   const unfrozenProvider = { ...provider() };
   const unfrozenKeys = provider({ verification_key_ids: ["current_key"] });
   const unfrozenDigest = provider({ keyed_digest: digestFor });
   const unfrozenCompare = provider({ safe_equal: (left, right) => left === right });
-  const toJson = frozen(Object.assign(input => digestFor(input), { toJSON: () => RAW_SECRET_MARKER }));
-  for (const value of [unfrozenProvider, unfrozenKeys, unfrozenDigest, unfrozenCompare, provider({ keyed_digest: toJson })]) {
+  const digestToJson = frozen(Object.assign(input => digestFor(input), { toJSON: () => RAW_SECRET_MARKER }));
+  const compareToJson = frozen(Object.assign((left, right) => left === right, { toJSON: () => RAW_SECRET_MARKER }));
+  for (const value of [
+    unfrozenProvider,
+    unfrozenKeys,
+    unfrozenDigest,
+    unfrozenCompare,
+    provider({ keyed_digest: digestToJson }),
+    provider({ safe_equal: compareToJson }),
+  ]) {
     assertFailure(createIdentitySecurityDependencies(value), "secret_provider_invalid");
   }
 
-  const original = provider();
+  let digestCalls = 0;
+  let compareCalls = 0;
+  const rawDigest = frozen(input => {
+    digestCalls += 1;
+    return digestFor(input);
+  });
+  const rawCompare = frozen((left, right) => {
+    compareCalls += 1;
+    return left === right;
+  });
+  const original = provider({ keyed_digest: rawDigest, safe_equal: rawCompare });
   const result = createIdentitySecurityDependencies(original);
-  assert.equal(result.ok, true);
+  assertBundleShape(result);
+  assert.equal(digestCalls, 0);
+  assert.equal(compareCalls, 0);
   const bundle = result.value;
   assert.equal(Object.isFrozen(bundle), true);
   assert.equal(Object.isFrozen(bundle.current), true);
@@ -158,9 +239,18 @@ test("Group 2 requires a frozen snapshot and returns a fully frozen non-alias bu
   assert.ok(bundle.verification.every(entry => Object.isFrozen(entry.keyed_digest)));
   assert.equal(Object.isFrozen(bundle.safe_equal), true);
   assert.equal(bundle.verification[0], bundle.current);
+  assert.notEqual(bundle, original);
   assert.notEqual(bundle.current.keyed_digest, original.keyed_digest);
   assert.notEqual(bundle.safe_equal, original.safe_equal);
+  assertOriginalReferencesHidden(bundle, original);
   assert.equal(JSON.stringify(bundle).includes(RAW_SECRET_MARKER), false);
+
+  const next = createIdentitySecurityDependencies(original);
+  assert.notEqual(result, next);
+  const firstFailure = build({ version: "unsupported" });
+  const nextFailure = build({ version: "unsupported" });
+  assert.notEqual(firstFailure, nextFailure);
+  assert.notEqual(firstFailure.metadata, nextFailure.metadata);
 });
 
 test("Group 3 accepts only the supported provider version without exposing raw versions", () => {
@@ -178,7 +268,12 @@ test("Group 3 accepts only the supported provider version without exposing raw v
 });
 
 test("Group 4 validates current-first key lifecycle and fails unknown keys closed", () => {
+  assert.equal(build({ current_key_id: "a", verification_key_ids: Object.freeze(["a"]) }).ok, true);
+  const longest = "a".repeat(64);
+  assert.equal(build({ current_key_id: longest, verification_key_ids: Object.freeze([longest]) }).ok, true);
   for (const value of [
+    provider({ current_key_id: "", verification_key_ids: Object.freeze([""]) }),
+    provider({ current_key_id: "a".repeat(65), verification_key_ids: Object.freeze(["a".repeat(65)]) }),
     provider({ current_key_id: "bad.key" }),
     provider({ verification_key_ids: Object.freeze([]) }),
     provider({ verification_key_ids: Object.freeze(["previous_key", "current_key"]) }),
@@ -214,7 +309,15 @@ test("Group 5 validates exact digest inputs and copies bytes before provider inv
   assertThrowsCode(() => bundle.current.keyed_digest({ ...input, extra: true }), "secret_digest_invalid");
   assertThrowsCode(() => bundle.current.keyed_digest({ key_id: "current_key", purpose: PURPOSE, bytes, [Symbol("x")]: true }), "secret_digest_invalid");
   assertThrowsCode(() => digest(bundle.current, { key_id: "previous_key" }), "secret_key_not_found");
-  assertThrowsCode(() => digest(bundle.current, { purpose: "Pending-Handoff-Identity" }), "secret_purpose_invalid");
+  for (const purpose of [
+    " pending-handoff-identity",
+    "pending-handoff-identity ",
+    "PENDING-HANDOFF-IDENTITY",
+    "pending-handoff-identity*",
+    "future-purpose",
+  ]) {
+    assertThrowsCode(() => digest(bundle.current, { purpose }), "secret_purpose_invalid");
+  }
   assertThrowsCode(() => digest(bundle.current, { bytes: [1, 2, 3] }), "secret_digest_invalid");
 });
 
@@ -229,7 +332,8 @@ test("Group 6 rejects asynchronous malformed and raw-failing digest outputs with
   ];
   for (const [output, code] of cases) {
     const result = build({ keyed_digest: frozen(() => output) });
-    assertFailure(result, code);
+    assert.equal(result.ok, true);
+    assertThrowsCode(() => digest(result.value.current), code);
   }
   let mode = "normal";
   const result = build({ keyed_digest: frozen(input => {
@@ -241,41 +345,56 @@ test("Group 6 rejects asynchronous malformed and raw-failing digest outputs with
   assert.equal(JSON.stringify(result).includes(RAW_EXCEPTION_MARKER), false);
 });
 
-test("Group 7 verifies deterministic key and byte-bound digest behavior", () => {
+test("Group 7 keeps digest operation conformance in fixture-only wrapper oracles", () => {
   const bundle = build().value;
-  assert.equal(digest(bundle.current), digest(bundle.current));
-  assert.notEqual(digest(bundle.current), digest(bundle.current, { bytes: new Uint8Array([1, 2, 4]) }));
-  assert.notEqual(digest(bundle.current), digest(bundle.verification[1]));
-  assertFailure(build({ keyed_digest: frozen(() => "A".repeat(43)) }), "secret_digest_invalid");
-  assertFailure(build({ keyed_digest: frozen(({ purpose, bytes }) => digestFor({ key_id: "fixed", purpose, bytes })) }), "secret_digest_invalid");
-  assertFailure(build({ keyed_digest: frozen(({ key_id, purpose }) => digestFor({ key_id, purpose, bytes: new Uint8Array([0]) })) }), "secret_digest_invalid");
+  assertDigestProviderConformance(bundle);
+  assertConformanceFailure(build({ keyed_digest: frozen(() => "A".repeat(43)) }));
+  assertConformanceFailure(build({ keyed_digest: frozen(({ purpose, bytes }) => digestFor({ key_id: "fixed", purpose, bytes })) }));
+  assertConformanceFailure(build({ keyed_digest: frozen(({ key_id, purpose }) => digestFor({ key_id, purpose, bytes: new Uint8Array([0]) })) }));
 });
 
-test("Group 8 wraps safe equality synchronously and rejects incorrect comparators", () => {
+test("Group 8 rejects post-build broken comparators at wrapper and S01 boundaries", () => {
   const bundle = build().value;
   assert.equal(bundle.safe_equal("same", "same"), true);
   assert.equal(bundle.safe_equal("left", "right"), false);
   assert.equal(bundle.safe_equal("short", "longer"), false);
   assertThrowsCode(() => bundle.safe_equal("same", 1), "secret_compare_invalid");
-  for (const comparator of [
-    () => Promise.resolve(true),
-    () => "true",
-    () => true,
-    () => false,
-    (left, right) => left.slice(0, 3) === right.slice(0, 3),
-  ]) {
-    assertFailure(build({ safe_equal: frozen(comparator) }), "secret_compare_invalid");
-  }
-  let mode = "normal";
+  let compareMode = "correct";
   const result = build({ safe_equal: frozen((left, right) => {
-    if (mode === "throw") throw new Error(RAW_EXCEPTION_MARKER);
+    if (compareMode === "always_true") return true;
+    if (compareMode === "always_false") return false;
+    if (compareMode === "prefix") return left.slice(0, 3) === right.slice(0, 3);
+    if (compareMode === "non_boolean") return "true";
+    if (compareMode === "promise") return Promise.resolve(true);
+    if (compareMode === "throw") throw new Error(RAW_EXCEPTION_MARKER);
     return left === right;
   }) });
-  mode = "throw";
-  assertThrowsCode(() => result.value.safe_equal("same", "same"), "secret_compare_failed");
+  assert.equal(result.ok, true);
+  const entry = result.value.current;
+  const source = {
+    session_identity: session(entry, "session-001").identity,
+    repository_identity: repository(entry).identity,
+    worktree_identity: worktree(entry, repository(entry).identity).identity,
+  };
+  const otherSession = { ...source, session_identity: session(entry, "session-002").identity };
+  for (const [mode, left, right, current, code] of [
+    ["always_true", "same", "sane", otherSession, "secret_compare_invalid"],
+    ["always_false", "same", "same", source, "secret_compare_invalid"],
+    ["prefix", "same", "samx", otherSession, "secret_compare_invalid"],
+    ["non_boolean", "same", "same", source, "secret_compare_invalid"],
+    ["promise", "same", "same", source, "secret_compare_invalid"],
+    ["throw", "same", "same", source, "secret_compare_failed"],
+  ]) {
+    compareMode = mode;
+    assertThrowsCode(() => result.value.safe_equal(left, right), code);
+    const scope = compareIdentityScope({ source, current, safe_equal: result.value.safe_equal });
+    assert.equal(scope.ok, false);
+    assert.notEqual(scope.result, "match");
+    assert.notEqual(scope.result, "same_session");
+  }
 });
 
-test("Group 9 redacts secrets identities exceptions and serialization boundaries", () => {
+test("Group 9 redacts factory digest compare error bundle and result serialization", () => {
   const failure = createIdentitySecurityDependencies({
     version: RAW_SECRET_MARKER,
     current_key_id: RAW_SESSION_MARKER,
@@ -286,6 +405,27 @@ test("Group 9 redacts secrets identities exceptions and serialization boundaries
   const rendered = JSON.stringify(failure);
   for (const marker of [RAW_SECRET_MARKER, RAW_SESSION_MARKER, RAW_REPOSITORY_MARKER, RAW_WORKTREE_MARKER, RAW_EXCEPTION_MARKER]) {
     assert.equal(rendered.includes(marker), false);
+  }
+  let mode = "normal";
+  const result = build({
+    keyed_digest: frozen(input => {
+      if (mode === "digest") throw new Error(RAW_EXCEPTION_MARKER);
+      return digestFor(input);
+    }),
+    safe_equal: frozen((left, right) => {
+      if (mode === "compare") throw new Error(RAW_EXCEPTION_MARKER);
+      return left === right;
+    }),
+  });
+  mode = "digest";
+  let digestError;
+  try { digest(result.value.current); } catch (error) { digestError = error; }
+  mode = "compare";
+  let compareError;
+  try { result.value.safe_equal("same", "same"); } catch (error) { compareError = error; }
+  const serialized = JSON.stringify([failure, result, result.value, digestError, compareError]);
+  for (const marker of [RAW_SECRET_MARKER, RAW_SESSION_MARKER, RAW_REPOSITORY_MARKER, RAW_WORKTREE_MARKER, RAW_EXCEPTION_MARKER]) {
+    assert.equal(serialized.includes(marker), false);
   }
 });
 
@@ -314,7 +454,6 @@ test("Group 10 integrates only key-bound dependencies with S01 derivation and co
     },
     safe_equal: bundle.safe_equal,
   }), { ok: false, reason: "identity_namespace_mismatch" });
-  assert.equal(Object.values(bundle).includes(provider()), false);
 });
 
 test("Group 11 keeps the production boundary runtime-neutral with one public export", () => {

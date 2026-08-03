@@ -54,11 +54,6 @@ function createDependencies(provider) {
   }
 
   const keyIds = [...values.verification_key_ids];
-  const digestConformance = verifyDigestConformance(values.keyed_digest, keyIds);
-  if (!digestConformance.ok) return failure(digestConformance.reason, { operation: "factory" });
-  const compareConformance = verifyCompareConformance(values.safe_equal);
-  if (!compareConformance.ok) return failure(compareConformance.reason, { operation: "factory" });
-
   const entries = keyIds.map(keyId => Object.freeze({
     key_id: keyId,
     keyed_digest: createKeyedDigestWrapper(values.keyed_digest, keyId),
@@ -135,20 +130,6 @@ function validProviderFunction(value) {
   }
 }
 
-function verifyDigestConformance(keyedDigest, keyIds) {
-  const first = callRawDigest(keyedDigest, keyIds[0], new Uint8Array([1, 2, 3]));
-  if (!first.ok) return first;
-  const differentBytes = callRawDigest(keyedDigest, keyIds[0], new Uint8Array([1, 2, 4]));
-  if (!differentBytes.ok) return differentBytes;
-  if (first.value === differentBytes.value) return { ok: false, reason: "secret_digest_invalid" };
-  if (keyIds.length === 2) {
-    const previous = callRawDigest(keyedDigest, keyIds[1], new Uint8Array([1, 2, 3]));
-    if (!previous.ok) return previous;
-    if (first.value === previous.value) return { ok: false, reason: "secret_digest_invalid" };
-  }
-  return { ok: true };
-}
-
 function callRawDigest(keyedDigest, keyId, bytes) {
   try {
     const value = keyedDigest({ key_id: keyId, purpose: PURPOSE, bytes: new Uint8Array(bytes) });
@@ -158,23 +139,6 @@ function callRawDigest(keyedDigest, keyId, bytes) {
   } catch {
     return { ok: false, reason: "secret_digest_failed" };
   }
-}
-
-function verifyCompareConformance(safeEqual) {
-  for (const [left, right, expected] of [
-    ["compare-equal", "compare-equal", true],
-    ["compare-left-A", "compare-left-B", false],
-  ]) {
-    try {
-      const value = safeEqual(left, right);
-      if (typeof value !== "boolean" || value !== expected) {
-        return { ok: false, reason: "secret_compare_invalid" };
-      }
-    } catch {
-      return { ok: false, reason: "secret_compare_failed" };
-    }
-  }
-  return { ok: true };
 }
 
 function createKeyedDigestWrapper(rawKeyedDigest, boundKeyId) {
