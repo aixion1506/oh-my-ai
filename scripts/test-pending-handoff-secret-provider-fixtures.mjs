@@ -738,6 +738,31 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
     ),
   );
 
+  const staleVerification1Current = cloneEntry(secondResult.value.current);
+  const staleVerification1Result = cloneSuccessResult(cloneBundleValue(firstResult.value, {
+    current: staleVerification1Current,
+    verification: Object.freeze([
+      staleVerification1Current,
+      firstResult.value.verification[1],
+    ]),
+    safe_equal: secondResult.value.safe_equal,
+  }));
+  assert.notEqual(staleVerification1Result, firstResult);
+  assert.notEqual(staleVerification1Result.value, firstResult.value);
+  assert.notEqual(staleVerification1Result.value.current, firstResult.value.current);
+  assert.notEqual(staleVerification1Result.value.verification, firstResult.value.verification);
+  assert.equal(staleVerification1Result.value.verification[0], staleVerification1Result.value.current);
+  assert.notEqual(staleVerification1Result.value.verification[0], firstResult.value.verification[0]);
+  assert.equal(staleVerification1Result.value.verification[1], firstResult.value.verification[1]);
+  assert.notEqual(staleVerification1Result.value.safe_equal, firstResult.value.safe_equal);
+  assert.throws(
+    () => assertNoCrossCallSuccessReuse(firstResult, staleVerification1Result),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: verification[1] reused")
+    ),
+  );
+
   const staleCurrentDigestCurrent = cloneEntry(secondResult.value.current, {
     keyed_digest: firstResult.value.current.keyed_digest,
   });
@@ -765,16 +790,34 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
     ),
   );
 
+  const staleVerificationDigestCurrent = cloneEntry(secondResult.value.current);
+  const staleVerification1WithStaleDigest = cloneEntry(
+    secondResult.value.verification[1],
+    {
+      keyed_digest: firstResult.value.verification[1].keyed_digest,
+    },
+  );
   const staleVerificationDigestResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: cloneEntry(secondResult.value.current),
+    current: staleVerificationDigestCurrent,
     verification: Object.freeze([
-      cloneEntry(secondResult.value.current),
-      cloneEntry(secondResult.value.verification[1], {
-        keyed_digest: firstResult.value.verification[1].keyed_digest,
-      }),
+      staleVerificationDigestCurrent,
+      staleVerification1WithStaleDigest,
     ]),
     safe_equal: secondResult.value.safe_equal,
   }));
+  assert.notEqual(staleVerificationDigestResult, firstResult);
+  assert.notEqual(staleVerificationDigestResult.value, firstResult.value);
+  assert.notEqual(staleVerificationDigestResult.value.current, firstResult.value.current);
+  assert.notEqual(staleVerificationDigestResult.value.current, secondResult.value.current);
+  assert.notEqual(staleVerificationDigestResult.value.verification, firstResult.value.verification);
+  assert.notEqual(staleVerificationDigestResult.value.verification, secondResult.value.verification);
+  assert.equal(staleVerificationDigestResult.value.current, staleVerificationDigestResult.value.verification[0]);
+  assert.notEqual(staleVerificationDigestResult.value.verification[0], firstResult.value.verification[0]);
+  assert.notEqual(staleVerificationDigestResult.value.verification[1], firstResult.value.verification[1]);
+  assert.notEqual(staleVerificationDigestResult.value.verification[1], secondResult.value.verification[1]);
+  assert.notEqual(staleVerificationDigestResult.value.current.keyed_digest, firstResult.value.current.keyed_digest);
+  assert.equal(staleVerificationDigestResult.value.verification[1].keyed_digest, firstResult.value.verification[1].keyed_digest);
+  assert.notEqual(staleVerificationDigestResult.value.safe_equal, firstResult.value.safe_equal);
   assert.throws(
     () => assertNoCrossCallSuccessReuse(firstResult, staleVerificationDigestResult),
     error => (
@@ -808,23 +851,28 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
     ),
   );
 
-  const staleMetadataFirst = build({ version: "unsupported" });
-  const staleMetadataResult = cloneFailureResult(staleMetadataFirst, {
-    metadata: staleMetadataFirst.metadata,
+  const firstFailure = build({ version: "unsupported" });
+  const staleFailureMetadataResult = cloneFailureResult(firstFailure, {
+    metadata: firstFailure.metadata,
   });
+  const secondFailure = build({ version: "unsupported" });
+  assert.notEqual(staleFailureMetadataResult, firstFailure);
+  assert.equal(staleFailureMetadataResult.metadata, firstFailure.metadata);
+  assert.equal(staleFailureMetadataResult.reason, firstFailure.reason);
+  assert.notEqual(staleFailureMetadataResult.metadata, secondFailure.metadata);
   assert.throws(
-    () => assertNoCrossCallFailureReuse(staleMetadataFirst, staleMetadataResult),
+    () => assertNoCrossCallFailureReuse(firstFailure, staleFailureMetadataResult),
     error => (
       error instanceof assert.AssertionError
       && error.message.includes("cross-call freshness violation: failure metadata reused")
     ),
   );
 
-  const firstFailure = build({ version: "unsupported" });
-  const reusedFailure = firstFailure;
-  assert.equal(reusedFailure, firstFailure);
+  const firstFailureForReuse = build({ version: "unsupported" });
+  const reusedFailure = firstFailureForReuse;
+  assert.equal(reusedFailure, firstFailureForReuse);
   assert.throws(
-    () => assertNoCrossCallFailureReuse(firstFailure, reusedFailure),
+    () => assertNoCrossCallFailureReuse(firstFailureForReuse, reusedFailure),
     error => (
       error instanceof assert.AssertionError
       && error.message.includes("cross-call freshness violation: failure result reused")
