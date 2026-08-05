@@ -82,10 +82,12 @@ function build(overrides = {}) {
 function assertFailure(result, reason) {
   assert.deepEqual(result.ok, false);
   assert.equal(result.reason, reason);
+  assert.equal(Object.isFrozen(result), true);
   const expectedMetadataKeys = EXPECTED_METADATA_KEYS_BY_REASON[reason];
   assert.ok(Array.isArray(expectedMetadataKeys), `missing metadata mapping for reason: ${reason}`);
   assertExactPrototype(result, Object.prototype);
   assertOwnDataPropertiesOnly(result, ["ok", "reason", "metadata"]);
+  assert.equal(Object.isFrozen(result.metadata), true);
   assertExactPrototype(result.metadata, Object.prototype);
   assert.deepEqual(Reflect.ownKeys(result.metadata), expectedMetadataKeys);
   assertOwnDataPropertiesOnly(result.metadata, expectedMetadataKeys);
@@ -171,37 +173,6 @@ function cloneWithPatchedDescriptor(target, key, descriptor, options = {}) {
   return shouldFreeze ? Object.freeze(clone) : clone;
 }
 
-function cloneEntry(entry, overrides = {}) {
-  return Object.freeze({
-    key_id: entry.key_id,
-    keyed_digest: entry.keyed_digest,
-    ...overrides,
-  });
-}
-
-function cloneBundleValue(value, overrides = {}) {
-  return Object.freeze({
-    current: overrides.current ?? value.current,
-    verification: overrides.verification ?? value.verification,
-    safe_equal: overrides.safe_equal ?? value.safe_equal,
-  });
-}
-
-function cloneSuccessResult(value) {
-  return Object.freeze({
-    ok: true,
-    value,
-  });
-}
-
-function cloneFailureResult(failure, overrides = {}) {
-  return Object.freeze({
-    ok: false,
-    reason: failure.reason,
-    metadata: Object.hasOwn(overrides, "metadata") ? overrides.metadata : failure.metadata,
-  });
-}
-
 function assertDescriptorMutationRejected({
   canonicalValue,
   logicalPath,
@@ -243,55 +214,6 @@ function assertDescriptorMutationRejected({
       && error.message.includes(expectedFailureFragment)
     ),
   );
-}
-
-function assertNoCrossCallSuccessReuse(first, second, options = {}) {
-  const {
-    skipVerificationArray = false,
-    skipVerification0 = false,
-    skipVerification1 = false,
-    skipVerificationItems = false,
-    skipCurrent = false,
-    skipCurrentDigest = false,
-    skipVerificationDigest = false,
-    skipSafeEqual = false,
-    skipSameCallAlias = false,
-  } = options;
-  const effectiveSkipVerification0 = skipVerificationItems || skipVerification0;
-  const effectiveSkipVerification1 = skipVerificationItems || skipVerification1;
-
-  assert.notEqual(first, second, "cross-call freshness violation: result reused");
-  assert.notEqual(first.value, second.value, "cross-call freshness violation: value reused");
-  if (!skipCurrent) {
-    assert.notEqual(first.value.current, second.value.current, "cross-call freshness violation: current reused");
-  }
-  if (!skipVerificationArray) {
-    assert.notEqual(first.value.verification, second.value.verification, "cross-call freshness violation: verification array reused");
-  }
-  if (!effectiveSkipVerification0) {
-    assert.notEqual(first.value.verification[0], second.value.verification[0], "cross-call freshness violation: verification[0] reused");
-  }
-  if (!effectiveSkipVerification1) {
-    assert.notEqual(first.value.verification[1], second.value.verification[1], "cross-call freshness violation: verification[1] reused");
-  }
-  if (!skipCurrentDigest) {
-    assert.notEqual(first.value.current.keyed_digest, second.value.current.keyed_digest, "cross-call freshness violation: current.keyed_digest reused");
-  }
-  if (!skipVerificationDigest) {
-    assert.notEqual(first.value.verification[1].keyed_digest, second.value.verification[1].keyed_digest, "cross-call freshness violation: verification[1].keyed_digest reused");
-  }
-  if (!skipSafeEqual) {
-    assert.notEqual(first.value.safe_equal, second.value.safe_equal, "cross-call freshness violation: safe_equal reused");
-  }
-  if (!skipSameCallAlias) {
-    assert.equal(first.value.current, first.value.verification[0], "cross-call freshness violation: same-call alias broken in first result");
-    assert.equal(second.value.current, second.value.verification[0], "cross-call freshness violation: same-call alias broken in second result");
-  }
-}
-
-function assertNoCrossCallFailureReuse(firstFailure, secondFailure) {
-  assert.notEqual(firstFailure, secondFailure, "cross-call freshness violation: failure result reused");
-  assert.notEqual(firstFailure.metadata, secondFailure.metadata, "cross-call freshness violation: failure metadata reused");
 }
 
 function assertBundleShape(result) {
@@ -363,6 +285,25 @@ function assertBundleShape(result) {
       configurable: false,
     },
   }, "result.value.safe_equal");
+}
+
+function assertSuccessContract(result, originalProvider) {
+  assert.equal(result.ok, true);
+  assertBundleShape(result);
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.value), true);
+  assert.equal(Object.isFrozen(result.value.current), true);
+  assert.equal(Object.isFrozen(result.value.verification), true);
+  assert.ok(result.value.verification.every(Object.isFrozen));
+  assert.ok(result.value.verification.every(entry => Object.isFrozen(entry.keyed_digest)));
+  assert.equal(Object.isFrozen(result.value.safe_equal), true);
+  assert.equal(result.value.current.key_id, "current_key");
+  assert.deepEqual(
+    result.value.verification.map(entry => entry.key_id),
+    ["current_key", "previous_key"],
+  );
+  assert.equal(result.value.verification[0], result.value.current);
+  assertOriginalReferencesHidden(result, originalProvider);
 }
 
 function assertOriginalReferencesHidden(bundle, originalProvider) {
@@ -501,18 +442,11 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
     return left === right;
   });
   const original = provider({ keyed_digest: rawDigest, safe_equal: rawCompare });
-  const result = createIdentitySecurityDependencies(original);
-  assertBundleShape(result);
+  const firstSuccess = createIdentitySecurityDependencies(original);
+  assertSuccessContract(firstSuccess, original);
   assert.equal(digestCalls, 0);
   assert.equal(compareCalls, 0);
-  const bundle = result.value;
-  assert.equal(Object.isFrozen(bundle), true);
-  assert.equal(Object.isFrozen(bundle.current), true);
-  assert.equal(Object.isFrozen(bundle.verification), true);
-  assert.ok(bundle.verification.every(Object.isFrozen));
-  assert.ok(bundle.verification.every(entry => Object.isFrozen(entry.keyed_digest)));
-  assert.equal(Object.isFrozen(bundle.safe_equal), true);
-  assert.equal(bundle.verification[0], bundle.current);
+  const bundle = firstSuccess.value;
   assert.notEqual(bundle, original);
   assert.notEqual(bundle.current.keyed_digest, original.keyed_digest);
   assert.notEqual(bundle.safe_equal, original.safe_equal);
@@ -608,36 +542,35 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
   );
   assert.equal(JSON.stringify(bundle).includes(RAW_SECRET_MARKER), false);
 
-  const next = createIdentitySecurityDependencies(original);
-  assert.notEqual(result, next);
-
-  const firstResult = createIdentitySecurityDependencies(original);
-  const secondResult = createIdentitySecurityDependencies(original);
-  assertNoCrossCallSuccessReuse(firstResult, secondResult);
+  const secondSuccess = createIdentitySecurityDependencies(original);
+  assertSuccessContract(secondSuccess, original);
+  assert.equal(firstSuccess.ok, true);
+  assert.equal(secondSuccess.ok, true);
+  assert.notStrictEqual(firstSuccess, secondSuccess);
 
   assertDescriptorMutationRejected({
-    canonicalValue: firstResult.value.current,
+    canonicalValue: firstSuccess.value.current,
     logicalPath: "result.value.current",
     propertyKey: "key_id",
     descriptorPatch: { enumerable: false },
     expectedFailureFragment: "descriptor.enumerable",
   });
   assertDescriptorMutationRejected({
-    canonicalValue: firstResult.value.current,
+    canonicalValue: firstSuccess.value.current,
     logicalPath: "result.value.current",
     propertyKey: "key_id",
     descriptorPatch: { writable: true },
     expectedFailureFragment: "descriptor.writable",
   });
   assertDescriptorMutationRejected({
-    canonicalValue: firstResult.value.current,
+    canonicalValue: firstSuccess.value.current,
     logicalPath: "result.value.current",
     propertyKey: "key_id",
     descriptorPatch: { configurable: true },
     expectedFailureFragment: "descriptor.configurable",
   });
   assertDescriptorMutationRejected({
-    canonicalValue: firstResult.value.current,
+    canonicalValue: firstSuccess.value.current,
     logicalPath: "result.value.current",
     propertyKey: "key_id",
     descriptorPatch: { get: () => "mutated" },
@@ -645,7 +578,7 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
     cloneOptions: { replace: true },
   });
   assertDescriptorMutationRejected({
-    canonicalValue: firstResult.value.current,
+    canonicalValue: firstSuccess.value.current,
     logicalPath: "result.value.current",
     propertyKey: "key_id",
     descriptorPatch: { set: () => {} },
@@ -653,231 +586,24 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
     cloneOptions: { replace: true },
   });
 
-  const staleBundleResult = cloneSuccessResult(firstResult.value);
-  assert.notEqual(staleBundleResult, firstResult);
-  assert.equal(staleBundleResult.value, firstResult.value);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleBundleResult),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: value reused")
-    ),
-  );
-
-  const staleCurrentResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: firstResult.value.current,
-    verification: Object.freeze([
-      firstResult.value.current,
-      secondResult.value.verification[1],
-    ]),
-    safe_equal: secondResult.value.safe_equal,
-  }));
-  assert.notEqual(staleCurrentResult, firstResult);
-  assert.notEqual(staleCurrentResult.value, firstResult.value);
-  assert.equal(staleCurrentResult.value.current, firstResult.value.current);
-  assert.equal(staleCurrentResult.value.verification[0], firstResult.value.current);
-  assert.equal(staleCurrentResult.value.verification[1], secondResult.value.verification[1]);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleCurrentResult, {
-      skipCurrentDigest: true,
-      skipVerificationDigest: true,
-    }),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: current reused")
-    ),
-  );
-
-  const staleVerificationArrayResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: secondResult.value.current,
-    verification: firstResult.value.verification,
-    safe_equal: secondResult.value.safe_equal,
-  }));
-  assert.notEqual(staleVerificationArrayResult, firstResult);
-  assert.notEqual(staleVerificationArrayResult.value, firstResult.value);
-  assert.equal(staleVerificationArrayResult.value.current, secondResult.value.current);
-  assert.equal(staleVerificationArrayResult.value.verification, firstResult.value.verification);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleVerificationArrayResult, {
-      skipCurrent: true,
-      skipCurrentDigest: true,
-      skipVerificationDigest: true,
-      skipSameCallAlias: true,
-    }),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: verification array reused")
-    ),
-  );
-
-  const staleVerificationItemCurrent = firstResult.value.verification[0];
-  const staleVerificationItemResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: secondResult.value.current,
-    safe_equal: secondResult.value.safe_equal,
-    verification: Object.freeze([
-      staleVerificationItemCurrent,
-      cloneEntry(secondResult.value.verification[1]),
-    ]),
-  }));
-  assert.notEqual(staleVerificationItemResult, firstResult);
-  assert.notEqual(staleVerificationItemResult.value, firstResult.value);
-  assert.equal(staleVerificationItemResult.value.current, secondResult.value.current);
-  assert.notEqual(staleVerificationItemResult.value.current, staleVerificationItemResult.value.verification[0]);
-  assert.equal(staleVerificationItemResult.value.verification[0], firstResult.value.verification[0]);
-  assert.notEqual(staleVerificationItemResult.value.verification[1], firstResult.value.verification[1]);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleVerificationItemResult, {
-      skipVerificationArray: true,
-      skipCurrentDigest: true,
-      skipVerificationDigest: true,
-      skipSameCallAlias: true,
-    }),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: verification[0] reused")
-    ),
-  );
-
-  const staleVerification1Current = cloneEntry(secondResult.value.current);
-  const staleVerification1Result = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: staleVerification1Current,
-    verification: Object.freeze([
-      staleVerification1Current,
-      firstResult.value.verification[1],
-    ]),
-    safe_equal: secondResult.value.safe_equal,
-  }));
-  assert.notEqual(staleVerification1Result, firstResult);
-  assert.notEqual(staleVerification1Result.value, firstResult.value);
-  assert.notEqual(staleVerification1Result.value.current, firstResult.value.current);
-  assert.notEqual(staleVerification1Result.value.verification, firstResult.value.verification);
-  assert.equal(staleVerification1Result.value.verification[0], staleVerification1Result.value.current);
-  assert.notEqual(staleVerification1Result.value.verification[0], firstResult.value.verification[0]);
-  assert.equal(staleVerification1Result.value.verification[1], firstResult.value.verification[1]);
-  assert.notEqual(staleVerification1Result.value.safe_equal, firstResult.value.safe_equal);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleVerification1Result),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: verification[1] reused")
-    ),
-  );
-
-  const staleCurrentDigestCurrent = cloneEntry(secondResult.value.current, {
-    keyed_digest: firstResult.value.current.keyed_digest,
-  });
-  const staleCurrentDigestResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: staleCurrentDigestCurrent,
-    verification: Object.freeze([
-      staleCurrentDigestCurrent,
-      cloneEntry(secondResult.value.verification[1]),
-    ]),
-    safe_equal: secondResult.value.safe_equal,
-  }));
-  assert.notEqual(staleCurrentDigestResult, firstResult);
-  assert.notEqual(staleCurrentDigestResult.value, firstResult.value);
-  assert.notEqual(staleCurrentDigestResult.value.current, secondResult.value.current);
-  assert.notEqual(staleCurrentDigestResult.value.current, firstResult.value.current);
-  assert.equal(staleCurrentDigestResult.value.current.keyed_digest, firstResult.value.current.keyed_digest);
-  assert.notEqual(staleCurrentDigestResult.value.current.keyed_digest, secondResult.value.current.keyed_digest);
-  assert.equal(staleCurrentDigestResult.value.verification[0], staleCurrentDigestResult.value.current);
-  assert.notEqual(staleCurrentDigestResult.value.verification[1], secondResult.value.verification[1]);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleCurrentDigestResult),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: current.keyed_digest reused")
-    ),
-  );
-
-  const staleVerificationDigestCurrent = cloneEntry(secondResult.value.current);
-  const staleVerification1WithStaleDigest = cloneEntry(
-    secondResult.value.verification[1],
-    {
-      keyed_digest: firstResult.value.verification[1].keyed_digest,
-    },
-  );
-  const staleVerificationDigestResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: staleVerificationDigestCurrent,
-    verification: Object.freeze([
-      staleVerificationDigestCurrent,
-      staleVerification1WithStaleDigest,
-    ]),
-    safe_equal: secondResult.value.safe_equal,
-  }));
-  assert.notEqual(staleVerificationDigestResult, firstResult);
-  assert.notEqual(staleVerificationDigestResult.value, firstResult.value);
-  assert.notEqual(staleVerificationDigestResult.value.current, firstResult.value.current);
-  assert.notEqual(staleVerificationDigestResult.value.current, secondResult.value.current);
-  assert.notEqual(staleVerificationDigestResult.value.verification, firstResult.value.verification);
-  assert.notEqual(staleVerificationDigestResult.value.verification, secondResult.value.verification);
-  assert.equal(staleVerificationDigestResult.value.current, staleVerificationDigestResult.value.verification[0]);
-  assert.notEqual(staleVerificationDigestResult.value.verification[0], firstResult.value.verification[0]);
-  assert.notEqual(staleVerificationDigestResult.value.verification[1], firstResult.value.verification[1]);
-  assert.notEqual(staleVerificationDigestResult.value.verification[1], secondResult.value.verification[1]);
-  assert.notEqual(staleVerificationDigestResult.value.current.keyed_digest, firstResult.value.current.keyed_digest);
-  assert.equal(staleVerificationDigestResult.value.verification[1].keyed_digest, firstResult.value.verification[1].keyed_digest);
-  assert.notEqual(staleVerificationDigestResult.value.safe_equal, firstResult.value.safe_equal);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleVerificationDigestResult),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: verification[1].keyed_digest reused")
-    ),
-  );
-
-  const staleSafeEqualCurrent = cloneEntry(secondResult.value.current);
-  const staleSafeEqualResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
-    current: staleSafeEqualCurrent,
-    verification: Object.freeze([
-      staleSafeEqualCurrent,
-      cloneEntry(secondResult.value.verification[1]),
-    ]),
-    safe_equal: firstResult.value.safe_equal,
-  }));
-  assert.notEqual(staleSafeEqualResult, firstResult);
-  assert.notEqual(staleSafeEqualResult.value, firstResult.value);
-  assert.notEqual(staleSafeEqualResult.value.current, secondResult.value.current);
-  assert.equal(staleSafeEqualResult.value.verification[0], staleSafeEqualResult.value.current);
-  assert.notEqual(staleSafeEqualResult.value.verification[1], firstResult.value.verification[1]);
-  assert.equal(staleSafeEqualResult.value.safe_equal, firstResult.value.safe_equal);
-  assert.notEqual(staleSafeEqualResult.value.current, firstResult.value.current);
-  assert.notEqual(staleSafeEqualResult.value.safe_equal, secondResult.value.safe_equal);
-  assert.throws(
-    () => assertNoCrossCallSuccessReuse(firstResult, staleSafeEqualResult),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: safe_equal reused")
-    ),
-  );
-
-  const firstFailure = build({ version: "unsupported" });
-  const staleFailureMetadataResult = cloneFailureResult(firstFailure, {
-    metadata: firstFailure.metadata,
-  });
-  const secondFailure = build({ version: "unsupported" });
-  assert.notEqual(staleFailureMetadataResult, firstFailure);
-  assert.equal(staleFailureMetadataResult.metadata, firstFailure.metadata);
-  assert.equal(staleFailureMetadataResult.reason, firstFailure.reason);
-  assert.notEqual(staleFailureMetadataResult.metadata, secondFailure.metadata);
-  assert.throws(
-    () => assertNoCrossCallFailureReuse(firstFailure, staleFailureMetadataResult),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: failure metadata reused")
-    ),
-  );
-
-  const firstFailureForReuse = build({ version: "unsupported" });
-  const reusedFailure = firstFailureForReuse;
-  assert.equal(reusedFailure, firstFailureForReuse);
-  assert.throws(
-    () => assertNoCrossCallFailureReuse(firstFailureForReuse, reusedFailure),
-    error => (
-      error instanceof assert.AssertionError
-      && error.message.includes("cross-call freshness violation: failure result reused")
-    ),
-  );
+  const invalidProvider = provider({ version: "unsupported" });
+  const firstFailure = createIdentitySecurityDependencies(invalidProvider);
+  const secondFailure = createIdentitySecurityDependencies(invalidProvider);
+  assert.equal(firstFailure.ok, false);
+  assert.equal(secondFailure.ok, false);
+  for (const failure of [firstFailure, secondFailure]) {
+    assertFailure(failure, "secret_provider_version_unsupported");
+    assert.deepEqual(failure.metadata, {
+      operation: "factory",
+      provider_version_present: true,
+      provider_version_supported: false,
+    });
+    assertOriginalReferencesHidden(failure, invalidProvider);
+  }
+  assert.notStrictEqual(firstFailure, secondFailure);
+  assert.notStrictEqual(firstFailure.metadata, secondFailure.metadata);
+  assert.equal(firstFailure.reason, secondFailure.reason);
+  assert.deepEqual(firstFailure.metadata, secondFailure.metadata);
 });
 
 test("Group 3 accepts only the supported provider version without exposing raw versions", () => {
