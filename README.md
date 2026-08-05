@@ -63,6 +63,92 @@ make install-shared
 make doctor-strict
 ```
 
+### Optional local completion notifications (macOS first)
+
+The completion notification management commands (`install-completion-notify`,
+`completion-notify-status`, `test-completion-notify`, `doctor-completion-notify`,
+`uninstall-completion-notify`, and `install`'s optional opt-in) require
+**Python 3.11 or newer** (they parse Codex's TOML config with the standard
+library `tomllib`). macOS ships `/usr/bin/python3` at 3.9 by default, which
+fails a startup check with a clear error instead of installing/removing
+anything. If your default `python3` is older than 3.11, install one and pass
+it explicitly via the Makefile's `PYTHON` override — no other oh-my-ai command
+requires this:
+
+```bash
+brew install python@3.11
+
+make install-completion-notify \
+  PYTHON="$(brew --prefix python@3.11)/bin/python3.11" \
+  ENABLE_COMPLETION_NOTIFY=1
+```
+
+`make install` preserves its existing shared-install behavior. Completion Notification
+is explicit opt-in only and prompt-free:
+
+```bash
+# Shared install only; completion notification is skipped when not opted in
+make install
+
+# Explicit opt-in: require literal ENABLE_COMPLETION_NOTIFY=1
+make install ENABLE_COMPLETION_NOTIFY=1
+
+# Prompt-free standalone install (requires literal ENABLE_COMPLETION_NOTIFY=1)
+make install-completion-notify ENABLE_COMPLETION_NOTIFY=1
+```
+
+Running `make install-completion-notify` without `ENABLE_COMPLETION_NOTIFY=1` exits
+with code 2 and performs no completion-notification mutation.
+Internally, direct installer invocation is non-interactive and requires both
+`ENABLE_COMPLETION_NOTIFY=1` and `--yes`; the Make targets pass `--yes` only
+after their literal environment-value gate succeeds.
+
+If your default `python3` is older than 3.11, use a 3.11+ interpreter explicitly for
+the completion-notification install path:
+
+```bash
+make install \
+  PYTHON="$(brew --prefix python@3.11)/bin/python3.11" \
+  ENABLE_COMPLETION_NOTIFY=1
+```
+
+It installs **Codex Turn 완료** and **Claude Turn 완료** notifications. A Turn
+notification is not proof that a task, validation, PR, or deployment
+succeeded. The title is the fixed runtime allowlist value `Codex Turn 완료` or
+`Claude Turn 완료` (`AI Turn 완료` for any unknown runtime); the body is always
+`응답이 완료되었습니다. 결과를 확인하세요.` It never includes cwd, project or
+path components, assistant-response content, prompts, code, diffs, branches,
+Jira keys, terminal output, or secrets.
+The Claude adapter never reads or includes assistant-response text in the
+shared event; the macOS provider receives no response text from either runtime.
+
+Before changing configuration, the installer shows a preview and backup path,
+then applies only on explicit opt-in. Codex's existing `notify` target is preserved as a
+bounded asynchronous downstream provider. That provider is a pre-existing
+user target and therefore keeps its original Codex event contract. Claude's
+`Stop` hook is merged additively and never creates a new downstream for
+assistant-response text. Configuration writes are regular-file-only, atomic, permission
+scoped, and transactionally rolled back on failure. Any provider failure is
+fail-open and cannot block a Turn indefinitely. User-specific commands and
+paths live outside this repository under `~/.local/share/oh-my-ai/notifications/`.
+
+```bash
+make completion-notify-status
+make test-completion-notify
+make doctor-completion-notify
+make uninstall-completion-notify
+```
+
+The current provider is macOS `osascript` only. Linux desktop, SSH, ntfy,
+mobile, and cloud notifications are intentionally outside this integration.
+The automated fixtures use a disposable HOME and fake providers. Notification
+Center delivery remains a separate manual E2E on an explicitly approved Mac.
+
+When creating a PR from a shell, write Markdown through `gh --body-file` or a
+single-quoted heredoc. Do not pass Markdown with backticks through a
+double-quoted shell argument or an unquoted heredoc, because shell command
+substitution can execute an installation example.
+
 - `make doctor`: 기존 설정·Hook·Skill 충돌 가능성을 읽기 전용으로 점검합니다.
 - `make install-shared`: 기존 설정을 무단으로 덮어쓰지 않고 공유 Runtime Entry와 Work-start Skill을 설치합니다.
 - `make doctor-strict`: 설치된 Runtime Entry, 필수 Hook과 Skill 경계를 엄격하게 검증합니다.

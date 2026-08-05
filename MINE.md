@@ -9,6 +9,7 @@
 스킬은 frontmatter `metadata.source` 로 출처 표기 (born-here / 외부 origin).
 
 ### born-here (처음부터 이 레포에서 만든 것)
+- `skills/completion-notify/` — Codex·Claude Turn 완료 알림을 opt-in으로 안전하게 설치·점검·제거하는 로컬 통합
 - `skills/daily-report/` — Optional Slack/Notion 일일보고 workflow
 - `skills/execution-recovery/` — 도구·권한·샌드박스 장애의 재시도 폭주를 차단하고 안전하게 대피
 - `skills/git-work-preflight/` — Git Mutation 전 공통으로 소비하는 읽기 전용 Repository 안전 Gate

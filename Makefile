@@ -1,7 +1,11 @@
 REPO    := $(shell pwd)
 PROFILE ?=
+# Completion Notification management commands require Python 3.11+ (tomllib).
+# Override when the default python3 resolves to an older interpreter, e.g.:
+#   make install-completion-notify PYTHON=/opt/homebrew/bin/python3.11
+PYTHON  ?= python3
 
-.PHONY: install install-shared init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-jira-ticket-fixtures test-jira-work-fixtures test-git-work-preflight-fixtures test-context-checkpoint-codex-fixtures test-context-checkpoint-fixtures test-v1-fixtures test-v1x-fixtures
+.PHONY: install install-shared install-completion-notify completion-notify-status test-completion-notify doctor-completion-notify uninstall-completion-notify init-profile install-profile doctor doctor-strict instructions update work-start test-install-fixtures test-completion-notify-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures test-jira-ticket-fixtures test-jira-work-fixtures test-git-work-preflight-fixtures test-context-checkpoint-codex-fixtures test-context-checkpoint-fixtures test-v1-fixtures test-v1x-fixtures
 
 instructions:
 	./scripts/render-instructions.sh
@@ -52,14 +56,33 @@ test-context-checkpoint-fixtures:
 	node ./scripts/test-context-checkpoint-fixtures.mjs
 	node ./scripts/test-context-checkpoint-codex-fixtures.mjs
 
-test-v1-fixtures: test-install-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures
+test-v1-fixtures: test-install-fixtures test-completion-notify-fixtures test-routing-fixtures test-work-start-fixtures test-notice-fixtures test-capability-fixtures test-result-fixtures test-truthfulness-fixtures
 
 test-v1x-fixtures: test-v1-fixtures test-context-checkpoint-fixtures
 
 install: install-shared
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ENABLE_COMPLETION_NOTIFY=1 $(PYTHON) ./scripts/completion-notify.py install --yes; else printf '%s\n' 'completion notify: skipped (explicit ENABLE_COMPLETION_NOTIFY=1 required)'; fi
 
 install-shared: instructions
 	./setup.sh --install-shared
+
+install-completion-notify:
+	@if [ "$(ENABLE_COMPLETION_NOTIFY)" = "1" ]; then ENABLE_COMPLETION_NOTIFY=1 $(PYTHON) ./scripts/completion-notify.py install --yes; else printf '%s\n' 'completion notify: consent required; rerun with ENABLE_COMPLETION_NOTIFY=1' >&2; exit 2; fi
+
+completion-notify-status:
+	$(PYTHON) ./scripts/completion-notify.py status
+
+test-completion-notify:
+	$(PYTHON) ./scripts/completion-notify.py test
+
+doctor-completion-notify:
+	$(PYTHON) ./scripts/completion-notify.py doctor
+
+uninstall-completion-notify:
+	$(PYTHON) ./scripts/completion-notify.py uninstall
+
+test-completion-notify-fixtures:
+	PYTHON="$(PYTHON)" ./scripts/test-completion-notify-fixtures.sh
 
 init-profile:
 	@if [ -z "$(PROFILE)" ]; then echo "usage: make init-profile PROFILE=<name>" >&2; exit 2; fi
