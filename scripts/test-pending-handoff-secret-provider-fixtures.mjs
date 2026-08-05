@@ -14,6 +14,26 @@ const RAW_SESSION_MARKER = "RAW_SESSION_MARKER";
 const RAW_REPOSITORY_MARKER = "RAW_REPOSITORY_MARKER";
 const RAW_WORKTREE_MARKER = "RAW_WORKTREE_MARKER";
 const RAW_EXCEPTION_MARKER = "RAW_EXCEPTION_MARKER";
+const EXPECTED_METADATA_KEYS_BY_REASON = Object.freeze({
+  secret_provider_invalid: Object.freeze(["operation"]),
+  secret_provider_version_unsupported: Object.freeze([
+    "operation",
+    "provider_version_present",
+    "provider_version_supported",
+  ]),
+  secret_key_id_invalid: Object.freeze(["operation", "key_id_present"]),
+  secret_verification_keys_invalid: Object.freeze(["operation", "verification_key_count"]),
+});
+const FORBIDDEN_METADATA_KEYS = Object.freeze([
+  "raw",
+  "raw_provider",
+  "raw_provider_version",
+  "provider_version_raw",
+  "provider_id",
+  "key_id",
+  "provider_object",
+  "provider_dump",
+]);
 let tests = 0;
 
 function test(name, operation) {
@@ -62,18 +82,16 @@ function build(overrides = {}) {
 function assertFailure(result, reason) {
   assert.deepEqual(result.ok, false);
   assert.equal(result.reason, reason);
+  const expectedMetadataKeys = EXPECTED_METADATA_KEYS_BY_REASON[reason];
+  assert.ok(Array.isArray(expectedMetadataKeys), `missing metadata mapping for reason: ${reason}`);
   assertExactPrototype(result, Object.prototype);
   assertOwnDataPropertiesOnly(result, ["ok", "reason", "metadata"]);
   assertExactPrototype(result.metadata, Object.prototype);
-  assertOwnDataPropertiesOnly(result.metadata, Reflect.ownKeys(result.metadata));
-  assert.ok(Reflect.ownKeys(result.metadata).every(key => [
-    "operation",
-    "provider_version_present",
-    "provider_version_supported",
-    "key_id_present",
-    "verification_key_count",
-  ].includes(key)));
-  assert.equal(Object.prototype.hasOwnProperty.call(result.metadata ?? {}, "raw"), false);
+  assert.deepEqual(Reflect.ownKeys(result.metadata), expectedMetadataKeys);
+  assertOwnDataPropertiesOnly(result.metadata, expectedMetadataKeys);
+  for (const key of FORBIDDEN_METADATA_KEYS) {
+    assert.equal(Object.prototype.hasOwnProperty.call(result.metadata ?? {}, key), false);
+  }
 }
 
 function assertThrowsCode(operation, code) {
@@ -103,38 +121,195 @@ function assertExactPrototype(value, expectedPrototype) {
   assert.equal(Object.getPrototypeOf(value), expectedPrototype);
 }
 
-function assertOwnDataPropertiesOnly(value, expectedKeys) {
+function assertOwnDataPropertiesOnly(value, expectedKeys, descriptorContracts = {}, logicalPath = "root") {
   assertExactOwnKeys(value, expectedKeys);
   for (const key of expectedKeys) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    assert.ok(descriptor);
-    assert.equal("value" in descriptor, true);
-    assert.equal("get" in descriptor, false);
-    assert.equal("set" in descriptor, false);
+    const fullPath = `${logicalPath}.${String(key)}`;
+    assert.ok(descriptor, `${fullPath} descriptor missing`);
+    assert.equal(Object.hasOwn(descriptor, "value"), true, `${fullPath} expected data descriptor`);
+    assert.equal(Object.hasOwn(descriptor, "get"), false, `${fullPath} expected no accessor getter`);
+    assert.equal(Object.hasOwn(descriptor, "set"), false, `${fullPath} expected no accessor setter`);
+    const contract = {
+      writable: false,
+      enumerable: true,
+      configurable: false,
+      ...descriptorContracts[key],
+    };
+    assert.equal(descriptor.writable, contract.writable, `${fullPath} descriptor.writable expected ${String(contract.writable)}, received ${String(descriptor.writable)}`);
+    assert.equal(descriptor.enumerable, contract.enumerable, `${fullPath} descriptor.enumerable expected ${String(contract.enumerable)}, received ${String(descriptor.enumerable)}`);
+    assert.equal(descriptor.configurable, contract.configurable, `${fullPath} descriptor.configurable expected ${String(contract.configurable)}, received ${String(descriptor.configurable)}`);
+    if (Object.hasOwn(contract, "value")) {
+      const expectedValue = contract.value;
+      if (typeof expectedValue === "function") {
+        assert.equal(expectedValue(descriptor.value), true, `${fullPath} descriptor value predicate failed`);
+      } else {
+        assert.deepEqual(descriptor.value, expectedValue, `${fullPath} descriptor value mismatch`);
+      }
+    }
+    if (Object.hasOwn(contract, "valueType")) {
+      assert.equal(typeof descriptor.value, contract.valueType, `${fullPath} descriptor.value type expected ${contract.valueType}, received ${typeof descriptor.value}`);
+    }
+    if (Object.hasOwn(contract, "valuePredicate")) {
+      assert.equal(contract.valuePredicate(descriptor.value), true, `${fullPath} descriptor value predicate failed`);
+    }
   }
+}
+
+function cloneWithPatchedDescriptor(target, key, descriptor, options = {}) {
+  const descriptors = Object.getOwnPropertyDescriptors(target);
+  assert.ok(Object.hasOwn(descriptors, key), `${String(key)} is not an own property`);
+  const currentDescriptor = descriptors[key];
+  descriptors[key] = options.replace
+    ? descriptor
+    : { ...currentDescriptor, ...descriptor };
+  const clone = Object.create(Object.getPrototypeOf(target));
+  Object.defineProperties(clone, descriptors);
+  const shouldFreeze = Object.hasOwn(options, "preserveFrozen")
+    ? options.preserveFrozen
+    : Object.isFrozen(target);
+  return shouldFreeze ? Object.freeze(clone) : clone;
+}
+
+function cloneEntry(entry, overrides = {}) {
+  return Object.freeze({
+    key_id: entry.key_id,
+    keyed_digest: entry.keyed_digest,
+    ...overrides,
+  });
+}
+
+function cloneBundleValue(value, overrides = {}) {
+  return Object.freeze({
+    current: overrides.current ?? value.current,
+    verification: overrides.verification ?? value.verification,
+    safe_equal: overrides.safe_equal ?? value.safe_equal,
+  });
+}
+
+function cloneSuccessResult(value) {
+  return Object.freeze({
+    ok: true,
+    value,
+  });
+}
+
+function cloneFailureResult(failure, overrides = {}) {
+  return Object.freeze({
+    ok: false,
+    reason: failure.reason,
+    metadata: Object.hasOwn(overrides, "metadata") ? overrides.metadata : failure.metadata,
+  });
+}
+
+function assertNoCrossCallSuccessReuse(first, second, options = {}) {
+  const {
+    skipVerificationArray = false,
+    skipVerificationItems = false,
+    skipCurrent = false,
+    skipCurrentDigest = false,
+    skipVerificationDigest = false,
+    skipCompareWrapper = false,
+  } = options;
+  assert.notEqual(first, second, "cross-call freshness violation: result reused");
+  assert.notEqual(first.value, second.value, "cross-call freshness violation: bundle reused");
+  if (!skipCurrent) {
+    assert.notEqual(first.value.current, second.value.current, "cross-call freshness violation: current reused");
+  }
+  if (!skipVerificationArray) {
+    assert.notEqual(first.value.verification, second.value.verification, "cross-call freshness violation: verification array reused");
+  }
+  if (!skipVerificationItems) {
+    assert.notEqual(first.value.verification[0], second.value.verification[0], "cross-call freshness violation: verification item reused");
+    assert.notEqual(first.value.verification[1], second.value.verification[1], "cross-call freshness violation: verification item reused");
+  }
+  if (!skipCurrentDigest) {
+    assert.notEqual(first.value.current.keyed_digest, second.value.current.keyed_digest, "cross-call freshness violation: digest wrapper reused");
+  }
+  if (!skipVerificationDigest) {
+    assert.notEqual(first.value.verification[1].keyed_digest, second.value.verification[1].keyed_digest, "cross-call freshness violation: digest wrapper reused");
+  }
+  if (!skipCompareWrapper) {
+    assert.notEqual(first.value.safe_equal, second.value.safe_equal, "cross-call freshness violation: compare wrapper reused");
+  }
+  assert.equal(first.value.current, first.value.verification[0], "cross-call freshness violation: same-call alias broken in first result");
+  assert.equal(second.value.current, second.value.verification[0], "cross-call freshness violation: same-call alias broken in second result");
+}
+
+function assertNoCrossCallFailureReuse(firstFailure, secondFailure) {
+  assert.notEqual(firstFailure, secondFailure, "cross-call freshness violation: result reused");
+  assert.notEqual(firstFailure.metadata, secondFailure.metadata, "cross-call freshness violation: metadata reused");
 }
 
 function assertBundleShape(result) {
   assert.equal(result.ok, true);
   assertExactPrototype(result, Object.prototype);
-  assertOwnDataPropertiesOnly(result, ["ok", "value"]);
+  assertOwnDataPropertiesOnly(result, ["ok", "value"], {
+    ok: { value: true, writable: false, enumerable: true, configurable: false },
+    value: { valueType: "object" },
+  });
   assertExactPrototype(result.value, Object.prototype);
-  assertOwnDataPropertiesOnly(result.value, ["current", "verification", "safe_equal"]);
+  assertOwnDataPropertiesOnly(result.value, ["current", "verification", "safe_equal"], {
+    current: { valueType: "object" },
+    verification: { valueType: "object" },
+    safe_equal: { valueType: "function" },
+  }, "result.value");
   assertExactPrototype(result.value.current, Object.prototype);
-  assertOwnDataPropertiesOnly(result.value.current, ["key_id", "keyed_digest"]);
+  assertOwnDataPropertiesOnly(result.value.current, ["key_id", "keyed_digest"], {
+    key_id: { valueType: "string" },
+    keyed_digest: { valueType: "function" },
+  }, "result.value.current");
   assertExactPrototype(result.value.verification, Array.prototype);
   assertOwnDataPropertiesOnly(
     result.value.verification,
     [...result.value.verification.keys()].map(String).concat("length"),
+    {
+      length: {
+        value: result.value.verification.length,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      },
+    },
+    "result.value.verification",
   );
   for (const entry of result.value.verification) {
     assertExactPrototype(entry, Object.prototype);
-    assertOwnDataPropertiesOnly(entry, ["key_id", "keyed_digest"]);
+    assertOwnDataPropertiesOnly(entry, ["key_id", "keyed_digest"], {
+      key_id: { valueType: "string" },
+      keyed_digest: { valueType: "function" },
+    }, "result.value.verification.entry");
     assertExactPrototype(entry.keyed_digest, Function.prototype);
-    assertOwnDataPropertiesOnly(entry.keyed_digest, ["length", "name"]);
+    assertOwnDataPropertiesOnly(entry.keyed_digest, ["length", "name"], {
+      length: {
+        value: entry.keyed_digest.length,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      },
+      name: {
+        value: entry.keyed_digest.name,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      },
+    }, "result.value.verification.entry.keyed_digest");
   }
   assertExactPrototype(result.value.safe_equal, Function.prototype);
-  assertOwnDataPropertiesOnly(result.value.safe_equal, ["length", "name"]);
+  assertOwnDataPropertiesOnly(result.value.safe_equal, ["length", "name"], {
+    length: {
+      value: result.value.safe_equal.length,
+      writable: false,
+      enumerable: false,
+      configurable: false,
+    },
+    name: {
+      value: result.value.safe_equal.name,
+      writable: false,
+      enumerable: false,
+      configurable: false,
+    },
+  }, "result.value.safe_equal");
 }
 
 function assertOriginalReferencesHidden(bundle, originalProvider) {
@@ -356,10 +531,149 @@ test("Group 2 builds a static-only frozen non-alias bundle with exact safe shape
     () => assertOriginalReferencesHidden(accessorLeak, original),
     assert.AssertionError,
   );
+  const getterOnlyLeak = {};
+  Object.defineProperty(getterOnlyLeak, "debug", {
+    enumerable: true,
+    configurable: false,
+    get: original.keyed_digest,
+  });
+  Object.freeze(getterOnlyLeak);
+  assert.throws(
+    () => assertOriginalReferencesHidden(getterOnlyLeak, original),
+    assert.AssertionError,
+  );
+  const setterOnlyLeak = {};
+  Object.defineProperty(setterOnlyLeak, "debug", {
+    enumerable: true,
+    configurable: false,
+    set: original.safe_equal,
+  });
+  Object.freeze(setterOnlyLeak);
+  assert.throws(
+    () => assertOriginalReferencesHidden(setterOnlyLeak, original),
+    assert.AssertionError,
+  );
   assert.equal(JSON.stringify(bundle).includes(RAW_SECRET_MARKER), false);
 
   const next = createIdentitySecurityDependencies(original);
   assert.notEqual(result, next);
+
+  const firstResult = createIdentitySecurityDependencies(original);
+  const secondResult = createIdentitySecurityDependencies(original);
+  assertNoCrossCallSuccessReuse(firstResult, secondResult);
+
+  const staleBundleResult = cloneSuccessResult(firstResult.value);
+  assert.throws(
+    () => assertNoCrossCallSuccessReuse(firstResult, staleBundleResult),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: bundle reused")
+    ),
+  );
+
+  const staleCurrentResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
+    current: firstResult.value.current,
+    verification: Object.freeze([
+      firstResult.value.current,
+      secondResult.value.verification[1],
+    ]),
+  }));
+  assert.throws(
+    () => assertNoCrossCallSuccessReuse(firstResult, staleCurrentResult, {
+      skipCurrentDigest: true,
+      skipVerificationDigest: true,
+    }),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: current reused")
+    ),
+  );
+
+  const staleVerificationArrayResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
+    current: firstResult.value.current,
+    verification: firstResult.value.verification,
+    safe_equal: secondResult.value.safe_equal,
+  }));
+  assert.throws(
+    () => assertNoCrossCallSuccessReuse(firstResult, staleVerificationArrayResult, {
+      skipCurrent: true,
+      skipCurrentDigest: true,
+      skipVerificationDigest: true,
+    }),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: verification array reused")
+    ),
+  );
+
+  const staleVerificationItemCurrent = cloneEntry(firstResult.value.current);
+  const staleVerificationItemResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
+    current: staleVerificationItemCurrent,
+    safe_equal: secondResult.value.safe_equal,
+    verification: Object.freeze([
+      staleVerificationItemCurrent,
+      firstResult.value.verification[1],
+    ]),
+  }));
+  assert.throws(
+    () => assertNoCrossCallSuccessReuse(firstResult, staleVerificationItemResult, {
+      skipVerificationArray: true,
+      skipCurrentDigest: true,
+      skipVerificationDigest: true,
+    }),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: verification item reused")
+    ),
+  );
+
+  const staleDigestCurrent = cloneEntry(firstResult.value.current);
+  const staleDigestWrapperResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
+    current: staleDigestCurrent,
+    verification: Object.freeze([
+      staleDigestCurrent,
+      cloneEntry(firstResult.value.verification[1], {
+        keyed_digest: firstResult.value.verification[1].keyed_digest,
+      }),
+    ]),
+    safe_equal: secondResult.value.safe_equal,
+  }));
+  assert.throws(
+    () => assertNoCrossCallSuccessReuse(firstResult, staleDigestWrapperResult),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: digest wrapper reused")
+    ),
+  );
+
+  const staleCompareWrapperResult = cloneSuccessResult(cloneBundleValue(firstResult.value, {
+    current: cloneEntry(secondResult.value.current),
+    safe_equal: firstResult.value.safe_equal,
+    verification: Object.freeze([
+      cloneEntry(secondResult.value.current),
+      cloneEntry(secondResult.value.verification[1]),
+    ]),
+  }));
+  assert.throws(
+    () => assertNoCrossCallSuccessReuse(firstResult, staleCompareWrapperResult),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: compare wrapper reused")
+    ),
+  );
+
+  const staleMetadataFirst = build({ version: "unsupported" });
+  const staleMetadataResult = cloneFailureResult(staleMetadataFirst, {
+    metadata: staleMetadataFirst.metadata,
+  });
+  assert.throws(
+    () => assertNoCrossCallFailureReuse(staleMetadataFirst, staleMetadataResult),
+    error => (
+      error instanceof assert.AssertionError
+      && error.message.includes("cross-call freshness violation: metadata reused")
+    ),
+  );
+
   const firstFailure = build({ version: "unsupported" });
   const nextFailure = build({ version: "unsupported" });
   assert.notEqual(firstFailure, nextFailure);
@@ -388,15 +702,17 @@ test("Group 4 validates current-first key lifecycle and fails unknown keys close
     provider({ current_key_id: "", verification_key_ids: Object.freeze([""]) }),
     provider({ current_key_id: "a".repeat(65), verification_key_ids: Object.freeze(["a".repeat(65)]) }),
     provider({ current_key_id: "bad.key" }),
+  ]) {
+    assertFailure(createIdentitySecurityDependencies(value), "secret_key_id_invalid");
+  }
+  for (const value of [
     provider({ verification_key_ids: Object.freeze([]) }),
     provider({ verification_key_ids: Object.freeze(["previous_key", "current_key"]) }),
     provider({ verification_key_ids: Object.freeze(["current_key", "previous_key", "third_key"]) }),
     provider({ verification_key_ids: Object.freeze(["current_key", "current_key"]) }),
     provider({ verification_key_ids: Object.freeze(["current_key", "bad.key"]) }),
   ]) {
-    assert.ok(["secret_key_id_invalid", "secret_verification_keys_invalid"].includes(
-      createIdentitySecurityDependencies(value).reason,
-    ));
+    assertFailure(createIdentitySecurityDependencies(value), "secret_verification_keys_invalid");
   }
   const bundle = build().value;
   assert.equal(bundle.current.key_id, "current_key");
