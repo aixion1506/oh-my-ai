@@ -822,7 +822,34 @@ test("Group 12 Makefile runs the bounded target once after Core and Identity onl
   const makefile = readFileSync(new URL("../Makefile", import.meta.url), "utf8");
   assert.match(makefile, /^test-pending-handoff-secret-provider-fixtures:\n\tnode \.\/scripts\/test-pending-handoff-secret-provider-fixtures\.mjs$/m);
   assert.equal((makefile.match(/test-pending-handoff-secret-provider-fixtures/g) ?? []).length, 4);
-  assert.match(makefile, /^test-v1x-fixtures: .*test-pending-handoff-core-fixtures test-pending-handoff-identity-fixtures test-pending-handoff-secret-provider-fixtures$/m);
+  const lines = makefile.split("\n");
+  const declarationLines = lines.filter(line => line.startsWith("test-v1x-fixtures:"));
+  assert.equal(declarationLines.length, 1);
+  const start = lines.indexOf(declarationLines[0]);
+  const declaration = [declarationLines[0]];
+  while (declaration.at(-1).endsWith("\\")) declaration.push(lines[start + declaration.length]);
+  const dependencies = declaration.join(" ").replace(/^test-v1x-fixtures:\s*/, "").replaceAll("\\", " ").trim().split(/\s+/);
+  assert.deepEqual(dependencies, [
+    "test-v1-fixtures",
+    "test-context-checkpoint-fixtures",
+    "test-pending-handoff-core-fixtures",
+    "test-pending-handoff-identity-fixtures",
+    "test-pending-handoff-secret-provider-fixtures",
+    "test-pending-handoff-candidate-fixtures",
+  ]);
+  const { spawnSync } = process.getBuiltinModule("node:child_process");
+  const { fileURLToPath } = process.getBuiltinModule("node:url");
+  const dryRun = spawnSync("make", ["-n", "test-v1x-fixtures"], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    encoding: "utf8",
+  });
+  assert.equal(dryRun.status, 0);
+  const command = name => new RegExp(`^node \\.\\/scripts\\/${name}\\.mjs$`, "gm");
+  const commandIndex = name => dryRun.stdout.indexOf(`node ./scripts/${name}.mjs`);
+  assert.equal((dryRun.stdout.match(command("test-pending-handoff-secret-provider-fixtures")) ?? []).length, 1);
+  assert.ok(commandIndex("test-pending-handoff-secret-provider-fixtures") > commandIndex("test-pending-handoff-core-fixtures"));
+  assert.ok(commandIndex("test-pending-handoff-secret-provider-fixtures") > commandIndex("test-pending-handoff-identity-fixtures"));
+  assert.ok(commandIndex("test-pending-handoff-secret-provider-fixtures") < commandIndex("test-pending-handoff-candidate-fixtures"));
   assert.doesNotMatch(makefile.match(/^test-v1-fixtures:.*$/m)?.[0] ?? "", /secret-provider/);
 });
 
