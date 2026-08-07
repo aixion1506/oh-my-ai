@@ -740,11 +740,58 @@ await group("derivation failures and scope comparison counts", async () => {
       assert.equal(safeEqualCalls, compareCount);
     }
   });
+  await test("keyed_digest runs exactly once for each real derivation stage", async () => {
+    const digestStages = [];
+    const value = input({
+      providerValue: provider({
+        keyed_digest: frozen(({ key_id, purpose, bytes }) => {
+          const preimage = JSON.parse(new TextDecoder().decode(bytes));
+          digestStages.push(preimage[1]);
+          return digestFor({ key_id, purpose, bytes });
+        }),
+      }),
+    });
+    const actual = await instrumentedInvoke(value);
+    assertSuccess(actual.result, value, "match");
+    assert.deepEqual(digestStages, ["session", "repository", "worktree"]);
+    assert.equal(digestStages.filter(stage => stage === "session").length, 1);
+    assert.equal(digestStages.filter(stage => stage === "repository").length, 1);
+    assert.equal(digestStages.filter(stage => stage === "worktree").length, 1);
+    assertTrace(actual.calls, [...IDENTITY_VALIDATION_TRACE, "createIdentitySecurityDependencies", "deriveSourceSessionIdentity", "deriveRepositoryIdentity", "deriveWorktreeIdentity", "compareIdentityScope"]);
+  });
   await test("safe_equal exception is sanitized and never escapes", async () => {
     const value = input({ providerValue: provider({ safe_equal: frozen(() => { throw new Error(EXCEPTION_MARKER); }) }) });
     const actual = await instrumentedInvoke(value);
     assertFailure(actual.result, "session_identity_unknown");
     assertNoRaw(actual.result);
+  });
+  await test("safe_equal throw short-circuits later comparator calls and effects", async () => {
+    const throwAt = 2;
+    let safeEqualCalls = 0;
+    let thrown = false;
+    const comparisonEvents = [];
+    const value = input({
+      providerValue: provider({
+        safe_equal: frozen((left, right) => {
+          safeEqualCalls += 1;
+          comparisonEvents.push(`call:${safeEqualCalls}`);
+          if (safeEqualCalls === throwAt) {
+            thrown = true;
+            comparisonEvents.push(`throw:${safeEqualCalls}`);
+            throw new Error(EXCEPTION_MARKER);
+          }
+          if (thrown) comparisonEvents.push(`post-throw:${safeEqualCalls}`);
+          comparisonEvents.push(`return:${safeEqualCalls}`);
+          return left === right;
+        }),
+      }),
+    });
+    const actual = await instrumentedInvoke(value);
+    assertFailure(actual.result, "repository_identity_unknown");
+    assertNoRaw(actual.result);
+    assert.equal(safeEqualCalls, throwAt);
+    assert.deepEqual(comparisonEvents, ["call:1", "return:1", "call:2", "throw:2"]);
+    assertTrace(actual.calls, [...IDENTITY_VALIDATION_TRACE, "createIdentitySecurityDependencies", "deriveSourceSessionIdentity", "deriveRepositoryIdentity", "deriveWorktreeIdentity", "compareIdentityScope"]);
   });
 });
 
