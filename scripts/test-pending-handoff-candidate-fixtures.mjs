@@ -631,7 +631,7 @@ await group("Makefile target and V1.x aggregate wiring", async () => {
     const lines = makefile.split("\n"); const start = lines.findIndex(line => line.startsWith("test-v1x-fixtures:")); assert.notEqual(start, -1);
     const declaration = [lines[start]]; while (declaration.at(-1).endsWith("\\")) declaration.push(lines[start + declaration.length]);
     assert.equal(lines.filter(line => line.startsWith("test-v1x-fixtures:")).length, 1);
-    const expectedTargets = ["test-v1-fixtures", "test-context-checkpoint-fixtures", "test-pending-handoff-core-fixtures", "test-pending-handoff-identity-fixtures", "test-pending-handoff-secret-provider-fixtures", "test-pending-handoff-candidate-fixtures"];
+    const expectedTargets = ["test-v1-fixtures", "test-context-checkpoint-fixtures", "test-pending-handoff-core-fixtures", "test-pending-handoff-identity-fixtures", "test-pending-handoff-secret-provider-fixtures", "test-pending-handoff-identity-composition-fixtures", "test-pending-handoff-candidate-fixtures"];
     assert.deepEqual(declaration.join(" ").replace(/^test-v1x-fixtures:\s*/, "").replaceAll("\\", " ").trim().split(/\s+/), expectedTargets);
     const dryRun = spawnSync("make", ["-n", "test-v1x-fixtures"], { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" }); assert.equal(dryRun.status, 0);
     const commands = ["node ./scripts/test-context-checkpoint-fixtures.mjs", "node ./scripts/test-context-checkpoint-codex-fixtures.mjs", "node ./scripts/test-pending-handoff-core-fixtures.mjs", "node ./scripts/test-pending-handoff-identity-fixtures.mjs", "node ./scripts/test-pending-handoff-secret-provider-fixtures.mjs", "node ./scripts/test-pending-handoff-candidate-fixtures.mjs"];
